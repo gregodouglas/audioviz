@@ -6,7 +6,7 @@ A spacey, line-based music visualizer for whatever Windows is playing, Spotify f
 |---|---|---|
 | ![scope](docs/img/scene-1.png) | ![ribbons](docs/img/scene-2.png) | ![starfield](docs/img/scene-3.png) |
 
-Three scenes with cross-fades: a phosphor XY oscilloscope of the real stereo signal, chroma-steered flow-field ribbons (GPU compute), and a ray-marched black hole (lensed accretion disk, point stars) with a Swiss-grid title overlay fed by the Windows now-playing metadata. Per-process Spotify loopback with auto-reconnect, full real-time analysis (bands, loudness, onsets, predictive beat clock, chroma), bloom + AgX + auto-exposure post stack, frame cap, monitor selection, optional auto director that changes scenes on track changes, drops and quiet passages.
+Three scenes with cross-fades: a phosphor XY oscilloscope of the real stereo signal, chroma-steered flow-field ribbons (GPU compute), and a ray-marched black hole (lensed accretion disk, point stars). What is playing lives on the transport strip, fed by the Windows now-playing metadata. Per-process Spotify loopback with auto-reconnect, full real-time analysis (bands, loudness, onsets, predictive beat clock, chroma), bloom + AgX + auto-exposure post stack, frame cap, monitor selection, optional auto director that changes scenes on track changes, drops and quiet passages.
 
 ## Install (Windows 10 2004+ / 11, DirectX 12 or Vulkan GPU)
 
@@ -31,7 +31,6 @@ Press **Tab** for the settings panel: a docked sheet with an icon rail. Scenes, 
 | 1 / 2 / 3 | layer to edit |
 | Space | next scene |
 | A | auto scene director |
-| T | title overlay (starfield) |
 | C | audio-delay calibration: tap Space on the beat, Enter to apply |
 | ? | all shortcuts |
 | F11 | fullscreen on the current monitor |
@@ -74,7 +73,7 @@ Releases: bump `version` in `Cargo.toml`, commit, `git tag vX.Y.Z && git push --
 - `crates/audio` — `AudioSource` trait + WASAPI per-process / endpoint loopback backend
 - `crates/analysis` — `Analyzer` → `FeatureFrame` (bands, loudness, onsets, beat clock, chroma)
 - `crates/metadata` — `MetadataSource` trait + Windows SMTC backend (now playing + art)
-- `crates/app` — winit + wgpu app: `scene.rs` / `director.rs` / `post.rs`, `scenes/` (scope, ribbons, starfield), `overlay.rs`, egui panel in `ui.rs`, WGSL in `shaders/`, `build.rs` embeds the icon and version resource
+- `crates/app` — winit + wgpu app: `scene.rs` / `director.rs` / `post.rs`, `scenes/` (scope, ribbons, starfield), egui chrome / panel / strip in `chrome.rs`, `panel.rs`, `strip.rs`, sheets in `overlays.rs`, WGSL in `shaders/`, `build.rs` embeds the icon and version resource
 - `xtask` — `cargo xtask icon`
 - `installer/audioviz.iss` — Inno Setup script; `scripts/release.ps1` — packaging; `winget/` — manifest templates for a future winget submission (not submitted)
 - `.github/workflows/` — `ci.yml` (build + test on Windows and macOS, `cargo deny`), `release.yml` (tag → draft release)

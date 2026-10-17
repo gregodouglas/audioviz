@@ -191,7 +191,6 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("Space", "next scene (tap while calibrating)"),
     ("A", "auto scene director"),
     ("N", "show what is playing"),
-    ("T", "title overlay layout (starfield)"),
     ("C", "calibrate audio delay"),
     ("Enter", "apply calibration"),
     ("F11", "fullscreen on this monitor"),

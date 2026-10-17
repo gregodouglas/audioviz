@@ -94,11 +94,13 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState
     }
     let screen = ctx.content_rect();
     let x = screen.max.x - PANEL_W * t;
-    let rect = Rect::from_min_max(pos2(x, screen.min.y + BAR_H), screen.max);
+    // The panel slides in at full width (clipped at the screen edge) rather
+    // than growing: widgets never see a width below what they need.
+    let rect = Rect::from_min_max(pos2(x, screen.min.y + BAR_H), pos2(x + PANEL_W, screen.max.y));
 
     egui::Area::new(egui::Id::unique("panel")).fixed_pos(rect.min).order(egui::Order::Middle).show(ctx, |ui| {
         ui.set_min_size(rect.size());
-        ui.set_clip_rect(rect);
+        ui.set_clip_rect(rect.intersect(screen));
         let p = ui.painter().clone();
         p.rect_filled(rect, 0.0, theme::panel_fill());
         p.vline(rect.min.x + 0.5, rect.y_range(), egui::Stroke::new(1.0, HAIRLINE));
@@ -511,10 +513,6 @@ fn display_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, a:
     toggle_row(ui, "Auto-hide bar and strip (3 s)", &mut settings.chrome_autohide);
     toggle_row(ui, "Show what's playing (N)", &mut settings.show_now_playing);
     if settings.show_now_playing {
-        toggle_row(ui, "Title overlay in the starfield (T)", &mut settings.type_overlay);
-        if settings.type_overlay {
-            slider_row(ui, "Title size", &mut settings.type_scale, 0.5..=2.0, |v| format!("{v:.2}"), false);
-        }
         toggle_row(ui, "Track-change toast", &mut settings.toast);
     }
     ui.add_space(8.0);

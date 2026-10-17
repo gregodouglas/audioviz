@@ -15,17 +15,16 @@ use crate::director::{Director, FADE_AUTO_S, FADE_MANUAL_S};
 use crate::engine::Engine;
 use crate::gpu::Gpu;
 use crate::hittest;
-use crate::overlay::Overlay;
 use crate::overlays::{self, CALIBRATION_MIN_TAPS, CalibrationView, FirstRun};
 use crate::panel::{self, MonitorInfo, PanelState, Stats, UpdateStatus};
 use crate::platform;
 use crate::post::{Post, PostParams};
 use crate::scene_store::{self, SceneDef};
 use crate::scenes::scope::MAX_POINTS;
-use crate::settings::{MAX_LAYERS, Section, Settings, VisualKind};
+use crate::settings::{MAX_LAYERS, Section, Settings};
 use crate::shaders::ShaderSet;
 use crate::strip::Strip;
-use crate::theme::{self, BAR_H, PANEL_W, STRIP_H};
+use crate::theme::{self, PANEL_W, STRIP_H};
 use crate::tray::{Tray, TrayAction};
 
 const NOTICE_SECONDS: f32 = 10.0;
@@ -107,7 +106,6 @@ struct Running {
     egui_ctx: egui::Context,
     egui_state: egui_winit::State,
     egui_renderer: egui_wgpu::Renderer,
-    overlay: Overlay,
     chrome: Chrome,
     strip: Strip,
     panel_state: PanelState,
@@ -149,6 +147,8 @@ struct Running {
     tray: Option<Tray>,
     /// "Let the visuals work": every UI element hidden until H / Tab.
     zen: bool,
+    /// Whether the panel was open when H hid everything.
+    zen_had_panel: bool,
     cursor_hidden: bool,
 }
 
@@ -240,7 +240,6 @@ impl Running {
             egui_ctx,
             egui_state,
             egui_renderer,
-            overlay: Overlay::new(),
             chrome: Chrome::new(),
             strip: Strip::new(),
             panel_state: PanelState::default(),
@@ -277,6 +276,7 @@ impl Running {
             quit: false,
             tray: None,
             zen: false,
+            zen_had_panel: false,
             cursor_hidden: false,
         };
         let scene_names: Vec<&str> = running.scenes.iter().map(|s| s.name.as_str()).collect();
@@ -615,8 +615,6 @@ impl Running {
         // --- egui: overlays, chrome, strip, panel ---
         let fullscreen = self.gpu.window.fullscreen().is_some();
         let maximized = self.gpu.window.is_maximized();
-        let has_starfield = self.settings.layers.iter().any(|l| l.enabled && l.visual == VisualKind::Starfield);
-        let overlay_on = self.settings.show_now_playing && self.settings.type_overlay && has_starfield;
         let calibrating = self.calibration.is_some();
         let empty = matches!(capture, CaptureMode::Endpoint { .. }) && self.first_run.is_none() && !calibrating;
         let ui_view = frame.texture.create_view(&wgpu::TextureViewDescriptor { format: Some(self.gpu.ui_format), ..Default::default() });
@@ -652,7 +650,7 @@ impl Running {
             self.cursor_hidden = want_cursor_hidden;
             self.gpu.window.set_cursor_visible(!want_cursor_hidden);
         }
-        let toast_on = !self.zen && self.settings.show_now_playing && self.settings.toast && !(overlay_on) && self.toast.as_ref().is_some_and(|(_, _, t)| t.elapsed().as_secs_f32() < TOAST_SECONDS);
+        let toast_on = !self.zen && self.settings.show_now_playing && self.settings.toast && self.toast.as_ref().is_some_and(|(_, _, t)| t.elapsed().as_secs_f32() < TOAST_SECONDS);
         let accent = crate::chrome::accent(self.tint_current);
         let target_short = self.settings.target_process.trim_end_matches(".exe").to_lowercase();
 
@@ -667,7 +665,6 @@ impl Running {
 
         let settings = &mut self.settings;
         let director = &mut self.director;
-        let overlay = &mut self.overlay;
         let chrome = &mut self.chrome;
         let strip = &mut self.strip;
         let panel_state = &mut self.panel_state;
@@ -677,7 +674,6 @@ impl Running {
         let calibration_view = stats.calibration.clone();
         let current_delay = settings.audio_delay_ms;
         let spotify_installed = self.spotify_installed;
-        let tint = self.tint_current;
         let beat = features.beat_pulse;
         let egui::FullOutput { platform_output, mut textures_delta, shapes, pixels_per_point, .. } = self.egui_ctx.run_pass(raw_input, |ctx| {
             let t_chrome = ctx.animate_bool_with_time(egui::Id::unique("t-chrome"), chrome_wanted, theme::ANIM_S);
@@ -687,9 +683,6 @@ impl Running {
             let bottom = STRIP_H * t_strip;
             let right = PANEL_W * t_panel;
 
-            if overlay_on {
-                overlay.draw(ctx, now_playing.as_ref(), &features, tint, settings.type_scale, BAR_H * t_chrome, bottom, right);
-            }
             if let Some((title, artist, _)) = &toast {
                 let art = strip.art_texture(ctx, now_playing.as_ref());
                 overlays::toast(ctx, art, title, artist, t_toast, bottom);
@@ -915,12 +908,21 @@ impl Running {
     }
 
     /// Hide (or show) every UI element. Hiding also closes the panel.
+    /// Hide everything (H). Unhiding brings back what was hidden: the panel if
+    /// it was open, and the bar and strip for one auto-hide period.
     fn set_zen(&mut self, on: bool) {
+        if on == self.zen {
+            return;
+        }
         self.zen = on;
         if on {
+            self.zen_had_panel = self.settings.show_ui;
             self.settings.show_ui = false;
             self.show_shortcuts = false;
             self.calibration_result = Some(("UI hidden · H or Tab shows it again".into(), Instant::now() - Duration::from_secs_f32(NOTICE_SECONDS - 2.5)));
+        } else {
+            self.settings.show_ui = self.zen_had_panel;
+            self.chrome.note_mouse();
         }
     }
 
@@ -964,11 +966,12 @@ impl Running {
             KeyCode::F11 => self.toggle_fullscreen(),
             KeyCode::Tab => {
                 if self.zen {
-                    self.zen = false;
-                    self.settings.show_ui = true;
+                    self.zen_had_panel = true;
+                    self.set_zen(false);
                 } else {
                     self.settings.show_ui = !self.settings.show_ui;
                 }
+                self.chrome.note_mouse();
             }
             KeyCode::KeyH => self.set_zen(!self.zen),
             KeyCode::F5 => {
@@ -982,7 +985,6 @@ impl Running {
             KeyCode::Enter | KeyCode::NumpadEnter => self.apply_calibration(),
             KeyCode::KeyC => self.toggle_calibration(),
             KeyCode::KeyA => self.settings.auto_scenes = !self.settings.auto_scenes,
-            KeyCode::KeyT => self.settings.type_overlay = !self.settings.type_overlay,
             KeyCode::KeyN => self.settings.show_now_playing = !self.settings.show_now_playing,
             KeyCode::Slash | KeyCode::F1 => self.show_shortcuts = !self.show_shortcuts,
             KeyCode::Digit1 => self.select_layer(0),
@@ -1028,6 +1030,23 @@ impl ApplicationHandler for App {
         if matches!(event, WindowEvent::CursorMoved { .. }) {
             st.chrome.note_mouse();
         }
+        // Keys go to the app unless egui really has a text field focused. egui-winit
+        // reports Tab as consumed unconditionally (focus traversal), so it is not
+        // consulted for keys.
+        if let WindowEvent::KeyboardInput { event: KeyEvent { physical_key: PhysicalKey::Code(code), state: ElementState::Pressed, repeat: false, .. }, .. } = &event {
+            // Hotkeys work unless a text field is being edited. (`wants_keyboard_input`
+            // is true whenever any widget has focus, e.g. a button that was clicked,
+            // which used to swallow H and Tab after any panel interaction.)
+            let text_focus = st.egui_ctx.memory(|m| m.focused()).is_some_and(|id| egui::TextEdit::load_state(&st.egui_ctx, id).is_some());
+            if !text_focus {
+                if *code == KeyCode::Tab {
+                    // Keep Tab from egui's focus traversal: it is the panel toggle.
+                    st.egui_state.egui_input_mut().events.retain(|e| !matches!(e, egui::Event::Key { key: egui::Key::Tab, .. }));
+                }
+                st.key(*code, event_loop);
+            }
+            return;
+        }
         if resp.consumed && !matches!(event, WindowEvent::RedrawRequested | WindowEvent::Resized(_) | WindowEvent::CloseRequested | WindowEvent::Occluded(_)) {
             return;
         }
@@ -1045,11 +1064,6 @@ impl ApplicationHandler for App {
                 st.render();
                 if st.quit {
                     event_loop.exit();
-                }
-            }
-            WindowEvent::KeyboardInput { event: KeyEvent { physical_key: PhysicalKey::Code(code), state: ElementState::Pressed, repeat: false, .. }, .. } => {
-                if !st.egui_ctx.egui_wants_keyboard_input() {
-                    st.key(code, event_loop);
                 }
             }
             _ => {}

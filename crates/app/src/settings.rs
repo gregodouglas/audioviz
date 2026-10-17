@@ -242,10 +242,7 @@ pub struct Settings {
     pub tint: [f32; 3],
     /// Scene accent follows the album art's dominant colour.
     pub tint_from_art: bool,
-    // ---- title overlay ----
-    pub type_overlay: bool,
-    pub type_scale: f32,
-    /// Show what is playing: title overlay, toast, track identity on the strip.
+    /// Show what is playing: toast and track identity on the strip.
     pub show_now_playing: bool,
     // ---- director ----
     pub auto_scenes: bool,
@@ -291,8 +288,6 @@ impl Settings {
         self.post = other.post;
         self.tint = other.tint;
         self.tint_from_art = other.tint_from_art;
-        self.type_overlay = other.type_overlay;
-        self.type_scale = other.type_scale;
         self.scene_name = other.scene_name.clone();
     }
 }
@@ -306,8 +301,6 @@ impl Default for Settings {
             post: PostSettings::default(),
             tint: [0.40, 1.0, 0.55],
             tint_from_art: false,
-            type_overlay: true,
-            type_scale: 1.0,
             show_now_playing: false,
             auto_scenes: false,
             reduce_flashing: true,

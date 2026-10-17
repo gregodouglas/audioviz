@@ -9,7 +9,6 @@ mod director;
 mod engine;
 mod gpu;
 mod hittest;
-mod overlay;
 mod overlays;
 mod panel;
 mod platform;

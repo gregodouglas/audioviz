@@ -1,5 +1,5 @@
-//! Swiss-grid typographic overlay: track title, artist, album, art and a
-//! progress hairline, laid on a 12-column grid. Drawn with egui on the
+//! Swiss-grid typographic overlay: track title, artist, album and a
+//! progress hairline (the album art lives on the transport strip), laid on a 12-column grid. Drawn with egui on the
 //! background layer so it stays crisp (not bloomed) and under the panel.
 
 use audioviz_analysis::FeatureFrame;
@@ -7,13 +7,11 @@ use audioviz_metadata::NowPlaying;
 
 pub use crate::theme::{FAMILY_BOLD, FAMILY_REGULAR};
 
-pub struct Overlay {
-    art: Option<(u64, egui::TextureHandle)>,
-}
+pub struct Overlay;
 
 impl Overlay {
     pub fn new() -> Self {
-        Self { art: None }
+        Self
     }
 
     /// `top`, `bottom`, `right`: space taken by the chrome bar, the transport strip and the panel.
@@ -21,16 +19,6 @@ impl Overlay {
         let Some(np) = np else { return };
         if np.title.is_empty() && np.artist.is_empty() {
             return;
-        }
-        // Album art texture, refreshed on track change.
-        if let Some(art) = &np.art {
-            if self.art.as_ref().map(|(id, _)| *id) != Some(np.track_id) {
-                let img = egui::ColorImage::from_rgba_unmultiplied([art.width as usize, art.height as usize], &art.rgba);
-                let tex = ctx.load_texture("album-art", img, egui::TextureOptions::LINEAR);
-                self.art = Some((np.track_id, tex));
-            }
-        } else {
-            self.art = None;
         }
 
         let full = ctx.content_rect();
@@ -79,13 +67,5 @@ impl Overlay {
         let t = format!("{}  {:02}:{:02} / {:02}:{:02}", status, (np.position_s / 60.0) as u32, (np.position_s % 60.0) as u32, (np.duration_s / 60.0) as u32, (np.duration_s % 60.0) as u32);
         painter.text(grid.min, egui::Align2::LEFT_TOP, t, regular(small_size), ink_dim);
 
-        // Bottom-right: album art, two columns wide, aligned to the rule.
-        if let Some((_, tex)) = &self.art {
-            let side = col_w * 2.0 - gutter;
-            let rect = egui::Rect::from_min_size(egui::pos2(grid.max.x - side, bottom - side), egui::vec2(side, side));
-            painter.image(tex.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::from_rgba_unmultiplied(255, 255, 255, 230));
-            // Column rule beside the art.
-            painter.rect_filled(egui::Rect::from_min_max(egui::pos2(rect.min.x - gutter, rule_y), egui::pos2(rect.min.x - gutter + 1.0, bottom)), 0.0, ink_dim);
-        }
     }
 }

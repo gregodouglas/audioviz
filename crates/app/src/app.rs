@@ -196,6 +196,7 @@ impl Running {
         if std::env::var_os("AUDIOVIZ_CHROME").is_some() {
             settings.chrome_autohide = false;
             settings.onboarded = true;
+            settings.show_now_playing = true;
         }
         let gpu = Gpu::new(window.clone())?;
         let shaders = ShaderSet::load();

@@ -196,7 +196,8 @@ impl Running {
                         obj.insert(k, v);
                     }
                 }
-                if let Ok(s) = serde_json::from_value::<Settings>(base) {
+                if let Ok(mut s) = serde_json::from_value::<Settings>(base) {
+                    s.normalize();
                     settings = s;
                 }
             }
@@ -792,6 +793,12 @@ impl Running {
         }
         if let Some((from, to)) = panel_actions.move_layer {
             self.move_layer(from, to);
+        }
+        if let Some((layer, from, to)) = panel_actions.move_modifier {
+            self.director.move_modifier(layer, from, to);
+        }
+        if let Some((layer, at)) = panel_actions.remove_modifier {
+            self.director.remove_modifier(layer, at);
         }
         if let Some(i) = chrome_actions.select_layer.or(panel_actions.select_layer) {
             self.select_layer(i);

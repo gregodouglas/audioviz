@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::settings::{Layer, Settings, VisualKind};
+use crate::settings::{Layer, Settings, VisualKind, Fold, Modifier};
 
 #[derive(Clone)]
 pub struct SceneDef {
@@ -139,7 +139,7 @@ pub fn builtin() -> Vec<SceneDef> {
         vec![
             {
                 let mut l = Layer::new(VisualKind::Kaleido, true, 1.0);
-                l.fold.enabled = true;
+                l.modifiers.push(Modifier::Fold(Fold::default()));
                 l
             },
             Layer::new(VisualKind::Ribbons, false, 0.4),

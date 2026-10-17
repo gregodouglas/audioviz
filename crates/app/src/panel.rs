@@ -9,7 +9,7 @@ use egui::{Align2, Color32, Rect, Sense, pos2, vec2};
 use crate::overlays::CalibrationView;
 use crate::scene::Scene;
 use crate::scene_store::SceneDef;
-use crate::settings::{AudioBand, FoldMode, ImageSource, MAX_LAYERS, Section, Settings, TintMode, VisualKind};
+use crate::settings::{AudioBand, FoldMode, ImageSource, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Section, Settings, TintMode, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3};
 use crate::widgets::{self, ghost_button, hint, section_header, slider_row, small_caps, toggle_row};
 
@@ -63,6 +63,10 @@ pub struct Actions {
     pub select_layer: Option<usize>,
     /// Drag-reorder: move layer `.0` to position `.1`.
     pub move_layer: Option<(usize, usize)>,
+    /// (layer, from, to): a modifier was dragged within its chain.
+    pub move_modifier: Option<(usize, usize, usize)>,
+    /// (layer, index): a modifier was removed.
+    pub remove_modifier: Option<(usize, usize)>,
     pub apply_scene: Option<String>,
     pub save_scene: Option<String>,
     pub delete_scene: Option<String>,
@@ -83,6 +87,8 @@ pub struct Actions {
 #[derive(Default)]
 pub struct PanelState {
     pub scene_name: String,
+    /// Which modifier of the edited layer shows its controls.
+    pub editing_mod: usize,
     pub target_edit: String,
     pub target_editing: bool,
 }
@@ -134,7 +140,7 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState
             ui.set_width(content.width() - 8.0);
             match settings.section {
                 Section::Scenes => scenes_section(ui, settings, state, stats, &mut a),
-                Section::Layers => layers_section(ui, settings, stats, layers, &mut a),
+                Section::Layers => layers_section(ui, settings, state, stats, layers, &mut a),
                 Section::Post => post_section(ui, settings),
                 Section::Sync => sync_section(ui, settings, state, stats, &mut a),
                 Section::Display => display_section(ui, settings, stats, &mut a),
@@ -220,7 +226,190 @@ fn scenes_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
     hint(ui, "Each scene is a JSON file. Copy one to share it; drop one in to import.");
 }
 
-fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, layers: &mut [Box<dyn Scene>], a: &mut Actions) {
+/// Payload type for dragging a modifier row (distinct from the layer rows).
+#[derive(Clone, Copy)]
+struct ModDrag(usize);
+
+fn pill(ui: &mut egui::Ui, name: &str, active: bool) -> bool {
+    ui.add(egui::Button::new(egui::RichText::new(name).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE }))).clicked()
+}
+
+fn mini_switch(ui: &mut egui::Ui, on: &mut bool) {
+    let (sw, resp) = ui.allocate_exact_size(vec2(24.0, 14.0), Sense::click());
+    if resp.clicked() {
+        *on = !*on;
+    }
+    let t = ui.ctx().animate_bool_with_time(resp.id, *on, theme::ANIM_S);
+    ui.painter().rect_filled(sw, 7.0, widgets::lerp_color(HAIRLINE, ACCENT, t));
+    ui.painter().circle_filled(pos2(sw.min.x + 7.0 + 10.0 * t, sw.center().y), 5.0, widgets::lerp_color(TEXT_2, theme::BG, t));
+}
+
+fn drag_handle(ui: &mut egui::Ui, id: egui::Id, payload: ModDrag) {
+    ui.dnd_drag_source(id, payload, |ui| {
+        let (r, resp) = ui.allocate_exact_size(vec2(14.0, 16.0), Sense::hover());
+        let c = if resp.hovered() || resp.dragged() { TEXT } else { TEXT_3 };
+        for k in 0..3 {
+            let y = r.min.y + 4.0 + 4.0 * k as f32;
+            ui.painter().line_segment([pos2(r.min.x + 2.0, y), pos2(r.max.x - 2.0, y)], egui::Stroke::new(1.0, c));
+        }
+        resp.on_hover_cursor(egui::CursorIcon::Grab);
+    });
+}
+
+fn modifiers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, editing: usize, a: &mut Actions) {
+    let l = settings.layer_mut(editing);
+    let n = l.modifiers.len();
+    if n == 0 {
+        hint(ui, "Modifiers are passes over this layer's picture, run in order: mirrors, echo, polar wrap, ripples, edges, colour fringes, a mask.");
+    }
+    state.editing_mod = state.editing_mod.min(n.saturating_sub(1));
+    let dragging = egui::DragAndDrop::has_payload_of_type::<ModDrag>(ui.ctx());
+    let mut remove: Option<usize> = None;
+    let mut moved: Option<(usize, usize)> = None;
+    for j in 0..n {
+        let focused = j == state.editing_mod;
+        let row = ui.horizontal(|ui| {
+            drag_handle(ui, ui.scope_id().with(("mod drag", editing, j)), ModDrag(j));
+            let m = &mut l.modifiers[j];
+            mini_switch(ui, m.enabled_mut());
+            let label = egui::RichText::new(m.name()).color(if focused { ACCENT } else { TEXT });
+            if ui.add(egui::Button::new(label).frame(false)).clicked() {
+                state.editing_mod = j;
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.add(egui::Button::new(egui::RichText::new("×").color(TEXT_3)).frame(false)).on_hover_text("remove").clicked() {
+                    remove = Some(j);
+                }
+            });
+        });
+        if dragging {
+            let rect = row.response.rect;
+            let hover = ui.ctx().pointer_hover_pos().is_some_and(|p| rect.contains(p));
+            if hover {
+                ui.painter().hline(rect.x_range(), rect.min.y - 2.0, egui::Stroke::new(2.0, ACCENT));
+                if ui.input(|i| i.pointer.any_released()) {
+                    if let Some(from) = egui::DragAndDrop::take_payload::<ModDrag>(ui.ctx()) {
+                        if from.0 != j {
+                            moved = Some((from.0, j));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if let Some((from, to)) = moved {
+        let m = l.modifiers.remove(from);
+        l.modifiers.insert(to, m);
+        state.editing_mod = to;
+        a.move_modifier = Some((editing, from, to));
+    }
+    if let Some(j) = remove {
+        l.modifiers.remove(j);
+        a.remove_modifier = Some((editing, j));
+    }
+    if l.modifiers.len() < MAX_MODS {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(egui::RichText::new("add").color(TEXT_3));
+            for (name, make) in Modifier::KINDS {
+                if ui.add(egui::Button::new(egui::RichText::new(name).size(11.0)).frame(false)).clicked() {
+                    l.modifiers.push(make());
+                    state.editing_mod = l.modifiers.len() - 1;
+                }
+            }
+        });
+    }
+    if let Some(m) = l.modifiers.get_mut(state.editing_mod) {
+        ui.add_space(4.0);
+        modifier_controls(ui, m);
+    }
+}
+
+fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
+    match m {
+        Modifier::Fold(k) => {
+            ui.horizontal(|ui| {
+                ui.label("Mirrors");
+                for (name, mode) in [("radial", FoldMode::Radial), ("pinwheel", FoldMode::Pinwheel), ("tiled", FoldMode::Tiled)] {
+                    if pill(ui, name, k.mode == mode) {
+                        k.mode = mode;
+                    }
+                }
+            });
+            if k.mode != FoldMode::Tiled {
+                let mut seg = k.segments as f32;
+                slider_row(ui, "Segments", &mut seg, 1.0..=24.0, |v| format!("{v:.0}"), false);
+                k.segments = seg.round() as u32;
+                let mut step = k.step_beats as f32;
+                slider_row(ui, "Step on beats", &mut step, 0.0..=16.0, |v| if v < 0.5 { "off".into() } else { format!("every {v:.0}") }, false);
+                k.step_beats = step.round() as u32;
+            }
+            slider_row(ui, "Spin", &mut k.speed, -2.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Zoom", &mut k.zoom, 0.2..=3.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Apex offset", &mut k.offset, 0.0..=1.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Wander", &mut k.wander, 0.0..=4.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Reacts", &mut k.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Spin follows energy and onsets; zoom breathes with the bass. The apex off-centre is what makes real kaleidoscopes rich.");
+        }
+        Modifier::Feedback(k) => {
+            slider_row(ui, "Decay", &mut k.decay, 0.0..=0.985, |v| format!("{v:.3}"), false);
+            slider_row(ui, "Zoom", &mut k.zoom, -1.0..=1.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Spin", &mut k.spin, -1.5..=1.5, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Reacts", &mut k.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Last frame echoes under this one, zooming and turning. One feedback per layer keeps its own history.");
+        }
+        Modifier::Polar(k) => {
+            ui.horizontal(|ui| {
+                if pill(ui, "wrap", !k.unwrap) {
+                    k.unwrap = false;
+                }
+                if pill(ui, "unwrap", k.unwrap) {
+                    k.unwrap = true;
+                }
+            });
+            slider_row(ui, "Radius", &mut k.radius, 0.2..=2.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Spin", &mut k.spin, -2.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Reacts", &mut k.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Wrap turns left-to-right into around-the-centre: a scope becomes a ring.");
+        }
+        Modifier::Ripple(k) => {
+            slider_row(ui, "Amount", &mut k.amount, 0.0..=0.2, |v| format!("{v:.3}"), false);
+            slider_row(ui, "Wavelength", &mut k.wavelength, 0.02..=0.6, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Speed", &mut k.speed, 0.1..=3.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Standing wave", &mut k.sine, 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Reacts", &mut k.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Beats launch rings from the centre. Above 1.5 reacts, onsets launch them too.");
+        }
+        Modifier::Edge(k) => {
+            slider_row(ui, "Strength", &mut k.strength, 0.0..=5.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Keep original", &mut k.keep, 0.0..=1.0, |v| format!("{v:.2}"), false);
+            toggle_row(ui, "Edges in the layer tint", &mut k.tinted);
+            slider_row(ui, "Reacts", &mut k.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
+        }
+        Modifier::Chroma(k) => {
+            slider_row(ui, "Amount", &mut k.amount, 0.0..=0.08, |v| format!("{v:.3}"), false);
+            toggle_row(ui, "Radial from the centre", &mut k.radial);
+            slider_row(ui, "Reacts", &mut k.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Pulses with treble and onsets.");
+        }
+        Modifier::Mask(k) => {
+            ui.horizontal(|ui| {
+                ui.label("Shape");
+                for (name, shape) in [("circle", MaskShape::Circle), ("band", MaskShape::Band), ("hex", MaskShape::Hex)] {
+                    if pill(ui, name, k.shape == shape) {
+                        k.shape = shape;
+                    }
+                }
+            });
+            slider_row(ui, "Size", &mut k.radius, 0.05..=2.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Softness", &mut k.soft, 0.0..=0.5, |v| format!("{v:.2}"), false);
+            toggle_row(ui, "Keep the outside instead", &mut k.invert);
+            slider_row(ui, "Reacts", &mut k.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Lets two layers share the frame by place, not only by adding. Size breathes with the bass.");
+        }
+    }
+}
+
+fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, layers: &mut [Box<dyn Scene>], a: &mut Actions) {
     if section_header(ui, "Layers", None, Some("Hide UI (H)")) {
         a.hide_ui = true;
     }
@@ -290,16 +479,16 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, lay
     small_caps(ui, &format!("Layer {}", editing + 1));
     ui.add_space(4.0);
     // Visual picker.
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label("Visual");
         let l = settings.layer_mut(editing);
         for k in VisualKind::ALL {
             let active = l.visual == k;
             if ui.add(egui::Button::new(egui::RichText::new(k.short()).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE }))).clicked() {
                 l.visual = k;
-                // The kaleidoscope is its picture plus the fold: turn the mirrors on with it.
-                if k == VisualKind::Kaleido {
-                    l.fold.enabled = true;
+                // The kaleidoscope is its picture plus the fold: add the mirrors with it.
+                if k == VisualKind::Kaleido && !l.has_fold() {
+                    l.modifiers.insert(0, Modifier::Fold(Default::default()));
                 }
             }
         }
@@ -352,32 +541,10 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, lay
             }
         });
     }
-    // Kaleidoscope fold.
-    ui.add_space(4.0);
-    {
-        let l = settings.layer_mut(editing);
-        toggle_row(ui, "Kaleidoscope fold", &mut l.fold.enabled);
-        if l.fold.enabled {
-            ui.horizontal(|ui| {
-                ui.label("Mirrors");
-                for (name, mode) in [("radial", FoldMode::Radial), ("tiled", FoldMode::Tiled)] {
-                    let active = l.fold.mode == mode;
-                    if ui.add(egui::Button::new(egui::RichText::new(name).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE }))).clicked() {
-                        l.fold.mode = mode;
-                    }
-                }
-            });
-            if l.fold.mode == FoldMode::Radial {
-                let mut seg = l.fold.segments as f32;
-                slider_row(ui, "Segments", &mut seg, 2.0..=24.0, |v| format!("{v:.0}"), false);
-                l.fold.segments = seg.round() as u32;
-            }
-            slider_row(ui, "Spin", &mut l.fold.speed, -2.0..=2.0, |v| format!("{v:.2}"), false);
-            slider_row(ui, "Zoom", &mut l.fold.zoom, 0.2..=3.0, |v| format!("{v:.2}"), false);
-            slider_row(ui, "Reacts", &mut l.fold.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
-            hint(ui, "Mirrors over this layer's picture. Spin follows energy and onsets; zoom breathes with the bass.");
-        }
-    }
+    // Modifier chain.
+    ui.add_space(8.0);
+    small_caps(ui, "Modifiers");
+    modifiers_section(ui, settings, state, editing, a);
     ui.add_space(8.0);
     widgets::hairline(ui);
     ui.add_space(8.0);

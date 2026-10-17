@@ -41,17 +41,19 @@ impl VisualKind {
     }
 }
 
-/// Mirror geometry of a layer's kaleidoscope fold.
+/// Mirror geometry of a kaleidoscope fold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FoldMode {
-    /// Two mirrors: N-fold symmetry around the centre.
+    /// Two mirrors: N-fold symmetry around the apex.
     Radial,
     /// Three mirrors at 60 degrees: a triangular tiling of one cell.
     Tiled,
+    /// Rotation only, no mirror: spinning blades.
+    Pinwheel,
 }
 
-/// Kaleidoscope fold applied to a layer's output before the mix.
+/// Kaleidoscope fold modifier.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Fold {
@@ -61,13 +63,221 @@ pub struct Fold {
     /// Rotation, radians per second at average energy.
     pub speed: f32,
     pub zoom: f32,
+    /// Apex offset from the source's centre (image half-heights).
+    pub offset: f32,
+    /// How fast the apex wanders.
+    pub wander: f32,
+    /// 0 = fixed segments; N = step to a new count every N beats.
+    pub step_beats: u32,
     /// How much energy, onsets and bass move it.
     pub react: f32,
 }
 
 impl Default for Fold {
     fn default() -> Self {
+        Self { enabled: true, mode: FoldMode::Radial, segments: 8, speed: 0.15, zoom: 1.0, offset: 0.25, wander: 1.0, step_beats: 0, react: 1.0 }
+    }
+}
+
+/// The pre-chain `fold` field (one build, 2026-10-17); read for migration only.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LegacyFold {
+    pub enabled: bool,
+    pub mode: FoldMode,
+    pub segments: u32,
+    pub speed: f32,
+    pub zoom: f32,
+    pub react: f32,
+}
+
+impl Default for LegacyFold {
+    fn default() -> Self {
         Self { enabled: false, mode: FoldMode::Radial, segments: 8, speed: 0.15, zoom: 1.0, react: 1.0 }
+    }
+}
+
+/// Feedback / echo modifier: last frame's result zoomed, spun and faded under this one.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Feedback {
+    pub enabled: bool,
+    pub decay: f32,
+    /// Zoom rate per second (positive = outward).
+    pub zoom: f32,
+    /// Spin, radians per second.
+    pub spin: f32,
+    pub react: f32,
+}
+
+impl Default for Feedback {
+    fn default() -> Self {
+        Self { enabled: true, decay: 0.9, zoom: 0.25, spin: 0.1, react: 1.0 }
+    }
+}
+
+/// Polar wrap modifier.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Polar {
+    pub enabled: bool,
+    /// false = wrap (x becomes angle), true = unwrap (the inverse).
+    pub unwrap: bool,
+    pub radius: f32,
+    pub spin: f32,
+    pub react: f32,
+}
+
+impl Default for Polar {
+    fn default() -> Self {
+        Self { enabled: true, unwrap: false, radius: 1.0, spin: 0.1, react: 1.0 }
+    }
+}
+
+/// Ripple modifier: rings on beats, plus a standing sine warp.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Ripple {
+    pub enabled: bool,
+    pub amount: f32,
+    pub wavelength: f32,
+    pub speed: f32,
+    pub sine: f32,
+    pub react: f32,
+}
+
+impl Default for Ripple {
+    fn default() -> Self {
+        Self { enabled: true, amount: 0.04, wavelength: 0.15, speed: 0.8, sine: 0.0, react: 1.0 }
+    }
+}
+
+/// Edge (Sobel outline) modifier.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Edge {
+    pub enabled: bool,
+    pub strength: f32,
+    /// Share of the original kept underneath.
+    pub keep: f32,
+    pub tinted: bool,
+    pub react: f32,
+}
+
+impl Default for Edge {
+    fn default() -> Self {
+        Self { enabled: true, strength: 1.5, keep: 0.0, tinted: false, react: 1.0 }
+    }
+}
+
+/// Chromatic split modifier.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChromaSplit {
+    pub enabled: bool,
+    pub amount: f32,
+    pub radial: bool,
+    pub react: f32,
+}
+
+impl Default for ChromaSplit {
+    fn default() -> Self {
+        Self { enabled: true, amount: 0.012, radial: true, react: 1.0 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MaskShape {
+    Circle,
+    Band,
+    Hex,
+}
+
+/// Mask modifier: keep the picture inside (or outside) a soft shape.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Mask {
+    pub enabled: bool,
+    pub shape: MaskShape,
+    pub radius: f32,
+    pub soft: f32,
+    pub invert: bool,
+    pub react: f32,
+}
+
+impl Default for Mask {
+    fn default() -> Self {
+        Self { enabled: true, shape: MaskShape::Circle, radius: 0.7, soft: 0.1, invert: false, react: 1.0 }
+    }
+}
+
+/// A modifier: one full-screen pass over a layer's picture before the mix.
+/// A layer runs an ordered chain of up to `MAX_MODS`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Modifier {
+    Fold(Fold),
+    Feedback(Feedback),
+    Polar(Polar),
+    Ripple(Ripple),
+    Edge(Edge),
+    Chroma(ChromaSplit),
+    Mask(Mask),
+}
+
+pub const MAX_MODS: usize = 6;
+
+impl Modifier {
+    /// Every kind with a constructor, in the order the panel offers them.
+    pub const KINDS: [(&'static str, fn() -> Modifier); 7] = [
+        ("kaleidoscope", || Modifier::Fold(Fold::default())),
+        ("feedback", || Modifier::Feedback(Feedback::default())),
+        ("polar", || Modifier::Polar(Polar::default())),
+        ("ripple", || Modifier::Ripple(Ripple::default())),
+        ("edge", || Modifier::Edge(Edge::default())),
+        ("chroma split", || Modifier::Chroma(ChromaSplit::default())),
+        ("mask", || Modifier::Mask(Mask::default())),
+    ];
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            Modifier::Fold(_) => "kaleidoscope",
+            Modifier::Feedback(_) => "feedback",
+            Modifier::Polar(_) => "polar",
+            Modifier::Ripple(_) => "ripple",
+            Modifier::Edge(_) => "edge",
+            Modifier::Chroma(_) => "chroma split",
+            Modifier::Mask(_) => "mask",
+        }
+    }
+
+    pub fn enabled(&self) -> bool {
+        *self.enabled_ref()
+    }
+
+    fn enabled_ref(&self) -> &bool {
+        match self {
+            Modifier::Fold(m) => &m.enabled,
+            Modifier::Feedback(m) => &m.enabled,
+            Modifier::Polar(m) => &m.enabled,
+            Modifier::Ripple(m) => &m.enabled,
+            Modifier::Edge(m) => &m.enabled,
+            Modifier::Chroma(m) => &m.enabled,
+            Modifier::Mask(m) => &m.enabled,
+        }
+    }
+
+    pub fn enabled_mut(&mut self) -> &mut bool {
+        match self {
+            Modifier::Fold(m) => &mut m.enabled,
+            Modifier::Feedback(m) => &mut m.enabled,
+            Modifier::Polar(m) => &mut m.enabled,
+            Modifier::Ripple(m) => &mut m.enabled,
+            Modifier::Edge(m) => &mut m.enabled,
+            Modifier::Chroma(m) => &mut m.enabled,
+            Modifier::Mask(m) => &mut m.enabled,
+        }
     }
 }
 
@@ -221,7 +431,7 @@ impl AudioBand {
 
 /// One instance of a visual in the scene. All three parameter sets are kept
 /// so switching the visual back and forth loses nothing.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Layer {
     pub visual: VisualKind,
@@ -230,7 +440,11 @@ pub struct Layer {
     pub opacity: f32,
     pub band: AudioBand,
     pub tint: LayerTint,
-    pub fold: Fold,
+    /// Ordered chain of modifiers run over the visual's output.
+    pub modifiers: Vec<Modifier>,
+    /// Pre-chain field, migrated into `modifiers` on load; never written.
+    #[serde(skip_serializing)]
+    pub fold: LegacyFold,
     pub scope: ScopeParams,
     pub ribbons: RibbonsParams,
     pub starfield: StarfieldParams,
@@ -239,13 +453,28 @@ pub struct Layer {
 
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, band: AudioBand::default(), tint: LayerTint::default(), fold: Fold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default() }
+        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, band: AudioBand::default(), tint: LayerTint::default(), modifiers: Vec::new(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default() }
     }
 }
 
 impl Layer {
     pub fn new(visual: VisualKind, enabled: bool, opacity: f32) -> Self {
         Self { visual, enabled, opacity, ..Self::default() }
+    }
+
+    /// Bring a loaded layer up to date: the one-build `fold` field becomes the
+    /// first modifier; chains are capped.
+    pub fn normalize(&mut self) {
+        if self.fold.enabled {
+            let f = self.fold;
+            self.modifiers.insert(0, Modifier::Fold(Fold { enabled: true, mode: f.mode, segments: f.segments, speed: f.speed, zoom: f.zoom, react: f.react, ..Fold::default() }));
+            self.fold.enabled = false;
+        }
+        self.modifiers.truncate(MAX_MODS);
+    }
+
+    pub fn has_fold(&self) -> bool {
+        self.modifiers.iter().any(|m| matches!(m, Modifier::Fold(_)))
     }
 }
 
@@ -334,13 +563,19 @@ pub struct Settings {
 
 impl Settings {
     pub fn layer(&self, i: usize) -> Layer {
-        self.layers.get(i).copied().unwrap_or_default()
+        self.layers.get(i).cloned().unwrap_or_default()
     }
     pub fn layer_mut(&mut self, i: usize) -> &mut Layer {
         while self.layers.len() <= i {
             self.layers.push(Layer::default());
         }
         &mut self.layers[i]
+    }
+    /// Post-load fix-ups for every layer (see `Layer::normalize`).
+    pub fn normalize(&mut self) {
+        for l in &mut self.layers {
+            l.normalize();
+        }
     }
     pub fn reset_post(&mut self) {
         self.post = PostSettings::default();

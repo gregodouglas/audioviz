@@ -52,13 +52,14 @@ struct LayerParams {
     _pad0: f32,
 };
 
-// Kaleidoscope fold params (director.rs::FoldParams, 32 bytes).
-struct FoldParams {
+// Layer modifier params (director.rs::ModParams, 80 bytes). Each modifier
+// shader documents what it reads from p0..p3.
+struct ModParams {
     resolution: vec2<f32>,
-    segments: f32,
-    angle: f32,
-    zoom: f32,
-    mode: u32,        // 0 radial (two mirrors), 1 tiled (three mirrors)
-    size: f32,        // tiled: triangle inradius in image units
-    _pad0: f32,
+    time: f32,
+    dt: f32,
+    p0: vec4<f32>,
+    p1: vec4<f32>,
+    p2: vec4<f32>,
+    p3: vec4<f32>,
 };

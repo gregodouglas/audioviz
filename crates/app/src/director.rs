@@ -1,22 +1,23 @@
 //! Owns the layer instances (one visual per layer slot), renders the enabled
-//! ones with their own parameters and audio band, and adds them into the
-//! composite. Scene switches dissolve the previous picture into the new one
-//! (a frozen snapshot, cheap). In auto mode it raises cues (track change,
-//! drops, long quiet, dwell) and the app picks the next scene.
+//! ones with their own parameters and audio band, runs each layer's modifier
+//! chain, levels it, and adds it into the composite. Scene switches dissolve
+//! the previous picture into the new one (a frozen snapshot, cheap). In auto
+//! mode it raises cues (track change, drops, long quiet, dwell) and the app
+//! picks the next scene.
 
 use std::time::Instant;
 
 use audioviz_analysis::FeatureFrame;
+use audioviz_metadata::ArtImage;
 use bytemuck::{Pod, Zeroable};
 
 use crate::bandfilter::{BandPass, band_features};
 use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, fullscreen_pass, hdr_texture};
+use crate::scenes::kaleido::Kaleido;
 use crate::scenes::ribbons::Ribbons;
 use crate::scenes::scope::Scope;
-use crate::scenes::kaleido::Kaleido;
 use crate::scenes::starfield::Starfield;
-use audioviz_metadata::ArtImage;
-use crate::settings::{FoldMode, TintMode, MAX_LAYERS, Settings, VisualKind};
+use crate::settings::{FoldMode, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
 use crate::shaders::ShaderSet;
 
 #[repr(C)]
@@ -42,22 +43,82 @@ impl Meter {
     }
 }
 
+/// Generic modifier uniform; each modifier shader documents its p0..p3.
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Default)]
-struct FoldParams {
+struct ModParams {
     resolution: [f32; 2],
-    segments: f32,
-    angle: f32,
-    zoom: f32,
-    mode: u32,
-    size: f32,
-    _pad: f32,
+    time: f32,
+    dt: f32,
+    p0: [f32; 4],
+    p1: [f32; 4],
+    p2: [f32; 4],
+    p3: [f32; 4],
 }
 
-/// Per-layer kaleidoscope fold: its output texture and rotation state.
-struct FoldState {
-    tex: wgpu::TextureView,
+/// Per-slot modifier state that lives across frames (angles, beat counters, rings).
+#[derive(Clone, Copy)]
+struct ModState {
     angle: f32,
+    seg_cur: f32,
+    seg_target: f32,
+    beats: u32,
+    last_beat: f32,
+    last_onset: f32,
+    wander: f32,
+    rings: [f32; 4],
+    ring_i: usize,
+}
+
+impl Default for ModState {
+    fn default() -> Self {
+        Self { angle: 0.0, seg_cur: 0.0, seg_target: 0.0, beats: 0, last_beat: 0.0, last_onset: 0.0, wander: 0.0, rings: [-100.0; 4], ring_i: 0 }
+    }
+}
+
+/// Segment counts the fold steps through on beats.
+const SEG_SET: [f32; 6] = [6.0, 8.0, 5.0, 10.0, 4.0, 12.0];
+
+/// Per-layer modifier chain resources: two ping-pong textures, a history
+/// pair for feedback, a uniform buffer and state per slot.
+struct Chain {
+    ping: [wgpu::TextureView; 2],
+    hist: [wgpu::TextureView; 2],
+    hist_cur: usize,
+    bufs: Vec<wgpu::Buffer>,
+    states: Vec<ModState>,
+}
+
+impl Chain {
+    fn new(device: &wgpu::Device, i: usize, width: u32, height: u32) -> Self {
+        Self {
+            ping: [hdr_texture(device, &format!("layer {i} mod a"), width, height), hdr_texture(device, &format!("layer {i} mod b"), width, height)],
+            hist: [hdr_texture(device, &format!("layer {i} hist a"), width, height), hdr_texture(device, &format!("layer {i} hist b"), width, height)],
+            hist_cur: 0,
+            bufs: (0..MAX_MODS).map(|j| scene::uniform_buffer(device, &format!("layer {i} mod {j}"), std::mem::size_of::<ModParams>() as u64)).collect(),
+            states: vec![ModState::default(); MAX_MODS],
+        }
+    }
+
+    fn resize(&mut self, device: &wgpu::Device, i: usize, width: u32, height: u32) {
+        self.ping = [hdr_texture(device, &format!("layer {i} mod a"), width, height), hdr_texture(device, &format!("layer {i} mod b"), width, height)];
+        self.hist = [hdr_texture(device, &format!("layer {i} hist a"), width, height), hdr_texture(device, &format!("layer {i} hist b"), width, height)];
+    }
+}
+
+/// One pipeline per modifier kind, in `MOD_SHADERS` order.
+const MOD_SHADERS: [&str; 7] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl"];
+
+fn mod_index(m: &Modifier) -> usize {
+    match m {
+        Modifier::Fold(_) => 0,
+        Modifier::Feedback(_) => 1,
+        Modifier::Polar(_) => 2,
+        Modifier::Ripple(_) => 3,
+        Modifier::Edge(_) => 4,
+        Modifier::Chroma(_) => 5,
+        Modifier::Mask(_) => 6,
+    }
 }
 
 struct LayerPipelines {
@@ -85,10 +146,9 @@ pub struct Director {
     pub layers: Vec<Box<dyn Scene>>,
     filters: Vec<BandPass>,
     meters: Vec<Meter>,
-    folds: Vec<FoldState>,
-    fold_bufs: Vec<wgpu::Buffer>,
-    fold_layout: wgpu::BindGroupLayout,
-    fold_pipeline: wgpu::RenderPipeline,
+    chains: Vec<Chain>,
+    mod_layout: wgpu::BindGroupLayout,
+    mod_pipelines: Vec<wgpu::RenderPipeline>,
     mirror_sampler: wgpu::Sampler,
     /// Smoothed effective tint per layer.
     tints: Vec<[f32; 3]>,
@@ -125,6 +185,95 @@ fn make(kind: VisualKind, device: &wgpu::Device, w: u32, h: u32, shaders: &Shade
     })
 }
 
+fn energy_of(f: &FeatureFrame) -> f32 {
+    ((f.bass_att + f.mid_att + f.treb_att) / 3.0).clamp(0.0, 2.5)
+}
+
+/// Advance a modifier's state for this frame and produce its uniform.
+/// Returns the params and whether the pass writes the layer's history (feedback).
+fn mod_params(m: &Modifier, st: &mut ModState, f: &FeatureFrame, tint: [f32; 3], dt: f32, time: f32, width: u32, height: u32) -> ModParams {
+    let energy = energy_of(f);
+    let onset = f.onset_pulse[3].min(1.0);
+    let bass = (f.bass_att - 1.0).clamp(-1.0, 1.5);
+    let beat = f.beat_pulse * f.beat_confidence;
+    let beat_hit = beat > st.last_beat + 0.4;
+    st.last_beat = beat;
+    let onset_hit = onset > st.last_onset + 0.25;
+    st.last_onset = onset;
+    let mut p = ModParams { resolution: [width as f32, height as f32], time, dt, ..Default::default() };
+    match m {
+        Modifier::Fold(k) => {
+            st.angle += dt * k.speed * (0.4 + 0.6 * energy * k.react) + dt * 1.5 * k.react * onset;
+            if st.seg_cur <= 0.0 {
+                st.seg_cur = k.segments as f32;
+                st.seg_target = st.seg_cur;
+            }
+            if k.step_beats > 0 {
+                if beat_hit {
+                    st.beats += 1;
+                    if st.beats % k.step_beats == 0 {
+                        st.seg_target = SEG_SET[(st.beats / k.step_beats) as usize % SEG_SET.len()];
+                    }
+                }
+            } else {
+                st.seg_target = k.segments.clamp(1, 32) as f32;
+            }
+            st.seg_cur += (st.seg_target - st.seg_cur) * (1.0 - (-dt / 0.15).exp());
+            st.wander += dt * 0.12 * k.wander * (0.5 + 0.5 * energy);
+            let off = [k.offset * (st.wander * 0.7).sin(), k.offset * (st.wander * 0.9 + 1.0).cos()];
+            let zoom = (k.zoom * (1.0 + 0.06 * k.react * bass)).max(0.05);
+            let mode = match k.mode {
+                FoldMode::Radial => 0.0,
+                FoldMode::Tiled => 1.0,
+                FoldMode::Pinwheel => 2.0,
+            };
+            p.p0 = [st.seg_cur, st.angle, zoom, mode];
+            p.p1 = [0.45, off[0], off[1], 0.0];
+        }
+        Modifier::Feedback(k) => {
+            let zoom = 1.0 + k.zoom * dt * (0.6 + 0.4 * energy * k.react);
+            let spin = k.spin * dt * (1.0 + 3.0 * k.react * onset);
+            let decay = (k.decay * (1.0 - 0.15 * k.react * (1.0 - energy).clamp(0.0, 1.0))).clamp(0.0, 0.985);
+            p.p0 = [decay, zoom, spin, 0.0];
+            p.p1 = [0.0, 0.0, 0.0, 0.0];
+        }
+        Modifier::Polar(k) => {
+            st.angle += dt * k.spin * (0.5 + 0.5 * energy * k.react);
+            let radius = (k.radius * (1.0 + 0.08 * k.react * bass)).max(0.05);
+            p.p0 = [k.unwrap as u32 as f32, radius, st.angle, 0.0];
+        }
+        Modifier::Ripple(k) => {
+            if beat_hit || (k.react > 1.5 && onset_hit) {
+                st.rings[st.ring_i] = time;
+                st.ring_i = (st.ring_i + 1) % 4;
+            }
+            let amount = k.amount * (0.6 + 0.4 * energy * k.react);
+            p.p0 = [amount, k.wavelength, k.speed, 0.08];
+            p.p1 = [time - st.rings[0], time - st.rings[1], time - st.rings[2], time - st.rings[3]];
+            p.p2 = [k.sine * 0.02, 12.0, time * 1.5, 0.0];
+        }
+        Modifier::Edge(k) => {
+            let strength = k.strength * (0.7 + 0.3 * energy * k.react);
+            p.p0 = [strength, k.keep, k.tinted as u32 as f32, 0.0];
+            p.p1 = [tint[0], tint[1], tint[2], 0.0];
+        }
+        Modifier::Chroma(k) => {
+            let amount = k.amount * (1.0 + k.react * (2.0 * onset + 0.5 * (f.treb_att - 1.0).clamp(-1.0, 2.0)));
+            p.p0 = [amount, k.radial as u32 as f32, 0.0, 0.0];
+        }
+        Modifier::Mask(k) => {
+            let radius = (k.radius * (1.0 + 0.1 * k.react * bass)).max(0.01);
+            let shape = match k.shape {
+                MaskShape::Circle => 0.0,
+                MaskShape::Band => 1.0,
+                MaskShape::Hex => 2.0,
+            };
+            p.p0 = [shape, radius, k.soft, k.invert as u32 as f32];
+        }
+    }
+    p
+}
+
 impl Director {
     pub fn new(device: &wgpu::Device, shaders: &ShaderSet, width: u32, height: u32, settings: &Settings) -> Result<Self, String> {
         let sampler = scene::linear_sampler(device);
@@ -141,12 +290,11 @@ impl Director {
         let filters = (0..MAX_LAYERS).map(|_| BandPass::new(20.0, 400.0, 48_000.0)).collect();
         let meters = (0..MAX_LAYERS).map(|i| Meter::new(device, i, width, height)).collect();
         let tints = (0..MAX_LAYERS).map(|i| settings.layer(i).tint.color).collect();
-        let folds = (0..MAX_LAYERS).map(|i| FoldState { tex: hdr_texture(device, &format!("layer {i} fold"), width, height), angle: 0.0 }).collect();
-        let fold_bufs = (0..MAX_LAYERS).map(|i| scene::uniform_buffer(device, &format!("fold {i}"), std::mem::size_of::<FoldParams>() as u64)).collect();
-        let fold_layout = scene::tex_layout(device, "fold", 0);
-        let fold_pipeline = build_fold(device, shaders, &fold_layout)?;
+        let chains = (0..MAX_LAYERS).map(|i| Chain::new(device, i, width, height)).collect();
+        let mod_layout = scene::tex_layout(device, "mod", 1);
+        let mod_pipelines = build_mods(device, shaders, &mod_layout)?;
         let mirror_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("fold mirror"),
+            label: Some("mod mirror"),
             address_mode_u: wgpu::AddressMode::MirrorRepeat,
             address_mode_v: wgpu::AddressMode::MirrorRepeat,
             mag_filter: wgpu::FilterMode::Linear,
@@ -158,10 +306,9 @@ impl Director {
             layers,
             filters,
             meters,
-            folds,
-            fold_bufs,
-            fold_layout,
-            fold_pipeline,
+            chains,
+            mod_layout,
+            mod_pipelines,
             mirror_sampler,
             tints,
             layer_bufs,
@@ -201,7 +348,8 @@ impl Director {
     }
 
     /// Move layer `from` to position `to`, carrying its live state (particles,
-    /// persistence, meter) with it. The caller reorders `settings.layers` the same way.
+    /// persistence, meter, modifier chain) with it. The caller reorders
+    /// `settings.layers` the same way.
     pub fn move_layer(&mut self, from: usize, to: usize) {
         let n = self.layers.len().min(MAX_LAYERS);
         if from >= n || to >= n || from == to {
@@ -215,8 +363,28 @@ impl Director {
         self.meters.insert(to, m);
         let t = self.tints.remove(from);
         self.tints.insert(to, t);
-        let f = self.folds.remove(from);
-        self.folds.insert(to, f);
+        let c = self.chains.remove(from);
+        self.chains.insert(to, c);
+    }
+
+    /// Move a modifier within layer `layer`'s chain so its live state follows it.
+    pub fn move_modifier(&mut self, layer: usize, from: usize, to: usize) {
+        if let Some(c) = self.chains.get_mut(layer) {
+            if from < c.states.len() && to < c.states.len() && from != to {
+                let s = c.states.remove(from);
+                c.states.insert(to, s);
+            }
+        }
+    }
+
+    /// Drop a modifier's live state when it is removed from the chain.
+    pub fn remove_modifier(&mut self, layer: usize, at: usize) {
+        if let Some(c) = self.chains.get_mut(layer) {
+            if at < c.states.len() {
+                c.states.remove(at);
+                c.states.push(ModState::default());
+            }
+        }
     }
 
     pub fn seconds_since_switch(&self) -> f32 {
@@ -277,8 +445,8 @@ impl Director {
         for (i, m) in self.meters.iter_mut().enumerate() {
             m.down = hdr_texture(device, &format!("layer {i} down"), width / 8, height / 8);
         }
-        for (i, f) in self.folds.iter_mut().enumerate() {
-            f.tex = hdr_texture(device, &format!("layer {i} fold"), width, height);
+        for (i, c) in self.chains.iter_mut().enumerate() {
+            c.resize(device, i, width, height);
         }
         self.dissolve = None;
     }
@@ -289,9 +457,9 @@ impl Director {
             Ok(p) => self.layer_pipelines = p,
             Err(e) => errors.push(format!("layer: {e}")),
         }
-        match build_fold(device, shaders, &self.fold_layout) {
-            Ok(p) => self.fold_pipeline = p,
-            Err(e) => errors.push(format!("fold: {e}")),
+        match build_mods(device, shaders, &self.mod_layout) {
+            Ok(p) => self.mod_pipelines = p,
+            Err(e) => errors.push(format!("modifiers: {e}")),
         }
         if let Err(e) = build_mix(device, shaders, &self.mix_layout).map(|p| self.mix_pipeline = p) {
             errors.push(format!("mix: {e}"));
@@ -354,19 +522,39 @@ impl Director {
             let ctx = FrameCtx { features: feats, tint: self.tints[i], dt, time, width: self.width, height: self.height, points: pts, auto_gain, art: art_image, art_id, photos_folder: &settings.photos_folder };
             self.layers[i].render(queue, encoder, &ctx, &layer);
             queue.write_buffer(&self.layer_bufs[i], 0, bytemuck::bytes_of(&LayerParams { opacity: layer.opacity, dt, flags: level as u32, _pad: 0.0 }));
-            // Kaleidoscope fold: mirrors over the visual's output, spinning with the music.
-            let fo = layer.fold;
-            if fo.enabled {
-                let energy = ((feats.bass_att + feats.mid_att + feats.treb_att) / 3.0).clamp(0.0, 2.5);
-                let st = &mut self.folds[i];
-                st.angle += dt * fo.speed * (0.4 + 0.6 * energy * fo.react) + dt * 1.5 * fo.react * feats.onset_pulse[3].min(1.0);
-                let zoom = (fo.zoom * (1.0 + 0.06 * fo.react * (feats.bass_att - 1.0).clamp(-1.0, 1.5))).max(0.05);
-                let p = FoldParams { resolution: [self.width as f32, self.height as f32], segments: fo.segments.clamp(2, 32) as f32, angle: st.angle, zoom, mode: (fo.mode == FoldMode::Tiled) as u32, size: 0.45, _pad: 0.0 };
-                queue.write_buffer(&self.fold_bufs[i], 0, bytemuck::bytes_of(&p));
-                let g = scene::tex_group(device, &self.fold_layout, &[self.layers[i].output()], &self.mirror_sampler, &self.fold_bufs[i]);
-                fullscreen_pass(encoder, "fold", &self.folds[i].tex, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.fold_pipeline, &g);
+
+            // Modifier chain: advance every slot's state and write its uniform
+            // first (mutable), then run the passes (immutable borrows only).
+            let mut passes: Vec<(usize, usize)> = Vec::new(); // (slot, pipeline index)
+            {
+                let chain = &mut self.chains[i];
+                for (j, m) in layer.modifiers.iter().enumerate().take(MAX_MODS) {
+                    if !m.enabled() {
+                        continue;
+                    }
+                    let p = mod_params(m, &mut chain.states[j], feats, self.tints[i], dt, time, self.width, self.height);
+                    queue.write_buffer(&chain.bufs[j], 0, bytemuck::bytes_of(&p));
+                    passes.push((j, mod_index(m)));
+                }
             }
-            let out = if fo.enabled { &self.folds[i].tex } else { self.layers[i].output() };
+            let chain = &self.chains[i];
+            let mut src: &wgpu::TextureView = self.layers[i].output();
+            let mut pp = 0usize;
+            let mut hist_flip = false;
+            for (j, pi) in passes {
+                let is_feedback = pi == 1;
+                let (hist_prev, hist_cur) = (chain.hist_cur, 1 - chain.hist_cur);
+                let dst: &wgpu::TextureView = if is_feedback { &chain.hist[hist_cur] } else { &chain.ping[pp] };
+                let g = scene::tex_group(device, &self.mod_layout, &[src, &chain.hist[hist_prev]], &self.mirror_sampler, &chain.bufs[j]);
+                fullscreen_pass(encoder, "modifier", dst, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.mod_pipelines[pi], &g);
+                src = dst;
+                if is_feedback {
+                    hist_flip = true;
+                } else {
+                    pp = 1 - pp;
+                }
+            }
+            let out = src;
             let m = &self.meters[i];
             let (prev_s, cur_s) = (m.cur, 1 - m.cur);
             if level {
@@ -380,6 +568,9 @@ impl Director {
             fullscreen_pass(encoder, "layer", &self.composite, load, &self.layer_pipelines.add, &group);
             if level {
                 self.meters[i].cur = cur_s;
+            }
+            if hist_flip {
+                self.chains[i].hist_cur = 1 - self.chains[i].hist_cur;
             }
             first = false;
         }
@@ -412,10 +603,15 @@ fn smoothstep(x: f32) -> f32 {
     x * x * (3.0 - 2.0 * x)
 }
 
-fn build_fold(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Result<wgpu::RenderPipeline, String> {
+fn build_mods(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Result<Vec<wgpu::RenderPipeline>, String> {
     scene::guarded(device, || {
-        let m = scene::shader(device, shaders, "fold.wgsl");
-        scene::pipeline(device, "fold", layout, &m, HDR_FORMAT, None)
+        MOD_SHADERS
+            .iter()
+            .map(|name| {
+                let m = scene::shader(device, shaders, name);
+                scene::pipeline(device, name, layout, &m, HDR_FORMAT, None)
+            })
+            .collect()
     })
 }
 
@@ -438,4 +634,23 @@ fn build_mix(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGrou
         let m = scene::shader(device, shaders, "mix.wgsl");
         scene::pipeline(device, "mix", layout, &m, HDR_FORMAT, None)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mod_params_layout_matches_wgsl() {
+        assert_eq!(std::mem::size_of::<ModParams>(), 80);
+        assert_eq!(std::mem::offset_of!(ModParams, p0), 16);
+        assert_eq!(std::mem::offset_of!(ModParams, p3), 64);
+    }
+
+    #[test]
+    fn every_modifier_kind_has_a_shader() {
+        for m in Modifier::KINDS.iter().map(|(_, make)| make()) {
+            assert!(mod_index(&m) < MOD_SHADERS.len());
+        }
+    }
 }

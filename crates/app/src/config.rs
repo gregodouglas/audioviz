@@ -37,7 +37,9 @@ pub fn load() -> Settings {
 pub fn parse(text: &str) -> anyhow::Result<Settings> {
     let mut raw: Value = serde_json::from_str(text)?;
     migrate(&mut raw);
-    Ok(serde_json::from_value(raw)?)
+    let mut s: Settings = serde_json::from_value(raw)?;
+    s.normalize();
+    Ok(s)
 }
 
 fn f(obj: &Map<String, Value>, k: &str) -> Option<f64> {

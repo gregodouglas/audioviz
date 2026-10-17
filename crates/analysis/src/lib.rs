@@ -36,7 +36,7 @@ impl Default for AnalyzerConfig {
 const N_LONG: usize = 8192;
 const N_MID: usize = 2048;
 const N_SHORT: usize = 512;
-const SILENCE_RMS: f32 = 0.001; // -60 dBFS
+const SILENCE_RMS: f32 = 0.0001; // -80 dBFS: quiet app volume must still count as signal
 
 /// One frame of musical features. "Normalized" values are relative to a
 /// running average or peak, so quiet and loud tracks look alike.

@@ -100,6 +100,9 @@ impl Scene for Starfield {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, s: &mut Settings) {
+        if ui.button("Reset starfield to defaults").clicked() {
+            s.reset_starfield();
+        }
         ui.add(egui::Slider::new(&mut s.star_mass, 0.2..=3.0).text("lens mass"));
         ui.add(egui::Slider::new(&mut s.star_density, 0.1..=2.0).text("star density"));
         ui.add(egui::Slider::new(&mut s.star_grid, 0.0..=3.0).text("grid lines"));

@@ -46,9 +46,10 @@ fn agx_eotf(c: vec3<f32>) -> vec3<f32> {
 @fragment
 fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
     let hdr = textureSample(hdr_tex, samp, in.uv).rgb;
-    // The up-chain accumulates levels with 0.6x per step (sum of weights ~2.4);
-    // normalize so `bloom` is a fraction of the base image.
-    let bloom = textureSample(bloom_tex, samp, in.uv).rgb / 2.4;
+    // The up-chain accumulates levels with 0.6x per step. Normalize by the
+    // level count so the tight half-res glow matches the original slider feel
+    // and the wide levels stay subdued.
+    let bloom = textureSample(bloom_tex, samp, in.uv).rgb / 6.0;
     let auto_e = textureSampleLevel(expo_tex, samp, vec2<f32>(0.5), 0.0).r;
     var col = (hdr + bloom * P.bloom) * P.exposure * auto_e;
     col = agx_eotf(agx(col));

@@ -60,6 +60,47 @@ pub struct Settings {
     pub show_ui: bool,
 }
 
+impl Settings {
+    pub fn reset_post(&mut self) {
+        let d = Settings::default();
+        self.exposure = d.exposure;
+        self.auto_exposure = d.auto_exposure;
+        self.bloom = d.bloom;
+        self.grain = d.grain;
+    }
+    pub fn reset_scope(&mut self) {
+        let d = Settings::default();
+        self.gain = d.gain;
+        self.auto_gain = d.auto_gain;
+        self.rotation_deg = d.rotation_deg;
+        self.beam_width = d.beam_width;
+        self.beam_intensity = d.beam_intensity;
+        self.persistence = d.persistence;
+        self.beat_pulse = d.beat_pulse;
+    }
+    pub fn reset_ribbons(&mut self) {
+        let d = Settings::default();
+        self.ribbons_speed = d.ribbons_speed;
+        self.ribbons_scale = d.ribbons_scale;
+        self.ribbons_curl = d.ribbons_curl;
+        self.ribbons_vortex = d.ribbons_vortex;
+        self.ribbons_width = d.ribbons_width;
+        self.ribbons_intensity = d.ribbons_intensity;
+        self.ribbons_persistence = d.ribbons_persistence;
+        self.ribbons_saturation = d.ribbons_saturation;
+        self.ribbons_count = d.ribbons_count;
+    }
+    pub fn reset_starfield(&mut self) {
+        let d = Settings::default();
+        self.star_mass = d.star_mass;
+        self.star_density = d.star_density;
+        self.star_grid = d.star_grid;
+        self.star_twinkle = d.star_twinkle;
+        self.star_drift = d.star_drift;
+        self.type_scale = d.type_scale;
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -173,6 +214,9 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stat
                 });
                 ui.add(egui::Slider::new(&mut settings.bloom, 0.0..=3.0).text("bloom"));
                 ui.add(egui::Slider::new(&mut settings.grain, 0.0..=1.0).text("grain"));
+                if ui.button("Reset post to defaults").clicked() {
+                    settings.reset_post();
+                }
             });
 
             ui.collapsing("Display", |ui| {

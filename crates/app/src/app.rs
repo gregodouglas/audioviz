@@ -53,6 +53,10 @@ struct Running {
     post_error: Option<String>,
 }
 
+fn time_floor(t: f32) -> i32 {
+    t.floor() as i32
+}
+
 pub struct App {
     state: Option<Running>,
 }
@@ -219,7 +223,17 @@ impl Running {
         }
         let features = self.engine.features();
         let now_playing = self.metadata.latest();
-        let target = if features.peak > 0.02 { (0.9 / features.peak).clamp(0.3, 6.0) } else { self.auto_gain_value };
+        if tracing::enabled!(tracing::Level::DEBUG) && (time_floor(self.start.elapsed().as_secs_f32()) != time_floor(self.start.elapsed().as_secs_f32() - dt)) {
+            let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+            for p in &self.pending_points {
+                lo = lo.min(p[0]).min(p[1]);
+                hi = hi.max(p[0]).max(p[1]);
+            }
+            tracing::debug!("peak {:.3} rms {:.3} auto_gain {:.2} points {} range [{:.3}, {:.3}] silent {}", features.peak, features.rms, self.auto_gain_value, self.pending_points.len(), lo, hi, features.silent);
+        }
+        // Spotify's own volume scales what loopback captures, so the trace must
+        // be normalized over a wide range (a -45 dBFS signal still fills the screen).
+        let target = if features.peak > 0.0005 { (0.9 / features.peak).clamp(0.3, 200.0) } else { self.auto_gain_value };
         self.auto_gain_value += (target - self.auto_gain_value) * (1.0 - (-dt / 1.5).exp());
         self.director.consider(&features, now_playing.as_ref().map(|n| n.track_id), dt);
 
@@ -365,9 +379,12 @@ impl ApplicationHandler for App {
         if self.state.is_some() {
             return;
         }
-        let attrs = Window::default_attributes()
-            .with_title("audioviz")
-            .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 800.0));
+        // AUDIOVIZ_SIZE=WxH overrides the initial window size (dev).
+        let (w, h) = std::env::var("AUDIOVIZ_SIZE")
+            .ok()
+            .and_then(|v| v.split_once('x').and_then(|(a, b)| Some((a.parse::<f64>().ok()?, b.parse::<f64>().ok()?))))
+            .unwrap_or((1280.0, 800.0));
+        let attrs = Window::default_attributes().with_title("audioviz").with_inner_size(winit::dpi::PhysicalSize::new(w, h));
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
         match Running::new(window) {
             Ok(r) => self.state = Some(r),

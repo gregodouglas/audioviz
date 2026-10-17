@@ -161,6 +161,9 @@ impl Scene for Scope {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, s: &mut Settings) {
+        if ui.button("Reset scope to defaults").clicked() {
+            s.reset_scope();
+        }
         ui.add(egui::Slider::new(&mut s.gain, 0.05..=3.0).logarithmic(true).text("gain"));
         ui.checkbox(&mut s.auto_gain, "auto gain");
         ui.add(egui::Slider::new(&mut s.rotation_deg, -180.0..=180.0).text("rotation °"));

@@ -11,6 +11,10 @@ pub fn path() -> Option<PathBuf> {
 
 pub fn load() -> Settings {
     let Some(p) = path() else { return Settings::default() };
+    if std::env::var_os("AUDIOVIZ_DEFAULTS").is_some() {
+        tracing::info!("AUDIOVIZ_DEFAULTS set; ignoring {}", p.display());
+        return Settings::default();
+    }
     match std::fs::read_to_string(&p) {
         Ok(text) => match serde_json::from_str::<Settings>(&text) {
             Ok(s) => {

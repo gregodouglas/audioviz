@@ -225,6 +225,9 @@ impl Scene for Ribbons {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, s: &mut Settings) {
+        if ui.button("Reset ribbons to defaults").clicked() {
+            s.reset_ribbons();
+        }
         ui.add(egui::Slider::new(&mut s.ribbons_count, 256..=PARTICLES).logarithmic(true).text("particles"));
         ui.add(egui::Slider::new(&mut s.ribbons_speed, 0.02..=2.0).logarithmic(true).text("speed"));
         ui.add(egui::Slider::new(&mut s.ribbons_scale, 0.3..=6.0).logarithmic(true).text("field scale"));

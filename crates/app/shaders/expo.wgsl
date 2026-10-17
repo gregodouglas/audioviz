@@ -20,7 +20,8 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
         for (var x = 0; x < 4; x++) {
             let uv = (vec2<f32>(f32(x), f32(y)) + 0.5) / 4.0;
             let c = textureSampleLevel(mean_tex, samp, uv, 0.0).rgb;
-            mean += dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+            // Max channel, not luminance: the tint color must not change exposure.
+            mean += max(c.r, max(c.g, c.b));
         }
     }
     mean /= 16.0;

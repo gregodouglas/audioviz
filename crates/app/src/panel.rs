@@ -9,7 +9,7 @@ use egui::{Align2, Color32, Rect, Sense, pos2, vec2};
 use crate::overlays::CalibrationView;
 use crate::scene::Scene;
 use crate::scene_store::SceneDef;
-use crate::settings::{AudioBand, FoldMode, ImageSource, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Section, Settings, TintMode, VisualKind};
+use crate::settings::{AudioBand, FoldMode, FractalMode, ImageSource, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Section, Settings, TintMode, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3};
 use crate::widgets::{self, ghost_button, hint, section_header, slider_row, small_caps, toggle_row};
 
@@ -390,6 +390,44 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             toggle_row(ui, "Radial from the centre", &mut k.radial);
             slider_row(ui, "Reacts", &mut k.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Pulses with treble and onsets.");
+        }
+        Modifier::Fractal(k) => {
+            ui.horizontal(|ui| {
+                ui.label("Recursion");
+                if pill(ui, "kaleidoscopic IFS", k.mode == FractalMode::Kifs) {
+                    k.mode = FractalMode::Kifs;
+                }
+                if pill(ui, "julia", k.mode == FractalMode::Julia) {
+                    k.mode = FractalMode::Julia;
+                }
+            });
+            let mut it = k.iterations as f32;
+            slider_row(ui, "Depth", &mut it, 1.0..=8.0, |v| format!("{v:.0}"), false);
+            k.iterations = it.round() as u32;
+            if k.mode == FractalMode::Kifs {
+                slider_row(ui, "Scale per level", &mut k.scale, 1.1..=3.0, |v| format!("{v:.2}"), false);
+                slider_row(ui, "Twist", &mut k.angle, -2.0..=2.0, |v| format!("{v:.2}"), false);
+                slider_row(ui, "Shift", &mut k.offset, 0.0..=2.0, |v| format!("{v:.2}"), false);
+            } else {
+                slider_row(ui, "Orbit speed", &mut k.angle, -2.0..=2.0, |v| format!("{v:.2}"), false);
+                slider_row(ui, "Orbit size", &mut k.offset, 0.0..=1.0, |v| format!("{v:.2}"), false);
+            }
+            slider_row(ui, "Zoom", &mut k.zoom, 0.2..=3.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Deeper levels", &mut k.falloff, 0.1..=1.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Reacts", &mut k.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "IFS folds, turns, scales and shifts the picture at every level so it recurs at every size. Julia pulls it into z² + c filaments; the twist and scale breathe with the music.");
+        }
+        Modifier::Lumi(k) => {
+            slider_row(ui, "Fresh glow", &mut k.fresh_gain, 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Fresh release", &mut k.fresh_s, 0.05..=2.0, |v| format!("{v:.2} s"), false);
+            slider_row(ui, "Afterglow", &mut k.afterglow_gain, 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Afterglow release", &mut k.afterglow_s, 0.5..=20.0, |v| format!("{v:.1} s"), true);
+            slider_row(ui, "Afterglow hue", &mut k.hue_shift, -180.0..=180.0, |v| format!("{v:.0}°"), false);
+            slider_row(ui, "UV saturation", &mut k.uv, 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Excite on onsets", &mut k.excite, 0.0..=4.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Sparkle", &mut k.sparkle, 0.0..=3.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Reacts", &mut k.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "A dual phosphor: the picture flashes in its own colour and leaves a long afterglow in a shifted hue; charged areas sparkle on transients like plankton.");
         }
         Modifier::Mask(k) => {
             ui.horizontal(|ui| {

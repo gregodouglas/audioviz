@@ -212,6 +212,67 @@ impl Default for Mask {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FractalMode {
+    /// Kaleidoscopic IFS: fold, rotate, scale, shift; the cell recurs at every scale.
+    Kifs,
+    /// z^2 + c warp: the picture pulled into Julia-set filaments.
+    Julia,
+}
+
+/// Fractal modifier.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Fractal {
+    pub enabled: bool,
+    pub mode: FractalMode,
+    pub iterations: u32,
+    /// KIFS scale per step (>1 shrinks the cell each level).
+    pub scale: f32,
+    /// KIFS rotation per step, radians; Julia: speed of c's orbit.
+    pub angle: f32,
+    /// KIFS shift per step; Julia: radius of c's orbit.
+    pub offset: f32,
+    pub zoom: f32,
+    /// Weight of each deeper level relative to the one above.
+    pub falloff: f32,
+    pub react: f32,
+}
+
+impl Default for Fractal {
+    fn default() -> Self {
+        Self { enabled: true, mode: FractalMode::Kifs, iterations: 4, scale: 1.9, angle: 0.35, offset: 0.8, zoom: 1.0, falloff: 0.8, react: 1.0 }
+    }
+}
+
+/// Luminescence modifier: fresh glow, hue-shifted afterglow, UV saturation, sparkle.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Luminescence {
+    pub enabled: bool,
+    /// Fast pool release, seconds.
+    pub fresh_s: f32,
+    /// Slow pool release, seconds (the afterglow).
+    pub afterglow_s: f32,
+    pub fresh_gain: f32,
+    pub afterglow_gain: f32,
+    /// Afterglow hue, degrees away from the layer tint.
+    pub hue_shift: f32,
+    /// Extra excitation on onsets.
+    pub excite: f32,
+    /// Fluorescent saturation of the excited picture.
+    pub uv: f32,
+    pub sparkle: f32,
+    pub react: f32,
+}
+
+impl Default for Luminescence {
+    fn default() -> Self {
+        Self { enabled: true, fresh_s: 0.35, afterglow_s: 4.0, fresh_gain: 0.6, afterglow_gain: 0.5, hue_shift: -140.0, excite: 1.5, uv: 0.6, sparkle: 1.0, react: 1.0 }
+    }
+}
+
 /// A modifier: one full-screen pass over a layer's picture before the mix.
 /// A layer runs an ordered chain of up to `MAX_MODS`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -224,14 +285,18 @@ pub enum Modifier {
     Edge(Edge),
     Chroma(ChromaSplit),
     Mask(Mask),
+    Fractal(Fractal),
+    Lumi(Luminescence),
 }
 
 pub const MAX_MODS: usize = 6;
 
 impl Modifier {
     /// Every kind with a constructor, in the order the panel offers them.
-    pub const KINDS: [(&'static str, fn() -> Modifier); 7] = [
+    pub const KINDS: [(&'static str, fn() -> Modifier); 9] = [
         ("kaleidoscope", || Modifier::Fold(Fold::default())),
+        ("fractal", || Modifier::Fractal(Fractal::default())),
+        ("luminescence", || Modifier::Lumi(Luminescence::default())),
         ("feedback", || Modifier::Feedback(Feedback::default())),
         ("polar", || Modifier::Polar(Polar::default())),
         ("ripple", || Modifier::Ripple(Ripple::default())),
@@ -249,6 +314,8 @@ impl Modifier {
             Modifier::Edge(_) => "edge",
             Modifier::Chroma(_) => "chroma split",
             Modifier::Mask(_) => "mask",
+            Modifier::Fractal(_) => "fractal",
+            Modifier::Lumi(_) => "luminescence",
         }
     }
 
@@ -265,6 +332,8 @@ impl Modifier {
             Modifier::Edge(m) => &m.enabled,
             Modifier::Chroma(m) => &m.enabled,
             Modifier::Mask(m) => &m.enabled,
+            Modifier::Fractal(m) => &m.enabled,
+            Modifier::Lumi(m) => &m.enabled,
         }
     }
 
@@ -277,6 +346,8 @@ impl Modifier {
             Modifier::Edge(m) => &mut m.enabled,
             Modifier::Chroma(m) => &mut m.enabled,
             Modifier::Mask(m) => &mut m.enabled,
+            Modifier::Fractal(m) => &mut m.enabled,
+            Modifier::Lumi(m) => &mut m.enabled,
         }
     }
 }

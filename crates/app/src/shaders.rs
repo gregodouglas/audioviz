@@ -34,6 +34,8 @@ shader_table!(
     "edge.wgsl",
     "chroma.wgsl",
     "mask.wgsl",
+    "fractal.wgsl",
+    "lumi.wgsl",
     "ribbons_params.wgsl",
     "ribbons_update.wgsl",
     "ribbons_draw.wgsl",

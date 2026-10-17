@@ -12,12 +12,12 @@ use audioviz_metadata::ArtImage;
 use bytemuck::{Pod, Zeroable};
 
 use crate::bandfilter::{BandPass, band_features};
-use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, fullscreen_pass, hdr_texture};
+use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, fullscreen_pass, fullscreen_pass2, hdr_texture};
 use crate::scenes::kaleido::Kaleido;
 use crate::scenes::ribbons::Ribbons;
 use crate::scenes::scope::Scope;
 use crate::scenes::starfield::Starfield;
-use crate::settings::{FoldMode, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
+use crate::settings::{FoldMode, FractalMode, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
 use crate::shaders::ShaderSet;
 
 #[repr(C)]
@@ -107,7 +107,10 @@ impl Chain {
 }
 
 /// One pipeline per modifier kind, in `MOD_SHADERS` order.
-const MOD_SHADERS: [&str; 7] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl"];
+const MOD_SHADERS: [&str; 9] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl", "fractal.wgsl", "lumi.wgsl"];
+/// Pipeline indices with special plumbing.
+const MOD_FEEDBACK: usize = 1;
+const MOD_LUMI: usize = 8;
 
 fn mod_index(m: &Modifier) -> usize {
     match m {
@@ -118,7 +121,20 @@ fn mod_index(m: &Modifier) -> usize {
         Modifier::Edge(_) => 4,
         Modifier::Chroma(_) => 5,
         Modifier::Mask(_) => 6,
+        Modifier::Fractal(_) => 7,
+        Modifier::Lumi(_) => 8,
     }
+}
+
+/// Rotate an RGB colour's hue by `deg` degrees (YIQ rotation; cheap and fine for tints).
+fn hue_rotate(c: [f32; 3], deg: f32) -> [f32; 3] {
+    let (r, g, b) = (c[0], c[1], c[2]);
+    let y = 0.299 * r + 0.587 * g + 0.114 * b;
+    let i = 0.596 * r - 0.274 * g - 0.322 * b;
+    let q = 0.211 * r - 0.523 * g + 0.312 * b;
+    let (s, co) = deg.to_radians().sin_cos();
+    let (i2, q2) = (i * co - q * s, i * s + q * co);
+    [(y + 0.956 * i2 + 0.621 * q2).max(0.0), (y - 0.272 * i2 - 0.647 * q2).max(0.0), (y - 1.106 * i2 + 1.703 * q2).max(0.0)]
 }
 
 struct LayerPipelines {
@@ -260,6 +276,33 @@ fn mod_params(m: &Modifier, st: &mut ModState, f: &FeatureFrame, tint: [f32; 3],
         Modifier::Chroma(k) => {
             let amount = k.amount * (1.0 + k.react * (2.0 * onset + 0.5 * (f.treb_att - 1.0).clamp(-1.0, 2.0)));
             p.p0 = [amount, k.radial as u32 as f32, 0.0, 0.0];
+        }
+        Modifier::Fractal(k) => {
+            st.angle += dt * k.angle * 0.3 * (0.5 + 0.5 * energy * k.react) + dt * 0.8 * k.react * onset;
+            let scale = (k.scale * (1.0 + 0.05 * k.react * bass)).max(1.05);
+            match k.mode {
+                FractalMode::Kifs => {
+                    p.p0 = [0.0, k.iterations.clamp(1, 10) as f32, scale, st.angle];
+                    p.p1 = [k.offset, k.zoom.max(0.05), 0.0, 0.0];
+                }
+                FractalMode::Julia => {
+                    // c orbits slowly inside the interesting region; onsets nudge it.
+                    let r = 0.25 + 0.5 * k.offset.clamp(0.0, 1.0);
+                    let c = [-0.4 + r * st.angle.cos() * 0.6, r * (st.angle * 1.3).sin() * 0.6];
+                    p.p0 = [1.0, k.iterations.clamp(1, 10) as f32, scale, 0.0];
+                    p.p1 = [0.0, k.zoom.max(0.05), c[0], c[1]];
+                }
+            }
+            p.p2 = [k.falloff.clamp(0.1, 1.0), 0.0, 0.0, 0.0];
+        }
+        Modifier::Lumi(k) => {
+            let fresh = tint;
+            let faded = hue_rotate(tint, k.hue_shift);
+            p.p0 = [k.fresh_s.max(0.02), k.afterglow_s.max(0.1), k.fresh_gain, k.afterglow_gain];
+            p.p1 = [fresh[0], fresh[1], fresh[2], k.excite * k.react];
+            p.p2 = [faded[0], faded[1], faded[2], k.sparkle * k.react];
+            // Charge rate keeps the slow pool's steady state near the picture's own level.
+            p.p3 = [k.uv, onset, 1.0 / k.afterglow_s.max(0.1), 0.0];
         }
         Modifier::Mask(k) => {
             let radius = (k.radius * (1.0 + 0.1 * k.react * bass)).max(0.01);
@@ -542,15 +585,22 @@ impl Director {
             let mut pp = 0usize;
             let mut hist_flip = false;
             for (j, pi) in passes {
-                let is_feedback = pi == 1;
                 let (hist_prev, hist_cur) = (chain.hist_cur, 1 - chain.hist_cur);
-                let dst: &wgpu::TextureView = if is_feedback { &chain.hist[hist_cur] } else { &chain.ping[pp] };
                 let g = scene::tex_group(device, &self.mod_layout, &[src, &chain.hist[hist_prev]], &self.mirror_sampler, &chain.bufs[j]);
-                fullscreen_pass(encoder, "modifier", dst, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.mod_pipelines[pi], &g);
-                src = dst;
-                if is_feedback {
+                if pi == MOD_FEEDBACK {
+                    // Feedback's output is its own history.
+                    fullscreen_pass(encoder, "modifier", &chain.hist[hist_cur], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.mod_pipelines[pi], &g);
+                    src = &chain.hist[hist_cur];
+                    hist_flip = true;
+                } else if pi == MOD_LUMI {
+                    // Luminescence writes its picture and, beside it, its pool state.
+                    fullscreen_pass2(encoder, "luminescence", &chain.ping[pp], &chain.hist[hist_cur], &self.mod_pipelines[pi], &g);
+                    src = &chain.ping[pp];
+                    pp = 1 - pp;
                     hist_flip = true;
                 } else {
+                    fullscreen_pass(encoder, "modifier", &chain.ping[pp], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.mod_pipelines[pi], &g);
+                    src = &chain.ping[pp];
                     pp = 1 - pp;
                 }
             }
@@ -607,9 +657,14 @@ fn build_mods(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGro
     scene::guarded(device, || {
         MOD_SHADERS
             .iter()
-            .map(|name| {
+            .enumerate()
+            .map(|(i, name)| {
                 let m = scene::shader(device, shaders, name);
-                scene::pipeline(device, name, layout, &m, HDR_FORMAT, None)
+                if i == MOD_LUMI {
+                    scene::pipeline2(device, name, layout, &m, HDR_FORMAT)
+                } else {
+                    scene::pipeline(device, name, layout, &m, HDR_FORMAT, None)
+                }
             })
             .collect()
     })

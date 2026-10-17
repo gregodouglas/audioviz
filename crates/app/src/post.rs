@@ -16,9 +16,16 @@ pub struct PostParams {
     pub grain: f32,
     pub time: f32,
     pub dt: f32,
-    /// bit0: auto exposure
+    /// bit0 (1): auto exposure.
+    /// bit1 (2): reduce flashing (photosensitivity): cap how fast the displayed
+    /// mean luminance may rise frame to frame; see `flash_rise` and expo.wgsl.
     pub flags: u32,
-    pub _pad: [u32; 2],
+    /// Reduce flashing: the displayed mean luminance may grow by at most a
+    /// factor of `1 + flash_rise` per second (2.0 = at most 3x per second),
+    /// applied per frame as `pow(1 + flash_rise, dt)`. Decreases are never
+    /// limited. Only read when `flags` bit1 is set.
+    pub flash_rise: f32,
+    pub _pad: u32,
 }
 
 struct Pipelines {
@@ -141,4 +148,26 @@ fn build(device: &wgpu::Device, shaders: &ShaderSet, layout1: &wgpu::BindGroupLa
             present: scene::pipeline(device, "present", layout3, &present, out_format, None),
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PostParams;
+    use std::mem::{offset_of, size_of};
+
+    /// `PostParams` in shaders/params.wgsl mirrors this struct byte for byte;
+    /// these are the offsets the WGSL side relies on.
+    #[test]
+    fn post_params_layout() {
+        assert_eq!(size_of::<PostParams>(), 32);
+        assert_eq!(size_of::<PostParams>() % 16, 0);
+        assert_eq!(offset_of!(PostParams, exposure), 0);
+        assert_eq!(offset_of!(PostParams, bloom), 4);
+        assert_eq!(offset_of!(PostParams, grain), 8);
+        assert_eq!(offset_of!(PostParams, time), 12);
+        assert_eq!(offset_of!(PostParams, dt), 16);
+        assert_eq!(offset_of!(PostParams, flags), 20);
+        assert_eq!(offset_of!(PostParams, flash_rise), 24);
+        assert_eq!(offset_of!(PostParams, _pad), 28);
+    }
 }

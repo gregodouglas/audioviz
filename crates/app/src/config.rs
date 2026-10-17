@@ -3,37 +3,31 @@
 
 use std::path::PathBuf;
 
-use crate::ui::{PostSettings, Settings};
+use crate::settings::{PostSettings, Settings};
 
 pub fn path() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("audioviz").join("settings.json"))
 }
 
-/// Loaded settings plus whether this looks like a first run (no settings file).
-pub struct Loaded {
-    pub settings: Settings,
-    pub first_run: bool,
-}
-
-pub fn load() -> Loaded {
-    let Some(p) = path() else { return Loaded { settings: Settings::default(), first_run: true } };
+pub fn load() -> Settings {
+    let Some(p) = path() else { return Settings::default() };
     if std::env::var_os("AUDIOVIZ_DEFAULTS").is_some() {
         tracing::info!("AUDIOVIZ_DEFAULTS set; ignoring {}", p.display());
-        return Loaded { settings: Settings::default(), first_run: true };
+        return Settings::default();
     }
     match std::fs::read_to_string(&p) {
         Ok(text) => match serde_json::from_str::<serde_json::Value>(&text).and_then(|v| Ok((serde_json::from_value::<Settings>(v.clone())?, v))) {
             Ok((mut s, raw)) => {
                 migrate_post(&mut s, &raw);
                 tracing::info!("settings loaded from {}", p.display());
-                Loaded { settings: s, first_run: false }
+                s
             }
             Err(e) => {
                 tracing::warn!("settings file unreadable ({e}); using defaults");
-                Loaded { settings: Settings::default(), first_run: false }
+                Settings::default()
             }
         },
-        Err(_) => Loaded { settings: Settings::default(), first_run: true },
+        Err(_) => Settings::default(),
     }
 }
 
@@ -54,7 +48,7 @@ fn migrate_post(s: &mut Settings, raw: &serde_json::Value) {
         bloom: f("bloom", 0.3),
         grain: f("grain", 0.15),
     };
-    for i in 0..crate::ui::SCENE_COUNT {
+    for i in 0..crate::settings::SCENE_COUNT {
         *s.post_mut(i) = p;
     }
     tracing::info!("migrated global post settings to per-scene");
@@ -76,5 +70,30 @@ pub fn save(settings: &Settings) {
             }
         }
         Err(e) => tracing::warn!("could not serialize settings: {e}"),
+    }
+}
+
+/// `--set key=value` from the command line (the installer's finish page uses
+/// it): patch the JSON on disk before the app loads it. Values parse as JSON
+/// first (true, 1, 0.5, [..]), else as a string.
+pub fn apply_overrides(pairs: &[(String, String)]) {
+    let Some(p) = path() else { return };
+    let mut root: serde_json::Value = std::fs::read_to_string(&p).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| serde_json::json!({}));
+    let Some(obj) = root.as_object_mut() else { return };
+    for (k, v) in pairs {
+        let value = serde_json::from_str::<serde_json::Value>(v).unwrap_or_else(|_| serde_json::Value::String(v.clone()));
+        tracing::info!("--set {k} = {value}");
+        obj.insert(k.clone(), value);
+    }
+    if let Some(dir) = p.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    match serde_json::to_string_pretty(&root) {
+        Ok(text) => {
+            if let Err(e) = std::fs::write(&p, text) {
+                tracing::warn!("could not write {}: {e}", p.display());
+            }
+        }
+        Err(e) => tracing::warn!("--set: {e}"),
     }
 }

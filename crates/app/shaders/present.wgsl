@@ -50,8 +50,12 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
     // level count so the tight half-res glow matches the original slider feel
     // and the wide levels stay subdued.
     let bloom = textureSample(bloom_tex, samp, in.uv).rgb / 6.0;
-    let auto_e = textureSampleLevel(expo_tex, samp, vec2<f32>(0.5), 0.0).r;
-    var col = (hdr + bloom * P.bloom) * P.exposure * auto_e;
+    // expo.wgsl state: .r = auto exposure gain, .b = reduce-flashing gain
+    // (exactly 1.0 when flags bit1 is off, so that path is unchanged). Both
+    // scale the scene-referred colour before the tonemapper, so a capped rise
+    // here is a capped rise on screen.
+    let expo = textureSampleLevel(expo_tex, samp, vec2<f32>(0.5), 0.0);
+    var col = (hdr + bloom * P.bloom) * P.exposure * expo.r * expo.b;
     col = agx_eotf(agx(col));
 
     let d = in.uv - 0.5;

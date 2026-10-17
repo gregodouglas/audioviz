@@ -39,7 +39,7 @@ struct PostParams {
     grain: f32,
     time: f32,
     dt: f32,
-    flags: u32,       // bit0: auto exposure
+    flags: u32,       // bit0 (1): auto exposure, bit1 (2): reduce flashing
+    flash_rise: f32,  // reduce flashing: max brightness rise factor per second is 1 + flash_rise
     _pad0: u32,
-    _pad1: u32,
 };

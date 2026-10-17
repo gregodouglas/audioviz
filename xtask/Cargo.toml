@@ -11,3 +11,4 @@ publish = false
 anyhow.workspace = true
 resvg = "0.48"
 ico = "0.6"
+image = { workspace = true, features = ["bmp"] }

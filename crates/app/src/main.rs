@@ -2,16 +2,25 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod chrome;
 mod config;
 mod director;
 mod engine;
 mod gpu;
+mod hittest;
+mod looks;
 mod overlay;
+mod overlays;
+mod panel;
+mod platform;
 mod post;
 mod scene;
 mod scenes;
+mod settings;
 mod shaders;
-mod ui;
+mod strip;
+mod theme;
+mod widgets;
 
 use tracing_subscriber::EnvFilter;
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -21,51 +30,85 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const HELP: &str = "\
 audioviz {version} - a spacey, line-based music visualizer
 
-usage: audioviz [--version] [--help]
+usage: audioviz [--version] [--help] [--tray] [--set key=value]...
 
-keys: Tab panel · 1-3/Space scenes · A auto scenes · T title overlay
-      C calibrate audio delay · F11 fullscreen · F5 reload shaders · Esc quit
+  --tray            start minimised (for 'start when I sign in')
+  --set key=value   change a setting in settings.json before starting,
+                    e.g. --set start_fullscreen=true --set monitor=1
+
+keys: Tab panel · 1-3/Space scenes · A auto scenes · T title overlay · L next look
+      C calibrate audio delay · ? shortcuts · F11 fullscreen · F5 reload shaders · Esc quit
 settings: %APPDATA%\\audioviz\\settings.json (Windows)
 env: RUST_LOG=audioviz=debug for a per-second stats line
      AUDIOVIZ_SCENE=n AUDIOVIZ_SIZE=WxH AUDIOVIZ_DEFAULTS=1 (dev overrides)
 ";
 
-/// Handle `--version` / `--help` before touching the GPU. A windows-subsystem
-/// binary has no console, so attach to the parent's (cmd/PowerShell) first.
-fn handle_cli() -> bool {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let text = match args.first().map(String::as_str) {
-        Some("--version" | "-V") => format!("audioviz {VERSION}\n"),
-        Some("--help" | "-h") => HELP.replace("{version}", VERSION),
-        Some(other) => format!("audioviz: unknown option {other}\n{}", HELP.replace("{version}", VERSION)),
-        None => return false,
-    };
-    #[cfg(windows)]
+struct Cli {
+    tray: bool,
+    sets: Vec<(String, String)>,
+}
+
+#[cfg(windows)]
+fn attach_console() {
     unsafe {
         use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole, GetStdHandle, STD_OUTPUT_HANDLE};
-        // If stdout was redirected (pipe/file) the handle is already inherited;
-        // only a bare console launch needs to attach to the parent's console.
         let inherited = GetStdHandle(STD_OUTPUT_HANDLE).map(|h| !h.is_invalid()).unwrap_or(false);
         if !inherited {
             let _ = AttachConsole(ATTACH_PARENT_PROCESS);
         }
     }
-    print!("{text}");
-    true
+}
+#[cfg(not(windows))]
+fn attach_console() {}
+
+/// Parse the command line. Prints and returns None for --version / --help / errors.
+fn parse_cli() -> Option<Cli> {
+    let mut cli = Cli { tray: false, sets: Vec::new() };
+    let mut args = std::env::args().skip(1);
+    while let Some(a) = args.next() {
+        match a.as_str() {
+            "--version" | "-V" => {
+                attach_console();
+                print!("audioviz {VERSION}\n");
+                return None;
+            }
+            "--help" | "-h" => {
+                attach_console();
+                print!("{}", HELP.replace("{version}", VERSION));
+                return None;
+            }
+            "--tray" => cli.tray = true,
+            "--set" => match args.next().and_then(|kv| kv.split_once('=').map(|(k, v)| (k.to_string(), v.to_string()))) {
+                Some(kv) => cli.sets.push(kv),
+                None => {
+                    attach_console();
+                    print!("audioviz: --set needs key=value\n");
+                    return None;
+                }
+            },
+            other => {
+                attach_console();
+                print!("audioviz: unknown option {other}\n{}", HELP.replace("{version}", VERSION));
+                return None;
+            }
+        }
+    }
+    Some(cli)
 }
 
 fn main() -> anyhow::Result<()> {
-    if handle_cli() {
-        return Ok(());
-    }
+    let Some(cli) = parse_cli() else { return Ok(()) };
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,wgpu_core=warn,wgpu_hal=warn,naga=warn")))
         .init();
     tracing::info!("audioviz {VERSION}");
+    if !cli.sets.is_empty() {
+        config::apply_overrides(&cli.sets);
+    }
 
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = app::App::new();
+    let mut app = app::App::new(cli.tray);
     event_loop.run_app(&mut app)?;
     Ok(())
 }

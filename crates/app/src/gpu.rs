@@ -13,6 +13,8 @@ pub struct Gpu {
     /// already-encoded colors).
     pub ui_format: wgpu::TextureFormat,
     pub window: Arc<Window>,
+    /// "NVIDIA GeForce RTX 2070 SUPER (Dx12)" for diagnostics.
+    pub adapter_name: String,
 }
 
 impl Gpu {
@@ -72,7 +74,8 @@ impl Gpu {
         surface.configure(&device, &config);
         tracing::info!("surface: {:?} {}x{} {:?}", format, size.width, size.height, config.present_mode);
 
-        Ok(Self { instance, surface, device, queue, config, ui_format, window })
+        let adapter_name = format!("{} ({:?})", info.name, info.backend);
+        Ok(Self { instance, surface, device, queue, config, ui_format, window, adapter_name })
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {

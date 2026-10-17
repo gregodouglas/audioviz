@@ -2,36 +2,10 @@
 //! progress hairline, laid on a 12-column grid. Drawn with egui on the
 //! background layer so it stays crisp (not bloomed) and under the panel.
 
-use std::sync::Arc;
-
 use audioviz_analysis::FeatureFrame;
 use audioviz_metadata::NowPlaying;
 
-pub const FAMILY_BOLD: &str = "swiss-bold";
-pub const FAMILY_REGULAR: &str = "swiss";
-
-/// Install a grotesk from the system (Helvetica-style) if available; egui's
-/// bundled fonts remain the fallback.
-pub fn install_fonts(ctx: &egui::Context) {
-    let mut fonts = egui::FontDefinitions::default();
-    let candidates_bold = ["C:\\Windows\\Fonts\\segoeuib.ttf", "C:\\Windows\\Fonts\\arialbd.ttf", "/System/Library/Fonts/HelveticaNeue.ttc", "/Library/Fonts/Arial Bold.ttf"];
-    let candidates_regular = ["C:\\Windows\\Fonts\\segoeui.ttf", "C:\\Windows\\Fonts\\arial.ttf", "/System/Library/Fonts/HelveticaNeue.ttc", "/Library/Fonts/Arial.ttf"];
-    let mut add = |family: &str, candidates: &[&str]| {
-        for path in candidates {
-            if let Ok(bytes) = std::fs::read(path) {
-                fonts.font_data.insert(family.to_string(), Arc::new(egui::FontData::from_owned(bytes)));
-                fonts.families.insert(egui::FontFamily::Name(family.into()), vec![family.to_string(), "Ubuntu-Light".to_string()]);
-                tracing::info!("overlay font {family}: {path}");
-                return;
-            }
-        }
-        // Fallback: alias to the default proportional family.
-        fonts.families.insert(egui::FontFamily::Name(family.into()), vec!["Ubuntu-Light".to_string()]);
-    };
-    add(FAMILY_BOLD, &candidates_bold);
-    add(FAMILY_REGULAR, &candidates_regular);
-    ctx.set_fonts(fonts);
-}
+pub use crate::theme::{FAMILY_BOLD, FAMILY_REGULAR};
 
 pub struct Overlay {
     art: Option<(u64, egui::TextureHandle)>,
@@ -42,7 +16,8 @@ impl Overlay {
         Self { art: None }
     }
 
-    pub fn draw(&mut self, ctx: &egui::Context, np: Option<&NowPlaying>, f: &FeatureFrame, tint: [f32; 3], scale: f32) {
+    /// `top`, `bottom`, `right`: space taken by the chrome bar, the transport strip and the panel.
+    pub fn draw(&mut self, ctx: &egui::Context, np: Option<&NowPlaying>, f: &FeatureFrame, tint: [f32; 3], scale: f32, top: f32, bottom: f32, right: f32) {
         let Some(np) = np else { return };
         if np.title.is_empty() && np.artist.is_empty() {
             return;
@@ -58,7 +33,8 @@ impl Overlay {
             self.art = None;
         }
 
-        let screen = ctx.content_rect();
+        let full = ctx.content_rect();
+        let screen = egui::Rect::from_min_max(full.min + egui::vec2(0.0, top), full.max - egui::vec2(right, bottom));
         let painter = ctx.layer_painter(egui::LayerId::background());
         let min_dim = screen.width().min(screen.height());
         let margin = min_dim * 0.06;

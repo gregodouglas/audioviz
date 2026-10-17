@@ -10,7 +10,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, Scene, begin_pass, fullscreen_pass, hdr_texture, HDR_FORMAT};
 use crate::shaders::ShaderSet;
-use crate::ui::Settings;
+use crate::settings::Settings;
 
 pub const MAX_POINTS: usize = 32_768;
 

@@ -5,7 +5,7 @@
 use audioviz_analysis::FeatureFrame;
 
 use crate::shaders::ShaderSet;
-use crate::ui::Settings;
+use crate::settings::Settings;
 
 pub struct FrameCtx<'a> {
     pub features: &'a FeatureFrame,

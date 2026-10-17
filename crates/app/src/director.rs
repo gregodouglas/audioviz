@@ -21,7 +21,30 @@ use crate::shaders::ShaderSet;
 #[derive(Clone, Copy, Pod, Zeroable, Default)]
 struct LayerParams {
     opacity: f32,
-    _pad: [f32; 3],
+    dt: f32,
+    /// bit0: apply the layer's levelling gain.
+    flags: u32,
+    _pad: f32,
+}
+
+/// Per-layer meter state: a 1/8 downsample and a ping-ponged 1x1 gain texture.
+struct Meter {
+    down: wgpu::TextureView,
+    state: [wgpu::TextureView; 2],
+    cur: usize,
+}
+
+impl Meter {
+    fn new(device: &wgpu::Device, i: usize, width: u32, height: u32) -> Self {
+        Self { down: hdr_texture(device, &format!("layer {i} down"), width / 8, height / 8), state: [hdr_texture(device, &format!("layer {i} meter a"), 1, 1), hdr_texture(device, &format!("layer {i} meter b"), 1, 1)], cur: 0 }
+    }
+}
+
+struct LayerPipelines {
+    add: wgpu::RenderPipeline,
+    copy: wgpu::RenderPipeline,
+    down: wgpu::RenderPipeline,
+    meter: wgpu::RenderPipeline,
 }
 
 #[repr(C)]
@@ -41,11 +64,11 @@ const QUIET_FOR_S: f32 = 6.0;
 pub struct Director {
     pub layers: Vec<Box<dyn Scene>>,
     filters: Vec<BandPass>,
+    meters: Vec<Meter>,
     layer_bufs: Vec<wgpu::Buffer>,
     sampler: wgpu::Sampler,
     layer_layout: wgpu::BindGroupLayout,
-    add_pipeline: wgpu::RenderPipeline,
-    copy_pipeline: wgpu::RenderPipeline,
+    layer_pipelines: LayerPipelines,
     mix_layout: wgpu::BindGroupLayout,
     mix_pipeline: wgpu::RenderPipeline,
     mix_buf: wgpu::Buffer,
@@ -77,8 +100,8 @@ fn make(kind: VisualKind, device: &wgpu::Device, w: u32, h: u32, shaders: &Shade
 impl Director {
     pub fn new(device: &wgpu::Device, shaders: &ShaderSet, width: u32, height: u32, settings: &Settings) -> Result<Self, String> {
         let sampler = scene::linear_sampler(device);
-        let layer_layout = scene::tex_layout(device, "layer", 0);
-        let (add_pipeline, copy_pipeline) = build_layer(device, shaders, &layer_layout)?;
+        let layer_layout = scene::tex_layout(device, "layer", 1);
+        let layer_pipelines = build_layer(device, shaders, &layer_layout)?;
         let mix_layout = scene::tex_layout(device, "mix", 1);
         let mix_pipeline = build_mix(device, shaders, &mix_layout)?;
         let mix_buf = scene::uniform_buffer(device, "mix params", std::mem::size_of::<MixParams>() as u64);
@@ -88,15 +111,16 @@ impl Director {
             layers.push(make(settings.layer(i).visual, device, width, height, shaders)?);
         }
         let filters = (0..MAX_LAYERS).map(|_| BandPass::new(20.0, 400.0, 48_000.0)).collect();
+        let meters = (0..MAX_LAYERS).map(|i| Meter::new(device, i, width, height)).collect();
         let layer_bufs = (0..MAX_LAYERS).map(|i| scene::uniform_buffer(device, &format!("layer {i}"), std::mem::size_of::<LayerParams>() as u64)).collect();
         Ok(Self {
             layers,
             filters,
+            meters,
             layer_bufs,
             sampler,
             layer_layout,
-            add_pipeline,
-            copy_pipeline,
+            layer_pipelines,
             mix_layout,
             mix_pipeline,
             mix_buf,
@@ -127,6 +151,21 @@ impl Director {
                 }
             }
         }
+    }
+
+    /// Move layer `from` to position `to`, carrying its live state (particles,
+    /// persistence, meter) with it. The caller reorders `settings.layers` the same way.
+    pub fn move_layer(&mut self, from: usize, to: usize) {
+        let n = self.layers.len().min(MAX_LAYERS);
+        if from >= n || to >= n || from == to {
+            return;
+        }
+        let l = self.layers.remove(from);
+        self.layers.insert(to, l);
+        let f = self.filters.remove(from);
+        self.filters.insert(to, f);
+        let m = self.meters.remove(from);
+        self.meters.insert(to, m);
     }
 
     pub fn seconds_since_switch(&self) -> f32 {
@@ -184,16 +223,16 @@ impl Director {
         }
         self.composite = hdr_texture(device, "composite", width, height);
         self.prev = hdr_texture(device, "composite prev", width, height);
+        for (i, m) in self.meters.iter_mut().enumerate() {
+            m.down = hdr_texture(device, &format!("layer {i} down"), width / 8, height / 8);
+        }
         self.dissolve = None;
     }
 
     pub fn reload_shaders(&mut self, device: &wgpu::Device, shaders: &ShaderSet) {
         let mut errors = Vec::new();
         match build_layer(device, shaders, &self.layer_layout) {
-            Ok((a, c)) => {
-                self.add_pipeline = a;
-                self.copy_pipeline = c;
-            }
+            Ok(p) => self.layer_pipelines = p,
             Err(e) => errors.push(format!("layer: {e}")),
         }
         if let Err(e) = build_mix(device, shaders, &self.mix_layout).map(|p| self.mix_pipeline = p) {
@@ -210,11 +249,15 @@ impl Director {
     /// Render every enabled layer and composite into `target`.
     #[allow(clippy::too_many_arguments)]
     pub fn render(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, settings: &Settings, features: &FeatureFrame, points: &[[f32; 2]], sample_rate: u32, tint: [f32; 3], dt: f32, time: f32, auto_gain: f32, target: &wgpu::TextureView) {
-        queue.write_buffer(&self.one_buf, 0, bytemuck::bytes_of(&LayerParams { opacity: 1.0, _pad: [0.0; 3] }));
+        queue.write_buffer(&self.one_buf, 0, bytemuck::bytes_of(&LayerParams { opacity: 1.0, dt, flags: 0, _pad: 0.0 }));
+        // Levelling: with auto exposure on, each layer is brought to its own
+        // dark-field mean before mixing, so opacity is the mix ratio and a dim
+        // layer is not lost under a bright one.
+        let level = settings.post.auto_exposure;
         // Snapshot last frame's composite before anything renders over it.
         if let Some(secs) = self.pending_dissolve.take() {
-            let group = scene::tex_group(device, &self.layer_layout, &[&self.composite], &self.sampler, &self.one_buf);
-            fullscreen_pass(encoder, "dissolve snapshot", &self.prev, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.copy_pipeline, &group);
+            let group = scene::tex_group(device, &self.layer_layout, &[&self.composite, &self.meters[0].state[0]], &self.sampler, &self.one_buf);
+            fullscreen_pass(encoder, "dissolve snapshot", &self.prev, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.layer_pipelines.copy, &group);
             self.dissolve = Some((0.0, secs));
         }
 
@@ -242,10 +285,22 @@ impl Director {
             };
             let ctx = FrameCtx { features: feats, tint, dt, time, width: self.width, height: self.height, points: pts, auto_gain };
             self.layers[i].render(queue, encoder, &ctx, &layer);
-            queue.write_buffer(&self.layer_bufs[i], 0, bytemuck::bytes_of(&LayerParams { opacity: layer.opacity, _pad: [0.0; 3] }));
-            let group = scene::tex_group(device, &self.layer_layout, &[self.layers[i].output()], &self.sampler, &self.layer_bufs[i]);
+            queue.write_buffer(&self.layer_bufs[i], 0, bytemuck::bytes_of(&LayerParams { opacity: layer.opacity, dt, flags: level as u32, _pad: 0.0 }));
+            let out = self.layers[i].output();
+            let m = &self.meters[i];
+            let (prev_s, cur_s) = (m.cur, 1 - m.cur);
+            if level {
+                let g = scene::tex_group(device, &self.layer_layout, &[out, &m.state[prev_s]], &self.sampler, &self.layer_bufs[i]);
+                fullscreen_pass(encoder, "layer down", &m.down, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.layer_pipelines.down, &g);
+                let g = scene::tex_group(device, &self.layer_layout, &[&m.down, &m.state[prev_s]], &self.sampler, &self.layer_bufs[i]);
+                fullscreen_pass(encoder, "layer meter", &m.state[cur_s], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.layer_pipelines.meter, &g);
+            }
+            let group = scene::tex_group(device, &self.layer_layout, &[out, &m.state[cur_s]], &self.sampler, &self.layer_bufs[i]);
             let load = if first { wgpu::LoadOp::Clear(wgpu::Color::BLACK) } else { wgpu::LoadOp::Load };
-            fullscreen_pass(encoder, "layer", &self.composite, load, &self.add_pipeline, &group);
+            fullscreen_pass(encoder, "layer", &self.composite, load, &self.layer_pipelines.add, &group);
+            if level {
+                self.meters[i].cur = cur_s;
+            }
             first = false;
         }
         if first {
@@ -265,8 +320,8 @@ impl Director {
                 }
             }
             None => {
-                let group = scene::tex_group(device, &self.layer_layout, &[&self.composite], &self.sampler, &self.one_buf);
-                fullscreen_pass(encoder, "composite", target, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.copy_pipeline, &group);
+                let group = scene::tex_group(device, &self.layer_layout, &[&self.composite, &self.meters[0].state[0]], &self.sampler, &self.one_buf);
+                fullscreen_pass(encoder, "composite", target, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.layer_pipelines.copy, &group);
             }
         }
     }
@@ -277,10 +332,17 @@ fn smoothstep(x: f32) -> f32 {
     x * x * (3.0 - 2.0 * x)
 }
 
-fn build_layer(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Result<(wgpu::RenderPipeline, wgpu::RenderPipeline), String> {
+fn build_layer(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Result<LayerPipelines, String> {
     scene::guarded(device, || {
         let m = scene::shader(device, shaders, "layer.wgsl");
-        (scene::pipeline(device, "layer add", layout, &m, HDR_FORMAT, Some(scene::ADDITIVE)), scene::pipeline(device, "layer copy", layout, &m, HDR_FORMAT, None))
+        let d = scene::shader(device, shaders, "layer_down.wgsl");
+        let g = scene::shader(device, shaders, "layer_meter.wgsl");
+        LayerPipelines {
+            add: scene::pipeline(device, "layer add", layout, &m, HDR_FORMAT, Some(scene::ADDITIVE)),
+            copy: scene::pipeline(device, "layer copy", layout, &m, HDR_FORMAT, None),
+            down: scene::pipeline(device, "layer down", layout, &d, HDR_FORMAT, None),
+            meter: scene::pipeline(device, "layer meter", layout, &g, HDR_FORMAT, None),
+        }
     })
 }
 

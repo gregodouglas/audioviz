@@ -426,6 +426,28 @@ impl Running {
         self.apply_scene_named(&name, fade);
     }
 
+    /// Reorder layers (settings and live director state together); the edited
+    /// layer follows the move.
+    fn move_layer(&mut self, from: usize, to: usize) {
+        let n = self.settings.layers.len().min(MAX_LAYERS);
+        if from >= n || to >= n || from == to {
+            return;
+        }
+        let l = self.settings.layers.remove(from);
+        self.settings.layers.insert(to, l);
+        self.director.move_layer(from, to);
+        let e = self.settings.editing;
+        self.settings.editing = if e == from {
+            to
+        } else if from < to && e > from && e <= to {
+            e - 1
+        } else if from > to && e >= to && e < from {
+            e + 1
+        } else {
+            e
+        };
+    }
+
     fn select_layer(&mut self, i: usize) {
         self.settings.editing = i.min(MAX_LAYERS - 1);
     }
@@ -774,6 +796,9 @@ impl Running {
         if chrome_actions.open_scenes {
             self.settings.section = Section::Scenes;
             self.settings.show_ui = true;
+        }
+        if let Some((from, to)) = panel_actions.move_layer {
+            self.move_layer(from, to);
         }
         if let Some(i) = chrome_actions.select_layer.or(panel_actions.select_layer) {
             self.select_layer(i);

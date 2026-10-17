@@ -61,6 +61,8 @@ pub struct Stats {
 pub struct Actions {
     pub toggle_fullscreen: bool,
     pub select_layer: Option<usize>,
+    /// Drag-reorder: move layer `.0` to position `.1`.
+    pub move_layer: Option<(usize, usize)>,
     pub apply_scene: Option<String>,
     pub save_scene: Option<String>,
     pub delete_scene: Option<String>,
@@ -220,12 +222,24 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, lay
     if section_header(ui, "Layers", None, Some("Hide UI (H)")) {
         a.hide_ui = true;
     }
-    hint(ui, "Every layer that is on is added to the picture with its opacity. Pick one to edit it below.");
+    hint(ui, "Every layer that is on is levelled and added to the picture with its opacity. Pick one to edit it below; drag the handle to reorder.");
     ui.add_space(4.0);
     let editing = settings.editing.min(MAX_LAYERS - 1);
+    let dragging = egui::DragAndDrop::has_payload_of_type::<usize>(ui.ctx());
     for i in 0..MAX_LAYERS {
         let focused = i == editing;
-        ui.horizontal(|ui| {
+        let row = ui.horizontal(|ui| {
+            // Drag handle: three short lines; the row's index is the payload.
+            let drag_id = ui.scope_id().with(("layer drag", i));
+            ui.dnd_drag_source(drag_id, i, |ui| {
+                let (r, resp) = ui.allocate_exact_size(vec2(14.0, 16.0), Sense::hover());
+                let c = if resp.hovered() || resp.dragged() { TEXT } else { TEXT_3 };
+                for k in 0..3 {
+                    let y = r.min.y + 4.0 + 4.0 * k as f32;
+                    ui.painter().line_segment([pos2(r.min.x + 2.0, y), pos2(r.max.x - 2.0, y)], egui::Stroke::new(1.0, c));
+                }
+                resp.on_hover_cursor(egui::CursorIcon::Grab);
+            });
             let l = settings.layer_mut(i);
             let (sw, resp) = ui.allocate_exact_size(vec2(28.0, 16.0), Sense::click());
             if resp.clicked() {
@@ -247,6 +261,21 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, lay
                 });
             }
         });
+        // Drop target: the whole row. An accent line marks where the dragged layer lands.
+        if dragging {
+            let rect = row.response.rect;
+            let hover = ui.ctx().pointer_hover_pos().is_some_and(|p| rect.contains(p));
+            if hover {
+                ui.painter().hline(rect.x_range(), rect.min.y - 2.0, egui::Stroke::new(2.0, ACCENT));
+                if ui.input(|i| i.pointer.any_released()) {
+                    if let Some(from) = egui::DragAndDrop::take_payload::<usize>(ui.ctx()) {
+                        if *from != i {
+                            a.move_layer = Some((*from, i));
+                        }
+                    }
+                }
+            }
+        }
         if settings.layer(i).enabled {
             let l = settings.layer_mut(i);
             slider_row(ui, "    opacity", &mut l.opacity, 0.0..=2.0, |v| format!("{v:.2}"), false);

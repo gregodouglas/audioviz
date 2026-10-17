@@ -43,3 +43,11 @@ struct PostParams {
     flash_rise: f32,  // reduce flashing: max brightness rise factor per second is 1 + flash_rise
     _pad0: u32,
 };
+
+// Layer compositor / meter params (director.rs::LayerParams).
+struct LayerParams {
+    opacity: f32,
+    dt: f32,
+    flags: u32,       // bit0 (1): apply the layer's levelling gain
+    _pad0: f32,
+};

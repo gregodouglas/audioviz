@@ -4,11 +4,14 @@ use audioviz_analysis::FeatureFrame;
 use audioviz_audio::CaptureMode;
 use serde::{Deserialize, Serialize};
 
+use crate::scene::Scene;
+
 const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    // Scope scene
     pub gain: f32,
     pub auto_gain: bool,
     pub rotation_deg: f32,
@@ -16,15 +19,18 @@ pub struct Settings {
     pub beam_intensity: f32,
     /// Fraction of brightness remaining after one second.
     pub persistence: f32,
-    pub exposure: f32,
     pub tint: [f32; 3],
+    /// How much the beat clock pulses the beam (0 = off).
+    pub beat_pulse: f32,
+    // Post
+    pub exposure: f32,
+    pub auto_exposure: bool,
     pub bloom: f32,
     pub grain: f32,
-    pub auto_exposure: bool,
-    /// How much the beat clock pulses the exposure (0 = off).
-    pub beat_pulse: f32,
+    // Audio
     pub audio_delay_ms: f32,
     pub target_process: String,
+    // Display
     /// 0 = uncapped (VSync only). Ambient use: 60.
     pub fps_cap: u32,
     /// Index into the monitor list for fullscreen.
@@ -42,12 +48,12 @@ impl Default for Settings {
             beam_width: 1.2,
             beam_intensity: 1.0,
             persistence: 0.05,
-            exposure: 1.0,
             tint: [0.40, 1.0, 0.55],
+            beat_pulse: 0.3,
+            exposure: 1.0,
+            auto_exposure: true,
             bloom: 0.3,
             grain: 0.15,
-            auto_exposure: true,
-            beat_pulse: 0.3,
             audio_delay_ms: 0.0,
             target_process: "Spotify.exe".into(),
             fps_cap: 60,
@@ -67,14 +73,18 @@ pub struct Stats {
     pub monitors: Vec<String>,
     pub fullscreen: bool,
     pub settings_path: String,
+    pub scene_names: Vec<&'static str>,
+    pub scene_current: usize,
+    pub scene_fading: bool,
 }
 
 #[derive(Default)]
 pub struct Actions {
     pub toggle_fullscreen: bool,
+    pub switch_scene: Option<usize>,
 }
 
-pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stats: &Stats) -> Actions {
+pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stats: &Stats, scene: &mut dyn Scene) -> Actions {
     let mut actions = Actions::default();
     egui::Window::new("audioviz")
         .default_width(320.0)
@@ -92,36 +102,29 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stat
                 ui.colored_label(egui::Color32::from_rgb(255, 120, 120), format!("shader error:\n{err}"));
             }
 
-            egui::CollapsingHeader::new("Scope").default_open(true).show(ui, |ui| {
-                ui.add(egui::Slider::new(&mut settings.gain, 0.05..=3.0).logarithmic(true).text("gain"));
-                ui.checkbox(&mut settings.auto_gain, "auto gain");
-                ui.add(egui::Slider::new(&mut settings.rotation_deg, -180.0..=180.0).text("rotation °"));
-                ui.add(egui::Slider::new(&mut settings.beam_width, 0.3..=6.0).text("beam width px"));
-                ui.add(egui::Slider::new(&mut settings.beam_intensity, 0.05..=20.0).logarithmic(true).text("beam intensity"));
-                ui.add(egui::Slider::new(&mut settings.persistence, 0.0001..=0.9).logarithmic(true).text("persistence /s"));
+            egui::CollapsingHeader::new("Scene").default_open(true).show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    for (i, name) in stats.scene_names.iter().enumerate() {
+                        let selected = i == stats.scene_current;
+                        if ui.selectable_label(selected, format!("{} {}", i + 1, name)).clicked() && !selected {
+                            actions.switch_scene = Some(i);
+                        }
+                    }
+                    if stats.scene_fading {
+                        ui.small("fading…");
+                    }
+                });
+                ui.separator();
+                scene.ui(ui, settings);
+            });
+
+            ui.collapsing("Post", |ui| {
                 ui.horizontal(|ui| {
                     ui.add(egui::Slider::new(&mut settings.exposure, 0.1..=10.0).logarithmic(true).text("exposure"));
                     ui.checkbox(&mut settings.auto_exposure, "auto");
                 });
                 ui.add(egui::Slider::new(&mut settings.bloom, 0.0..=3.0).text("bloom"));
                 ui.add(egui::Slider::new(&mut settings.grain, 0.0..=1.0).text("grain"));
-                ui.add(egui::Slider::new(&mut settings.beat_pulse, 0.0..=1.0).text("beat pulse"));
-                ui.horizontal(|ui| {
-                    ui.label("tint");
-                    ui.color_edit_button_rgb(&mut settings.tint);
-                    if ui.button("P1 green").clicked() {
-                        settings.tint = [0.40, 1.0, 0.55];
-                    }
-                    if ui.button("P4 white").clicked() {
-                        settings.tint = [0.85, 0.9, 1.0];
-                    }
-                    if ui.button("amber").clicked() {
-                        settings.tint = [1.0, 0.65, 0.2];
-                    }
-                    if ui.button("ice").clicked() {
-                        settings.tint = [0.55, 0.8, 1.0];
-                    }
-                });
             });
 
             ui.collapsing("Display", |ui| {
@@ -180,7 +183,7 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stat
             });
 
             ui.separator();
-            ui.small("Tab: toggle panel · F11: fullscreen · F5: reload shaders · Esc: quit");
+            ui.small("Tab: panel · 1-4/Space: scene · F11: fullscreen · F5: reload shaders · Esc: quit");
         });
     actions
 }

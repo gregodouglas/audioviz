@@ -2,7 +2,7 @@
 
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
-@group(0) @binding(2) var<uniform> P: Params;
+@group(0) @binding(2) var<uniform> P: PostParams;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vi: u32) -> FsIn {
@@ -11,8 +11,7 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> FsIn {
 
 @fragment
 fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
-    let texel = 1.0 / vec2<f32>(textureDimensions(src));
-    let o = texel;
+    let o = 1.0 / vec2<f32>(textureDimensions(src));
     var c = textureSample(src, samp, in.uv).rgb * 4.0;
     c += textureSample(src, samp, in.uv + vec2<f32>(-o.x, -o.y)).rgb;
     c += textureSample(src, samp, in.uv + vec2<f32>( o.x, -o.y)).rgb;

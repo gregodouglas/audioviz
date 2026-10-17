@@ -1,8 +1,8 @@
 // The electron beam: one instanced quad per consecutive sample pair, drawn
-// additively. Brightness per segment ~ 1 / length (time spent per pixel), with
-// a Gaussian cross-section.
+// additively in the phosphor tint. Brightness per segment ~ 1 / length (time
+// spent per pixel), with a Gaussian cross-section.
 
-@group(0) @binding(0) var<uniform> P: Params;
+@group(0) @binding(0) var<uniform> P: ScopeParams;
 @group(0) @binding(1) var<storage, read> points: array<vec2<f32>>;
 
 struct VsOut {
@@ -62,6 +62,5 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let sigma = max(P.beam_width, 0.3);
     let falloff = exp(-(dist * dist) / (2.0 * sigma * sigma));
     let energy = P.beam_intensity / (in.seg_len + 1.0);
-    let v = falloff * energy;
-    return vec4<f32>(v, v, v, 1.0);
+    return vec4<f32>(P.tint.rgb * falloff * energy, 1.0);
 }

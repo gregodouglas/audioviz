@@ -1,9 +1,9 @@
-// Final composite: tint the HDR phosphor buffer, add bloom, AgX tonemap,
-// grain, dither, vignette. Output is linear; the sRGB swapchain encodes it.
+// Final composite: HDR color + bloom, auto/manual exposure, AgX tonemap,
+// vignette, grain, dither. Output is linear; the sRGB swapchain encodes it.
 
 @group(0) @binding(0) var hdr_tex: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
-@group(0) @binding(2) var<uniform> P: Params;
+@group(0) @binding(2) var<uniform> P: PostParams;
 @group(0) @binding(3) var bloom_tex: texture_2d<f32>;
 @group(0) @binding(4) var expo_tex: texture_2d<f32>;
 
@@ -40,35 +40,25 @@ fn agx_eotf(c: vec3<f32>) -> vec3<f32> {
         vec3<f32>(-0.0990297440797205, -0.0989611768448433, 1.15107367264116),
     );
     let v = max(inv * c, vec3<f32>(0.0));
-    // Back to linear for the sRGB-encoding swapchain.
     return pow(v, vec3<f32>(2.2));
-}
-
-// Interleaved gradient noise (Jimenez 2014): cheap, well distributed.
-fn ign(p: vec2<f32>) -> f32 {
-    return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
 }
 
 @fragment
 fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
-    let hdr = textureSample(hdr_tex, samp, in.uv).r;
-    // The up-chain sums six levels; normalize so `bloom` is a fraction of the base.
-    let bloom = textureSample(bloom_tex, samp, in.uv).r / 6.0;
+    let hdr = textureSample(hdr_tex, samp, in.uv).rgb;
+    // The up-chain accumulates levels with 0.6x per step (sum of weights ~2.4);
+    // normalize so `bloom` is a fraction of the base image.
+    let bloom = textureSample(bloom_tex, samp, in.uv).rgb / 2.4;
     let auto_e = textureSampleLevel(expo_tex, samp, vec2<f32>(0.5), 0.0).r;
-    let v = (hdr + bloom * P.bloom) * P.exposure * auto_e;
-
-    // Phosphor color at low intensity, bleaching to white as it saturates;
-    // AgX handles the shoulder and the desaturation of hot spots.
-    var col = P.tint.rgb * v;
+    var col = (hdr + bloom * P.bloom) * P.exposure * auto_e;
     col = agx_eotf(agx(col));
 
-    // Vignette: edges read as a tube, not a flat rectangle.
     let d = in.uv - 0.5;
     col *= 1.0 - 0.35 * dot(d, d) * 2.0;
 
-    // Grain (animated) and dither (static per pixel) before 8-bit quantization.
     let n_grain = ign(in.pos.xy + vec2<f32>(fract(P.time * 7.31) * 1000.0, fract(P.time * 3.17) * 1000.0)) - 0.5;
-    col += n_grain * P.grain * 0.08 * (0.2 + col);
+    // Grain scales with brightness so pure black stays still (no background shimmer).
+    col += n_grain * P.grain * 0.12 * col;
     col += (ign(in.pos.xy) - 0.5) * (1.0 / 255.0);
 
     return vec4<f32>(max(col, vec3<f32>(0.0)), 1.0);

@@ -1,24 +1,4 @@
-// Shared uniform block. Prepended to every shader by shaders.rs; keep it in
-// sync with scope::Params (80 bytes).
-
-struct Params {
-    resolution: vec2<f32>,
-    gain: f32,
-    rotation: f32,
-    beam_width: f32,
-    beam_intensity: f32,
-    decay: f32,
-    exposure: f32,
-    tint: vec4<f32>,
-    bloom: f32,
-    grain: f32,
-    time: f32,
-    dt: f32,
-    point_count: u32,
-    flags: u32,       // bit0: auto exposure
-    _pad1: u32,
-    _pad2: u32,
-};
+// Shared prelude, prepended to every shader by shaders.rs.
 
 struct FsIn {
     @builtin(position) pos: vec4<f32>,
@@ -34,3 +14,32 @@ fn fullscreen_vertex(vi: u32) -> FsIn {
     out.uv = vec2<f32>(x, -y) * 0.5 + 0.5;
     return out;
 }
+
+// Interleaved gradient noise (Jimenez 2014): cheap, well distributed.
+fn ign(p: vec2<f32>) -> f32 {
+    return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
+}
+
+// Hash helpers.
+fn hash21(p: vec2<f32>) -> f32 {
+    var q = fract(p * vec2<f32>(123.34, 456.21));
+    q += dot(q, q + 45.32);
+    return fract(q.x * q.y);
+}
+
+fn hash22(p: vec2<f32>) -> vec2<f32> {
+    let h = hash21(p);
+    return vec2<f32>(h, hash21(p + h + 7.13));
+}
+
+// Post / tonemap params (post.rs::PostParams).
+struct PostParams {
+    exposure: f32,
+    bloom: f32,
+    grain: f32,
+    time: f32,
+    dt: f32,
+    flags: u32,       // bit0: auto exposure
+    _pad0: u32,
+    _pad1: u32,
+};

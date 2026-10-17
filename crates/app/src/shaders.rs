@@ -1,21 +1,34 @@
 //! WGSL sources with dev-time hot reload. In a dev build the files under
 //! `crates/app/shaders/` are read from disk and polled for changes; the
 //! embedded copies are the fallback (and the only source in release).
-//! `params.wgsl` is a prelude prepended to every other shader.
+//! Files ending in `_params.wgsl` plus `params.wgsl` form a prelude that is
+//! prepended to every other shader.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
 
-pub const NAMES: [&str; 7] = ["params.wgsl", "decay.wgsl", "beam.wgsl", "bloom_down.wgsl", "bloom_up.wgsl", "expo.wgsl", "present.wgsl"];
-const EMBEDDED: [&str; 7] = [
-    include_str!("../shaders/params.wgsl"),
-    include_str!("../shaders/decay.wgsl"),
-    include_str!("../shaders/beam.wgsl"),
-    include_str!("../shaders/bloom_down.wgsl"),
-    include_str!("../shaders/bloom_up.wgsl"),
-    include_str!("../shaders/expo.wgsl"),
-    include_str!("../shaders/present.wgsl"),
-];
+macro_rules! shader_table {
+    ($($name:literal),* $(,)?) => {
+        pub const NAMES: &[&str] = &[$($name),*];
+        const EMBEDDED: &[&str] = &[$(include_str!(concat!("../shaders/", $name))),*];
+    };
+}
+
+shader_table!(
+    "params.wgsl",
+    "scope_params.wgsl",
+    "decay.wgsl",
+    "beam.wgsl",
+    "bloom_down.wgsl",
+    "bloom_up.wgsl",
+    "expo.wgsl",
+    "present.wgsl",
+    "mix.wgsl",
+);
+
+fn is_prelude(name: &str) -> bool {
+    name == "params.wgsl" || name.ends_with("_params.wgsl")
+}
 
 pub struct ShaderSet {
     sources: Vec<String>,
@@ -37,10 +50,18 @@ impl ShaderSet {
         set
     }
 
-    /// Full source for a shader: the shared prelude plus the file.
+    /// Full source for a shader: the prelude(s) plus the file.
     pub fn source(&self, name: &str) -> String {
-        let i = NAMES.iter().position(|n| *n == name).expect("unknown shader");
-        format!("{}\n{}", self.sources[0], self.sources[i])
+        let i = NAMES.iter().position(|n| *n == name).unwrap_or_else(|| panic!("unknown shader {name}"));
+        let mut out = String::new();
+        for (j, n) in NAMES.iter().enumerate() {
+            if is_prelude(n) {
+                out.push_str(&self.sources[j]);
+                out.push('\n');
+            }
+        }
+        out.push_str(&self.sources[i]);
+        out
     }
 
     fn read_all(&mut self) {

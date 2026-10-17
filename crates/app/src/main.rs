@@ -3,9 +3,12 @@
 
 mod app;
 mod config;
+mod director;
 mod engine;
 mod gpu;
-mod scope;
+mod post;
+mod scene;
+mod scenes;
 mod shaders;
 mod ui;
 

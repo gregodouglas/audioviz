@@ -3,7 +3,7 @@
 
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
-@group(0) @binding(2) var<uniform> P: Params;
+@group(0) @binding(2) var<uniform> P: PostParams;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vi: u32) -> FsIn {
@@ -22,5 +22,7 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
     c += textureSample(src, samp, in.uv + vec2<f32>( o.x, -o.y)).rgb;
     c += textureSample(src, samp, in.uv + vec2<f32>(-o.x,  o.y)).rgb;
     c += textureSample(src, samp, in.uv + vec2<f32>( o.x,  o.y)).rgb;
-    return vec4<f32>(c / 16.0, 1.0);
+    // Attenuate per level so the widest (haziest) levels contribute least:
+    // the glow hugs the lines instead of lifting the whole background.
+    return vec4<f32>(c / 16.0 * 0.6, 1.0);
 }

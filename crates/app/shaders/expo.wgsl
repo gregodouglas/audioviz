@@ -1,10 +1,10 @@
-// Auto-exposure: a 1x1 state texture tracking the mean brightness of the HDR
-// buffer (read from the smallest bloom level), smoothed over ~2 s.
+// Auto-exposure: a 1x1 state texture tracking the mean luminance of the
+// composite (read from the smallest bloom level), smoothed over ~2 s.
 // Bindings: 0 = smallest bloom level, 3 = previous exposure state.
 
 @group(0) @binding(0) var mean_tex: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
-@group(0) @binding(2) var<uniform> P: Params;
+@group(0) @binding(2) var<uniform> P: PostParams;
 @group(0) @binding(3) var prev_expo: texture_2d<f32>;
 @group(0) @binding(4) var unused_tex: texture_2d<f32>;
 
@@ -15,12 +15,12 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> FsIn {
 
 @fragment
 fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
-    // 4x4 grid over the smallest level approximates the global mean.
     var mean = 0.0;
     for (var y = 0; y < 4; y++) {
         for (var x = 0; x < 4; x++) {
             let uv = (vec2<f32>(f32(x), f32(y)) + 0.5) / 4.0;
-            mean += textureSampleLevel(mean_tex, samp, uv, 0.0).r;
+            let c = textureSampleLevel(mean_tex, samp, uv, 0.0).rgb;
+            mean += dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
         }
     }
     mean /= 16.0;

@@ -1,8 +1,9 @@
-// Phosphor persistence: out = previous * decay.
+// Phosphor persistence: out = previous * decay. Used by any scene with a
+// ScopeParams-compatible uniform at binding 2 (field `decay`).
 
 @group(0) @binding(0) var prev_tex: texture_2d<f32>;
 @group(0) @binding(1) var prev_samp: sampler;
-@group(0) @binding(2) var<uniform> P: Params;
+@group(0) @binding(2) var<uniform> P: ScopeParams;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vi: u32) -> FsIn {

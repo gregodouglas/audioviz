@@ -9,15 +9,19 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Fullscreen, Window, WindowId};
 
 use crate::config;
+use crate::director::Director;
 use crate::engine::Engine;
 use crate::gpu::Gpu;
-use crate::scope::{MAX_POINTS, Params, Scope};
+use crate::post::{Post, PostParams};
+use crate::scene::FrameCtx;
+use crate::scenes::scope::{MAX_POINTS, Scope};
 use crate::shaders::ShaderSet;
 use crate::ui::{Settings, Stats};
 
 struct Running {
     gpu: Gpu,
-    scope: Scope,
+    director: Director,
+    post: Post,
     shaders: ShaderSet,
     egui_ctx: egui::Context,
     egui_state: egui_winit::State,
@@ -26,7 +30,6 @@ struct Running {
     engine: Engine,
     /// (L, R) points waiting to be drawn, newest last.
     pending_points: Vec<[f32; 2]>,
-    last_point: [f32; 2],
 
     settings: Settings,
     last_saved: Settings,
@@ -38,6 +41,7 @@ struct Running {
     fps: f32,
     points_per_sec: f32,
     auto_gain_value: f32,
+    post_error: Option<String>,
 }
 
 pub struct App {
@@ -55,7 +59,10 @@ impl Running {
         let settings = config::load();
         let gpu = Gpu::new(window.clone())?;
         let shaders = ShaderSet::load();
-        let scope = Scope::new(&gpu.device, gpu.config.format, gpu.config.width, gpu.config.height, &shaders)?;
+        let (w, h) = (gpu.config.width, gpu.config.height);
+        let scope = Scope::new(&gpu.device, w, h, &shaders).map_err(|e| anyhow::anyhow!("scope: {e}"))?;
+        let director = Director::new(&gpu.device, &shaders, vec![Box::new(scope)]).map_err(|e| anyhow::anyhow!("director: {e}"))?;
+        let post = Post::new(&gpu.device, gpu.config.format, w, h, &shaders).map_err(|e| anyhow::anyhow!("post: {e}"))?;
 
         let egui_ctx = egui::Context::default();
         let egui_state = egui_winit::State::new(
@@ -75,14 +82,14 @@ impl Running {
 
         let mut running = Self {
             gpu,
-            scope,
+            director,
+            post,
             shaders,
             egui_ctx,
             egui_state,
             egui_renderer,
             engine,
             pending_points: Vec::with_capacity(MAX_POINTS),
-            last_point: [0.0, 0.0],
             sent_delay_ms: settings.audio_delay_ms,
             applied_monitor: settings.monitor,
             last_saved: settings.clone(),
@@ -93,6 +100,7 @@ impl Running {
             fps: 0.0,
             points_per_sec: 0.0,
             auto_gain_value: 1.0,
+            post_error: None,
         };
         if running.settings.start_fullscreen {
             running.set_fullscreen(true);
@@ -156,9 +164,17 @@ impl Running {
         }
     }
 
+    fn reload_shaders(&mut self) {
+        self.director.reload_shaders(&self.gpu.device, &self.shaders);
+        self.post_error = self.post.reload_shaders(&self.gpu.device, &self.shaders).err();
+        if self.director.last_error.is_none() && self.post_error.is_none() {
+            tracing::info!("shaders reloaded");
+        }
+    }
+
     fn render(&mut self) {
         if self.shaders.poll() {
-            self.scope.reload_shaders(&self.gpu.device, &self.shaders);
+            self.reload_shaders();
         }
         if (self.settings.audio_delay_ms - self.sent_delay_ms).abs() > 0.01 {
             self.sent_delay_ms = self.settings.audio_delay_ms;
@@ -181,6 +197,8 @@ impl Running {
             self.pending_points.drain(..drop);
         }
         let features = self.engine.features();
+        let target = if features.peak > 0.02 { (0.9 / features.peak).clamp(0.3, 6.0) } else { self.auto_gain_value };
+        self.auto_gain_value += (target - self.auto_gain_value) * (1.0 - (-dt / 1.5).exp());
 
         let frame = match self.gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) => f,
@@ -199,59 +217,64 @@ impl Running {
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self.gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
 
-        // --- scope ---
-        let target = if features.peak > 0.02 { (0.9 / features.peak).clamp(0.3, 6.0) } else { self.auto_gain_value };
-        self.auto_gain_value += (target - self.auto_gain_value) * (1.0 - (-dt / 1.5).exp());
-        let gain = if self.settings.auto_gain { self.settings.gain * self.auto_gain_value } else { self.settings.gain };
-        let pulse = 1.0 + self.settings.beat_pulse * features.beat_pulse * features.beat_confidence;
-
-        let params = Params {
-            resolution: [self.gpu.config.width as f32, self.gpu.config.height as f32],
-            gain,
-            rotation: self.settings.rotation_deg.to_radians(),
-            beam_width: self.settings.beam_width,
-            decay: self.settings.persistence.max(1e-6).powf(dt),
-            beam_intensity: self.settings.beam_intensity,
-            exposure: self.settings.exposure * pulse,
-            tint: [self.settings.tint[0], self.settings.tint[1], self.settings.tint[2], 1.0],
-            bloom: self.settings.bloom,
-            grain: self.settings.grain,
-            time: self.start.elapsed().as_secs_f32(),
-            dt,
-            point_count: 0,
-            flags: if self.settings.auto_exposure { 1 } else { 0 },
-            _pad: [0; 2],
-        };
-        let mut points = Vec::with_capacity(self.pending_points.len() + 1);
-        points.push(self.last_point);
-        points.extend_from_slice(&self.pending_points);
-        if let Some(p) = self.pending_points.last() {
-            self.last_point = *p;
+        // --- scenes → composite → post ---
+        let time = self.start.elapsed().as_secs_f32();
+        {
+            let ctx = FrameCtx {
+                features: &features,
+                settings: &self.settings,
+                dt,
+                time,
+                width: self.gpu.config.width,
+                height: self.gpu.config.height,
+                points: &self.pending_points,
+                auto_gain: self.auto_gain_value,
+            };
+            self.director.render(&self.gpu.device, &self.gpu.queue, &mut encoder, &ctx, self.post.input());
         }
         self.points_per_sec = self.points_per_sec * 0.98 + (self.pending_points.len() as f32 / dt) * 0.02;
         self.pending_points.clear();
-        self.scope.render(&self.gpu.queue, &mut encoder, &view, params, &points);
+        self.post.render(
+            &self.gpu.queue,
+            &mut encoder,
+            &view,
+            PostParams {
+                exposure: self.settings.exposure,
+                bloom: self.settings.bloom,
+                grain: self.settings.grain,
+                time,
+                dt,
+                flags: if self.settings.auto_exposure { 1 } else { 0 },
+                _pad: [0; 2],
+            },
+        );
 
         // --- egui ---
-        let mut toggle_fullscreen = false;
+        let mut actions = crate::ui::Actions::default();
         if self.settings.show_ui {
             let ui_view = frame.texture.create_view(&wgpu::TextureViewDescriptor { format: Some(self.gpu.ui_format), ..Default::default() });
             let raw_input = self.egui_state.take_egui_input(&self.gpu.window);
+            let shader_error = match (&self.director.last_error, &self.post_error) {
+                (None, None) => None,
+                (a, b) => Some([a.clone(), b.clone()].into_iter().flatten().collect::<Vec<_>>().join("\n")),
+            };
             let stats = Stats {
                 fps: self.fps,
                 points_per_sec: self.points_per_sec,
                 capture: self.engine.capture_mode(),
-                shader_error: self.scope.last_shader_error.clone(),
+                shader_error,
                 sample_rate: self.engine.sample_rate,
                 monitors: self.monitor_names(),
                 fullscreen: self.gpu.window.fullscreen().is_some(),
                 settings_path: config::path().map(|p| p.display().to_string()).unwrap_or_default(),
+                scene_names: self.director.scenes.iter().map(|s| s.name()).collect(),
+                scene_current: self.director.current,
+                scene_fading: self.director.is_fading(),
             };
             let settings = &mut self.settings;
-            let mut actions = crate::ui::Actions::default();
+            let director = &mut self.director;
             let egui::FullOutput { platform_output, mut textures_delta, shapes, pixels_per_point, .. } =
-                self.egui_ctx.run_pass(raw_input, |ctx| actions = crate::ui::draw(ctx, settings, &features, &stats));
-            toggle_fullscreen = actions.toggle_fullscreen;
+                self.egui_ctx.run_pass(raw_input, |ctx| actions = crate::ui::draw(ctx, settings, &features, &stats, &mut *director.scenes[director.current]));
             self.egui_state.handle_platform_output(&self.gpu.window, platform_output);
             let primitives = self.egui_ctx.tessellate(shapes, pixels_per_point);
             let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: [self.gpu.config.width, self.gpu.config.height], pixels_per_point };
@@ -289,8 +312,11 @@ impl Running {
         self.gpu.window.pre_present_notify();
         self.gpu.queue.present(frame);
 
-        if toggle_fullscreen {
+        if actions.toggle_fullscreen {
             self.toggle_fullscreen();
+        }
+        if let Some(i) = actions.switch_scene {
+            self.director.switch_to(i);
         }
     }
 }
@@ -327,7 +353,9 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 st.gpu.resize(size.width, size.height);
-                st.scope.resize(&st.gpu.device, st.gpu.config.width, st.gpu.config.height);
+                let (w, h) = (st.gpu.config.width, st.gpu.config.height);
+                st.director.resize(&st.gpu.device, w, h);
+                st.post.resize(&st.gpu.device, w, h);
             }
             WindowEvent::RedrawRequested => st.render(),
             WindowEvent::KeyboardInput { event: KeyEvent { physical_key: PhysicalKey::Code(code), state: ElementState::Pressed, repeat: false, .. }, .. } => match code {
@@ -336,8 +364,13 @@ impl ApplicationHandler for App {
                 KeyCode::Tab => st.settings.show_ui = !st.settings.show_ui,
                 KeyCode::F5 => {
                     st.shaders = ShaderSet::load();
-                    st.scope.reload_shaders(&st.gpu.device, &st.shaders);
+                    st.reload_shaders();
                 }
+                KeyCode::Space => st.director.next(),
+                KeyCode::Digit1 => st.director.switch_to(0),
+                KeyCode::Digit2 => st.director.switch_to(1),
+                KeyCode::Digit3 => st.director.switch_to(2),
+                KeyCode::Digit4 => st.director.switch_to(3),
                 _ => {}
             },
             _ => {}

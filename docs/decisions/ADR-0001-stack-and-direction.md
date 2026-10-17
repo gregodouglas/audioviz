@@ -1,11 +1,11 @@
 # ADR-0001 — Stack, ingest path and first scene
 
-- **Status:** Partially accepted 2026-10-16. Items 2, 3, 4, 5 decided by Greg. Item 1 has a recommended resolution awaiting Greg's confirmation.
+- **Status:** Accepted 2026-10-16 (all items confirmed by Greg).
 - **Context:** Phase 0 research (`docs/research/00-synthesis.md`) is complete. The project needs a rendering stack, an audio ingest path and a first scene to start a spike. Targets: Windows 11 + RTX 2070 Super first, then macOS on a MacBook Pro M4 Max.
 
 ## Decisions
 
-### 1. Rendering stack and iteration workflow — recommended, awaiting confirmation
+### 1. Rendering stack and iteration workflow — accepted
 
 **Rust + wgpu + winit as the single production codebase**, egui for a debug/settings overlay, WGSL shaders. Linear HDR internally, AgX tonemap and blue-noise dither at output.
 

@@ -13,6 +13,7 @@ use crate::settings::{Layer, VisualKind};
 
 pub const N_RAYS: usize = 24;
 pub const N_RINGS: usize = 6;
+pub const N_DRIPS: usize = 16;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug, Default)]
@@ -34,6 +35,9 @@ pub struct GlyphParams {
     pub tri: [f32; 4],
     pub trace: [[f32; 4]; 4],
     pub trace_meta: [f32; 4],
+    pub pen: [f32; 4],
+    pub drips: [[f32; 4]; N_DRIPS],
+    pub drip_s: [[f32; 4]; 4],
     pub palette: crate::color::Table,
 }
 
@@ -127,7 +131,7 @@ impl Arrangement {
             ring.speed = dir * (0.03 + 0.08 * rnd(&mut s));
             ring.rot = rnd(&mut s) * std::f32::consts::TAU;
         }
-        let symmetry = [1u32, 1, 2, 2, 3, 4][(rnd(&mut s) * 5.99) as usize];
+        let symmetry = [1u32, 1, 1, 2, 2, 3][(rnd(&mut s) * 5.99) as usize];
         let orb_radius = 0.035 + 0.03 * rnd(&mut s);
         // Centre star polygon: {3/1} {4/1} {5/2} {6/2} {7/3} {8/3}; sits between
         // the inner rings and the orbit.
@@ -168,6 +172,19 @@ impl Arrangement {
     }
 }
 
+/// A run of paint: it falls from `top` to `head`, speeding up, and fades.
+#[derive(Clone, Copy, Debug, Default)]
+struct Drip {
+    x: f32,
+    top: f32,
+    head: f32,
+    vel: f32,
+    pos: f32,
+    strength: f32,
+    age: f32,
+    life: f32,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct Ray {
     angle: f32,
@@ -180,9 +197,9 @@ struct Ray {
 const OUT_S: f32 = 1.6;
 const IN_S: f32 = 3.2;
 /// Ray life (strength e-fold), seconds.
-const RAY_LIFE: f32 = 0.9;
+const RAY_LIFE: f32 = 0.5;
 /// Least time between ray strikes, seconds.
-const RAY_GAP: f32 = 0.12;
+const RAY_GAP: f32 = 0.25;
 
 pub struct Sigil {
     out: wgpu::TextureView,
@@ -213,8 +230,15 @@ pub struct Sigil {
     tri_rot: f32,
     tri_target: f32,
     last_bar: u32,
-    /// Pen position along the trace, in segments.
+    /// Pen position along the trace, in segments, this frame and last.
     pen: f32,
+    pen_prev: f32,
+    drips: [Drip; N_DRIPS],
+    drip_acc: f32,
+    rng: u64,
+    /// Slewed low-onset flare that pushes the spread outward.
+    explode: f32,
+    symmetry_override: u32,
 }
 
 impl Sigil {
@@ -253,11 +277,17 @@ impl Sigil {
             tri_target: 0.0,
             last_bar: 0,
             pen: 0.0,
+            pen_prev: 0.0,
+            drips: [Drip::default(); N_DRIPS],
+            drip_acc: 0.0,
+            rng: 0x1234_5678_9abc_def0,
+            explode: 0.0,
+            symmetry_override: 0,
         })
     }
 
     fn spawn_rays(&mut self, class: usize, strength: f32) {
-        let sym = self.arrangement.symmetry.max(1);
+        let sym = if self.symmetry_override == 0 { self.arrangement.symmetry } else { self.symmetry_override }.max(1);
         let base = class as f32 / 12.0 * std::f32::consts::TAU;
         for k in 0..sym {
             // Take the weakest slot after the cursor so live rays survive.
@@ -314,6 +344,7 @@ impl Scene for Sigil {
         let s = &layer.sigil;
         let f = ctx.features;
         let dt = ctx.dt.clamp(0.0, 0.1);
+        self.symmetry_override = s.symmetry;
 
         // Track change: queue a rebuild (or reseed at once while still dark).
         if ctx.art_id != 0 && ctx.art_id != self.last_track {
@@ -337,6 +368,9 @@ impl Scene for Sigil {
                     self.arrangement = Arrangement::from_seed(seed);
                 }
                 self.rays = [Ray::default(); N_RAYS];
+                self.drips = [Drip::default(); N_DRIPS];
+                self.pen = 0.0;
+                self.pen_prev = 0.0;
             }
         } else if self.lit < 1.0 {
             self.lit = (self.lit + dt / IN_S).min(1.0);
@@ -418,12 +452,90 @@ impl Scene for Sigil {
             // Lift the slow profile so chords read, with the fast one on top.
             chroma[i / 4][i % 4] = (0.6 * f.chroma_slow[i] + 0.6 * f.chroma[i]).clamp(0.0, 1.2);
         }
+        // Spread: everything outside the inner ring moves radially, and drops
+        // push it outward for a moment.
+        let k_ex = if flare > self.explode { 0.05 } else { 0.6 };
+        self.explode += (flare - self.explode) * (1.0 - (-dt / k_ex).exp());
+        let spread = (s.spread * (1.0 + 0.6 * s.explode * self.explode * s.react)).max(0.05);
+        let r0 = self.arrangement.rings[0].radius;
+        let sp = |r: f32| r0 + (r - r0) * spread;
+        let orbit_r = sp(self.arrangement.orbit_radius);
+        let tau = std::f32::consts::TAU;
+
+        // Drips: spawned from lit orbs, ring bottoms and trace points when loud.
+        let nest = if s.nest == 0 { self.arrangement.nest } else { s.nest };
+        let rate = s.drips * (0.35 + 1.5 * (self.energy - 0.9).max(0.0) + 0.8 * onset) * self.lit;
+        self.drip_acc += dt * rate;
+        if self.drip_acc >= 1.0 {
+            self.drip_acc -= 1.0;
+            let u = rnd(&mut self.rng);
+            let (x, y, pos) = if u < 0.55 {
+                // An orb that is lit.
+                let mut best = 0;
+                let mut bv = -1.0;
+                for (k, v) in f.chroma_slow.iter().enumerate() {
+                    let v = v + rnd(&mut self.rng) * 0.5;
+                    if v > bv {
+                        bv = v;
+                        best = k;
+                    }
+                }
+                let ang = self.orbit_angle + best as f32 * tau / 12.0;
+                (orbit_r * ang.cos(), orbit_r * ang.sin() - self.arrangement.orb_radius, best as f32 / 12.0 + 0.5)
+            } else if u < 0.8 {
+                let i = (rnd(&mut self.rng) * (N_RINGS as f32 - 0.01)) as usize;
+                let r = if i == 0 { r0 } else { sp(self.arrangement.rings[i].radius) };
+                let jitter = (rnd(&mut self.rng) - 0.5) * 0.6;
+                (r * jitter.sin(), -r * jitter.cos(), i as f32 / 6.0 + 0.04)
+            } else {
+                let i = (rnd(&mut self.rng) * (self.arrangement.trace_n as f32 - 0.01)) as usize;
+                let ang = self.orbit_angle + self.arrangement.trace[i] as f32 * tau / 12.0;
+                (orbit_r * ang.cos(), orbit_r * ang.sin(), 0.5)
+            };
+            let slot = (0..N_DRIPS).min_by(|&a, &b| self.drips[a].strength.partial_cmp(&self.drips[b].strength).unwrap()).unwrap_or(0);
+            if self.drips[slot].strength < 0.3 {
+                self.drips[slot] = Drip { x, top: y, head: y, vel: 0.0, pos, strength: 0.7 + 0.5 * self.energy.min(1.5), age: 0.0, life: 2.5 + 2.5 * rnd(&mut self.rng) };
+            }
+        }
+        for d in self.drips.iter_mut() {
+            if d.strength <= 0.0 {
+                continue;
+            }
+            d.age += dt;
+            // Slow paint: it speeds up a little, then dries once its life is over.
+            let dry = (d.age / d.life).clamp(0.0, 1.0);
+            d.vel = ((d.vel + dt * 0.05) * (1.0 - dry)).min(0.1);
+            d.head -= d.vel * dt;
+            // The run keeps a bounded length: the top follows the head.
+            let max_len = 0.1 + 0.3 * d.pos.fract();
+            if d.top - d.head > max_len {
+                d.top = d.head + max_len;
+            }
+            if d.age > d.life {
+                d.strength -= dt * 0.5;
+            }
+            if d.head < -1.6 || d.strength <= 0.0 {
+                d.strength = 0.0;
+            }
+        }
+
         let a = &self.arrangement;
         let mut trace = [[0.0f32; 4]; 4];
         for i in 0..a.trace_n.min(8) {
-            let ang = self.orbit_angle + a.trace[i] as f32 * std::f32::consts::TAU / 12.0;
-            trace[i / 2][(i % 2) * 2] = a.orbit_radius * ang.cos();
-            trace[i / 2][(i % 2) * 2 + 1] = a.orbit_radius * ang.sin();
+            let ang = self.orbit_angle + a.trace[i] as f32 * tau / 12.0;
+            trace[i / 2][(i % 2) * 2] = orbit_r * ang.cos();
+            trace[i / 2][(i % 2) * 2 + 1] = orbit_r * ang.sin();
+        }
+        let mut drips = [[0.0f32; 4]; N_DRIPS];
+        let mut drip_s = [[0.0f32; 4]; 4];
+        for (i, d) in self.drips.iter().enumerate() {
+            drips[i] = [d.x, d.top, d.head, d.pos];
+            drip_s[i / 4][i % 4] = d.strength.clamp(0.0, 1.5);
+        }
+        let sides = if s.sides == 0 { a.poly_n } else { s.sides.clamp(3, 8) };
+        let skip = if s.sides == 0 { a.poly_k } else { [1u32, 1, 2, 2, 3, 3][(sides - 3) as usize] };
+        for ring in rings.iter_mut().skip(1) {
+            ring[0] = sp(ring[0]);
         }
         let params = GlyphParams {
             resolution: [ctx.width as f32, ctx.height as f32],
@@ -434,18 +546,22 @@ impl Scene for Sigil {
             rings,
             rays,
             chroma,
-            orbit: [a.orbit_radius, self.orbit_angle, a.orb_radius, s.orbs],
-            build: [self.lit, (a.seed % 1000) as f32, a.nest as f32, f.key_class as f32],
+            orbit: [orbit_r, self.orbit_angle, a.orb_radius, s.orbs],
+            build: [self.lit, s.core, s.drips, f.key_class as f32],
             music: [self.energy, onset, beat, flare],
             style: [s.glow, s.ground, s.rays, ctx.palette_shift],
             misc: [(-dt / s.persistence.max(0.02)).exp(), s.rings, self.spin, s.react],
-            shape: [a.poly_n as f32, a.poly_k as f32, a.poly_r, self.poly_rot],
-            tri: [a.tri_r, a.tri_size, self.tri_rot, s.shapes],
+            shape: [sides as f32, skip as f32, sp(a.poly_r), self.poly_rot],
+            tri: [sp(a.tri_r), a.tri_size, self.tri_rot, s.shapes],
             trace,
-            trace_meta: [a.trace_n as f32, self.pen, s.trace, a.nest as f32],
+            trace_meta: [a.trace_n as f32, self.pen, s.trace, nest as f32],
+            pen: [self.pen_prev, s.hot, s.line_width, 0.94],
+            drips,
+            drip_s,
             palette: ctx.palette.copied().unwrap_or([[0.0; 4]; crate::color::ENTRIES]),
         };
         queue.write_buffer(&self.params_buf, 0, bytemuck::bytes_of(&params));
+        self.pen_prev = self.pen;
 
         let prev = self.current;
         let cur = 1 - prev;
@@ -459,27 +575,47 @@ impl Scene for Sigil {
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         let s = &mut layer.sigil;
-        use crate::widgets::{ghost_button, hint, slider_row, toggle_row};
+        use crate::widgets::{ghost_button, hint, slider_row, small_caps, toggle_row};
+        let by_track = |v: f64| if v < 0.5 { "by track".to_string() } else { format!("{v:.0}") };
+        small_caps(ui, "Look");
         slider_row(ui, "Size", &mut s.scale, 0.3..=1.6, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Spread", &mut s.spread, 0.2..=2.2, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Line width", &mut s.line_width, 0.3..=3.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Hot core", &mut s.hot, 0.0..=1.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Glow", &mut s.glow, 0.0..=3.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Afterimage", &mut s.persistence, 0.05..=4.0, |v| format!("{v:.2} s"), true);
+        ui.add_space(6.0);
+        small_caps(ui, "Elements");
+        slider_row(ui, "Core", &mut s.core, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Rings", &mut s.rings, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Rays", &mut s.rays, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Orbs", &mut s.orbs, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Shapes", &mut s.shapes, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Trace", &mut s.trace, 0.0..=2.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Drips", &mut s.drips, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Ground", &mut s.ground, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Afterimage", &mut s.persistence, 0.05..=4.0, |v| format!("{v:.2} s"), true);
-        slider_row(ui, "Spin", &mut s.spin, 0.0..=4.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Reacts", &mut s.react, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        toggle_row(ui, "Rebuild on track change", &mut s.rebuild);
-        hint(ui, "Rings breathe with their band (sub to air, inside out), rays strike on onsets at the angle of the pitch class, the orbs light with the chord, the star and triangles turn with energy and step on bars, and a pen writes the sigil trace in time with the beat. Every track draws a new glyph. Give the layer the neon or rave palette.");
         ui.add_space(6.0);
-        if ghost_button(ui, "Reset sigil", false).clicked() {
-            *s = Default::default();
+        small_caps(ui, "Structure");
+        slider_row(ui, "Star sides", &mut s.sides, 0..=8, |v| if v < 0.5 { "by track".to_string() } else if v < 3.0 { "3".to_string() } else { format!("{v:.0}") }, false);
+        if s.sides != 0 {
+            s.sides = s.sides.max(3);
         }
+        slider_row(ui, "Nesting", &mut s.nest, 0..=4, by_track, false);
+        slider_row(ui, "Ray symmetry", &mut s.symmetry, 0..=6, by_track, false);
+        toggle_row(ui, "Rebuild on track change", &mut s.rebuild);
         if ghost_button(ui, "New arrangement", false).clicked() {
             self.pending = Some(self.arrangement.seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407));
             self.going_out = true;
+        }
+        ui.add_space(6.0);
+        small_caps(ui, "Motion");
+        slider_row(ui, "Spin", &mut s.spin, 0.0..=4.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Explode on drops", &mut s.explode, 0.0..=2.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Reacts", &mut s.react, 0.0..=2.0, |v| format!("{v:.2}"), false);
+        hint(ui, "Rings breathe with their band (sub to air, inside out), rays strike on onsets at the angle of the pitch class, the orbs light with the chord, the star and triangles turn with energy and step on bars, a pen writes the sigil trace in time with the beat, and paint runs from whatever is bright when it is loud. Every track draws a new glyph. Give the layer the neon or rave palette.");
+        ui.add_space(6.0);
+        if ghost_button(ui, "Reset sigil", false).clicked() {
+            *s = Default::default();
         }
     }
 }
@@ -498,7 +634,7 @@ mod tests {
 
     #[test]
     fn params_layout_matches_wgsl() {
-        assert_eq!(std::mem::size_of::<GlyphParams>(), 816 + 512);
+        assert_eq!(std::mem::size_of::<GlyphParams>(), 1152 + 512);
         assert_eq!(offset_of!(GlyphParams, tint), 16);
         assert_eq!(offset_of!(GlyphParams, bands), 32);
         assert_eq!(offset_of!(GlyphParams, rings), 96);
@@ -510,7 +646,10 @@ mod tests {
         assert_eq!(offset_of!(GlyphParams, shape), 704);
         assert_eq!(offset_of!(GlyphParams, trace), 736);
         assert_eq!(offset_of!(GlyphParams, trace_meta), 800);
-        assert_eq!(offset_of!(GlyphParams, palette), 816);
+        assert_eq!(offset_of!(GlyphParams, pen), 816);
+        assert_eq!(offset_of!(GlyphParams, drips), 832);
+        assert_eq!(offset_of!(GlyphParams, drip_s), 1088);
+        assert_eq!(offset_of!(GlyphParams, palette), 1152);
     }
 
     #[test]

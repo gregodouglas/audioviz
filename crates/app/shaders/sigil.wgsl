@@ -68,7 +68,25 @@ fn own(t: f32) -> vec3<f32> {
 }
 
 fn col_at(pos: f32) -> vec3<f32> {
-    return mix(own(pos), pal(pos + P.style.w), P.tint.w);
+    let c = mix(own(pos), pal(pos + P.style.w), P.tint.w);
+    let l = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    return max(mix(vec3<f32>(l), c, 1.25), vec3<f32>(0.0));
+}
+
+fn drip_s(i: u32) -> f32 {
+    let v = P.drip_s[(i / 4u) & 3u];
+    switch (i % 4u) {
+        case 0u: { return v.x; }
+        case 1u: { return v.y; }
+        case 2u: { return v.z; }
+        default: { return v.w; }
+    }
+}
+
+// Point at `t` segments along the trace.
+fn trace_at(t: f32, tn: u32) -> vec2<f32> {
+    let si = u32(clamp(floor(t), 0.0, f32(tn - 2u)));
+    return mix(trace_point(si), trace_point(si + 1u), clamp(t - f32(si), 0.0, 1.0));
 }
 
 // A neon tube at distance `d` with half-width `w`: white-hot core plus a
@@ -76,7 +94,8 @@ fn col_at(pos: f32) -> vec3<f32> {
 fn tube(d: f32, w: f32, c: vec3<f32>) -> vec3<f32> {
     let core = exp(-(d * d) / (w * w));
     let halo = exp(-d / (w * 4.0)) * 0.45 + 0.07 * w / (d + w * 0.5);
-    return mix(c, vec3<f32>(1.0), 0.5) * core * 2.4 + c * halo * P.style.x;
+    let hot = P.pen.y;
+    return mix(c, vec3<f32>(1.0), hot) * core * (1.3 + 1.2 * hot) + c * halo * P.style.x;
 }
 
 // Visibility of an element with light-up order `order` (0 = first) and a
@@ -178,6 +197,7 @@ fn fs_main(in: FsIn) -> Out {
     // Half-extent 1 along the short side, then the glyph scale.
     let p = (in.uv * 2.0 - 1.0) * vec2<f32>(res.x / short, -res.y / short) / P.scale;
     let px = 2.0 / (short * P.scale);   // one pixel in glyph units
+    let lw = P.pen.z;
     let energy = P.music.x;
     let onset = P.music.y;
     let beat = P.music.z;
@@ -201,7 +221,7 @@ fn fs_main(in: FsIn) -> Out {
         let R = P.rings[i];
         let b = band6(i);
         let rad = R.x * (1.0 + 0.06 * b * react);
-        let w = max(R.y * (1.0 + 0.5 * b * react), px * 1.1);
+        let w = max(R.y * lw * (1.0 + 0.5 * b * react), px * 1.1);
         var d = abs(r - rad);
         var m = 1.0;
         if (R.z > 0.5) {
@@ -214,7 +234,7 @@ fn fs_main(in: FsIn) -> Out {
         }
         var bright = (0.3 + 0.6 * b * react) * P.misc.y;
         if (i == 0u) {
-            bright += 0.8 * beat * react;
+            bright = (bright + 0.8 * beat * react) * P.build.y;
         }
         acc += tube(d, w, col_at(f32(i) / 6.0 + 0.04)) * bright * m * lit(f32(i) * 0.11, f32(i) + 1.0);
     }
@@ -232,7 +252,7 @@ fn fs_main(in: FsIn) -> Out {
         let sg = segment(p, dir * r0, dir * (r0 + len));
         let t = sg.y;
         let fade = (1.0 - t) * (1.0 - t);
-        let w = max(0.0075 * (1.0 - 0.6 * t), px * 1.1);
+        let w = max(0.0055 * lw * (1.0 - 0.6 * t), px * 1.1);
         fresh += tube(sg.x, w, col_at(Rr.w)) * Rr.y * fade * P.style.z * lit(0.25, 40.0 + f32(s));
     }
 
@@ -249,7 +269,7 @@ fn fs_main(in: FsIn) -> Out {
         let is_key = select(0.0, 1.0, u32(P.build.w) == kk);
         let bright = (0.22 + 1.3 * ch * react + 0.3 * is_key * react) * P.orbit.w;
         let col = col_at(f32(kk) / 12.0 + 0.5);
-        let w = max(0.0055, px * 1.1);
+        let w = max(0.0055 * lw, px * 1.1);
         let ring = tube(abs(dc - P.orbit.z), w, col);
         let dot_r = P.orbit.z * (0.22 + 0.25 * ch * react + 0.2 * beat * react);
         let dotl = tube(max(dc - dot_r, 0.0), w * 1.3, col) * 1.2;
@@ -263,12 +283,12 @@ fn fs_main(in: FsIn) -> Out {
         let nest = u32(P.trace_meta.w);
         let bass = band6(1u);
         let pcol = col_at(0.9);
-        let w = max(0.005, px * 1.1);
+        let w = max(0.005 * lw, px * 1.1);
         for (var lv = 0u; lv < nest; lv++) {
-            let shrink = pow(0.72, f32(lv));
+            let shrink = pow(P.pen.w, f32(lv));
             let rr = P.shape.z * shrink * (1.0 + 0.05 * bass * react);
-            // Alternate levels turn against each other by half a step.
-            let rot = P.shape.w * select(1.0, -1.3, (lv & 1u) == 1u) + f32(lv) * PI / f32(n);
+            // Levels overlay: each a fraction of a step round, alternate ones counter-turning.
+            let rot = P.shape.w * select(1.0, -1.3, (lv & 1u) == 1u) + f32(lv) * PI / f32(n) / f32(max(nest, 1u)) * 2.0;
             let d = polygram(p, n, k, rr, rot);
             let bright = (0.45 + 0.35 * bass * react + 0.5 * beat * react) * P.tri.w;
             acc += tube(d, w, pcol) * bright * lit(0.15 + 0.08 * f32(lv), 200.0 + f32(lv));
@@ -285,7 +305,7 @@ fn fs_main(in: FsIn) -> Out {
         let dir = vec2<f32>(cos(ca), sin(ca));
         let cm = P.tri.x * dir;
         let q = p - cm;
-        let w = max(0.005, px * 1.1);
+        let w = max(0.005 * lw, px * 1.1);
         if ((kq8 & 1u) == 0u) {
             // Cardinal: triangles, apex outward, own-axis turn on bars.
             let mid = band6(3u);
@@ -310,7 +330,7 @@ fn fs_main(in: FsIn) -> Out {
     // beat-driven pen whose glow stays in the trail.
     let tn = u32(P.trace_meta.x);
     if (tn >= 2u && P.trace_meta.z > 0.001) {
-        let w = max(0.004, px * 1.1);
+        let w = max(0.004 * lw, px * 1.1);
         let tcol = col_at(0.5 + P.style.w * 0.0);
         var d = 1e3;
         for (var i = 0u; i + 1u < tn; i++) {
@@ -326,15 +346,47 @@ fn fs_main(in: FsIn) -> Out {
         d = min(d, segment(p, pe - perp * 0.035, pe + perp * 0.035).x);
         let on = lit(0.75, 400.0);
         acc += tube(d, w, tcol) * 0.3 * P.trace_meta.z * on;
-        // Pen.
+        // Pen: a stroke from where it was last frame to where it is, via the
+        // vertex when it crossed one, so the trail is a continuous line.
         let pen = P.trace_meta.y;
-        let si = u32(clamp(floor(pen), 0.0, f32(tn - 2u)));
-        let pp = mix(trace_point(si), trace_point(si + 1u), fract(pen));
-        fresh += tube(length(p - pp), w * 2.2, tcol) * (0.8 + 0.6 * beat * react) * P.trace_meta.z * on;
+        let pen0 = P.pen.x;
+        let pa = trace_at(pen0, tn);
+        let pb = trace_at(pen, tn);
+        var dpen = 1e3;
+        if (abs(pen - pen0) < 1.5 && floor(pen) != floor(pen0)) {
+            let v = trace_point(u32(clamp(max(floor(pen), floor(pen0)), 0.0, f32(tn - 1u))));
+            dpen = min(segment(p, pa, v).x, segment(p, v, pb).x);
+        } else if (abs(pen - pen0) < 1.5) {
+            dpen = segment(p, pa, pb).x;
+        } else {
+            dpen = length(p - pb);
+        }
+        fresh += tube(dpen, w * 1.6, tcol) * (0.8 + 0.6 * beat * react) * P.trace_meta.z * on;
+    }
+
+    // Drips: paint running down from bright elements, a tapering line with a
+    // bead at the head, kept in the trail.
+    if (P.build.z > 0.001) {
+        let w = max(0.0065 * lw, px * 1.1);
+        for (var i = 0u; i < 16u; i++) {
+            let st = drip_s(i);
+            if (st < 0.01) {
+                continue;
+            }
+            let D = P.drips[i];
+            if (abs(p.x - D.x) > 0.12) {
+                continue;
+            }
+            let sg = segment(p, vec2<f32>(D.x, D.y), vec2<f32>(D.x, D.z));
+            let taper = mix(1.0, 0.4, sg.y);
+            let bead = length(p - vec2<f32>(D.x, D.z)) - w * 0.8;
+            let d = min(sg.x / taper, max(bead, 0.0));
+            fresh += tube(d, w, col_at(D.w)) * st * 0.8 * P.build.z;
+        }
     }
 
     // Drops: a soft flare from the centre, left in the trail.
-    fresh += col_at(P.style.w + 0.5) * flare * react * exp(-r * 3.5) * 0.9 * lit(0.0, 7.0);
+    fresh += col_at(P.style.w + 0.5) * flare * react * exp(-r * 4.5) * 0.45 * P.build.y * lit(0.0, 7.0);
 
     // Persistence: afterimages keep the brightest of the fade and the new light.
     let trail = max(prev * P.misc.x, fresh);

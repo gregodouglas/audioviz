@@ -124,9 +124,22 @@ impl Running {
         }
     }
 
+    /// F11 / panel button: fullscreen on the monitor the window is on right
+    /// now, and remember that monitor for "start fullscreen".
     fn toggle_fullscreen(&mut self) {
-        let on = self.gpu.window.fullscreen().is_none();
-        self.set_fullscreen(on);
+        if self.gpu.window.fullscreen().is_some() {
+            self.set_fullscreen(false);
+            return;
+        }
+        let w = &self.gpu.window;
+        let current = w.current_monitor();
+        if let Some(m) = &current {
+            if let Some(i) = w.available_monitors().position(|x| x == *m) {
+                self.settings.monitor = i;
+                self.applied_monitor = i;
+            }
+        }
+        w.set_fullscreen(Some(Fullscreen::Borderless(current)));
     }
 
     fn frame_period(&self) -> Option<Duration> {

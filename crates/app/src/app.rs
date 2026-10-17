@@ -29,6 +29,7 @@ use crate::settings::{Section, Settings};
 use crate::shaders::ShaderSet;
 use crate::strip::Strip;
 use crate::theme::{self, BAR_H, PANEL_W, STRIP_H};
+use crate::tray::{Tray, TrayAction};
 
 /// Scene index of the starfield (the one with the type overlay).
 const STARFIELD_SCENE: usize = 2;
@@ -150,6 +151,7 @@ struct Running {
     last_battery_check: Instant,
     spotify_installed: bool,
     quit: bool,
+    tray: Option<Tray>,
 }
 
 fn time_floor(t: f32) -> i32 {
@@ -261,12 +263,20 @@ impl Running {
             last_battery_check: Instant::now(),
             spotify_installed: platform::spotify_installed(),
             quit: false,
+            tray: None,
         };
+        let scene_names: Vec<&str> = running.director.scenes.iter().map(|s| s.name()).collect();
+        let monitors = running.monitors();
+        match Tray::new(&scene_names, &monitors, running.settings.auto_scenes) {
+            Ok(t) => running.tray = Some(t),
+            Err(e) => tracing::warn!("tray icon unavailable: {e:#}"),
+        }
         if running.settings.start_fullscreen && !start_in_tray {
             running.set_fullscreen(true);
         }
         if start_in_tray {
-            running.gpu.window.set_minimized(true);
+            running.gpu.window.set_visible(false);
+            running.occluded = true;
         }
         Ok(running)
     }
@@ -309,6 +319,14 @@ impl Running {
             }
         }
         w.set_fullscreen(Some(Fullscreen::Borderless(current)));
+    }
+
+    fn show_window(&mut self) {
+        let w = &self.gpu.window;
+        w.set_visible(true);
+        w.set_minimized(false);
+        w.focus_window();
+        self.occluded = false;
     }
 
     fn effective_fps_cap(&self) -> u32 {
@@ -491,6 +509,27 @@ impl Running {
         }
         if let Some(c) = &mut self.calibration {
             c.resolve(&self.engine.recent_onsets());
+        }
+        // Tray menu.
+        let tray_actions = self.tray.as_ref().map(|t| t.poll()).unwrap_or_default();
+        for a in tray_actions {
+            match a {
+                TrayAction::Show => self.show_window(),
+                TrayAction::Scene(i) => {
+                    self.show_window();
+                    self.director.switch_to(i);
+                }
+                TrayAction::ToggleAuto => self.settings.auto_scenes = !self.settings.auto_scenes,
+                TrayAction::Fullscreen(i) => {
+                    self.show_window();
+                    self.settings.monitor = i;
+                    self.set_fullscreen(true);
+                }
+                TrayAction::Quit => self.quit = true,
+            }
+        }
+        if let Some(t) = &self.tray {
+            t.set_auto(self.settings.auto_scenes);
         }
         let native = hittest::take_events();
         self.chrome.max_hover = native.max_hover;

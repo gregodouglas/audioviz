@@ -20,6 +20,7 @@ mod settings;
 mod shaders;
 mod strip;
 mod theme;
+mod tray;
 mod widgets;
 
 use tracing_subscriber::EnvFilter;

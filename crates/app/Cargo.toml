@@ -30,6 +30,7 @@ serde.workspace = true
 serde_json.workspace = true
 dirs.workspace = true
 image.workspace = true
+tray-icon = "0.26"
 
 [target.'cfg(windows)'.dependencies]
 # Only for attaching to the parent console so `--version` / `--help` can print

@@ -19,7 +19,7 @@ pub const ERROR: Color32 = Color32::from_rgb(0xff, 0x78, 0x78);
 
 pub const BAR_H: f32 = 28.0;
 pub const STRIP_H: f32 = 72.0;
-pub const PANEL_W: f32 = 352.0;
+pub const PANEL_W: f32 = 380.0;
 pub const RAIL_W: f32 = 40.0;
 pub const RADIUS: u8 = 4;
 /// Seconds of mouse rest before the chrome hides.

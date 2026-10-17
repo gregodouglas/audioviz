@@ -124,3 +124,13 @@ Each step is one commit and one `AUDIOVIZ_PANEL=` screenshot set. Nothing in set
 - Dev: `AUDIOVIZ_MOD=n` opens modifier n's page for screenshots; `AUDIOVIZ_PANEL=Picture`.
 
 Differences from the plan: no shift-drag (the editable DragValue covers fine steps); the Scenes header has no Save affordance (the save block is one scroll away and the bar already says "unsaved scene"); the focused stack row is highlighted with its hue at low alpha rather than only the bar.
+
+## Second pass: the rows themselves (2026-10-17)
+
+Greg: "most important are controls and tuners and sliders." Looking at the panel at 1:1, a slider row cost two lines (label + value, then the slider), so seven controls filled a screen; the rail was invisible on the panel colour, the handle was a plain 17 px disc, and nothing marked the default. Now (`widgets::slider_def`):
+
+- **One line per control**: label column 108 px (truncated with a tooltip when long), the slider, then the editable value in a 48 px mono column. Rows are 31 px, so a group of eight controls fits in a quarter of the panel. The panel is 380 px wide to keep a 120 px track.
+- **Rail** drawn in a visible grey with the travelled part in the accent; handle 13 px.
+- **Default tick** on the rail at the default value (log ranges mapped properly), label dimmed while the value sits there, double-click on the slider returns to it.
+- **Hover**: the row gets a faint raised background (one frame behind) and the label brightens, so the control under the pointer is unambiguous. Toggle rows got the same hover.
+- Dropdown rows share the label column width.

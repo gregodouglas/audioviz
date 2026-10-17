@@ -30,44 +30,83 @@ pub fn slider_row<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &m
     slider_def(ui, label, value, None, range, fmt, log)
 }
 
-/// `slider_row` that knows the control's default: the label is dimmed while
-/// the value sits at it, and a double-click on the slider puts it back.
+/// `slider_row` that knows the control's default: a tick marks it on the rail,
+/// the label is dimmed while the value sits at it, and a double-click on the
+/// slider puts it back. One line: label · slider · editable value.
 pub fn slider_def<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &mut Num, default: Option<Num>, range: std::ops::RangeInclusive<Num>, fmt: impl Fn(f64) -> String, log: bool) -> Response {
     let at_default = default.is_some_and(|d| (value.to_f64() - d.to_f64()).abs() <= 1e-6 * (1.0 + d.to_f64().abs()));
-    let span = (range.end().to_f64() - range.start().to_f64()).abs().max(1e-9);
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(label).color(if at_default { TEXT_2 } else { TEXT }));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+    let (lo, hi) = (range.start().to_f64(), range.end().to_f64());
+    let span = (hi - lo).abs().max(1e-9);
+    let id = ui.scope_id().with(("slider", label));
+    let hovered_last = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    let mut out: Option<Response> = None;
+    let frame = egui::Frame::new().fill(if hovered_last { theme::with_alpha(theme::RAISED, 160) } else { Color32::TRANSPARENT }).corner_radius(4.0).inner_margin(egui::Margin::symmetric(4, 1)).outer_margin(egui::Margin::symmetric(-4, 0));
+    let fr = frame.show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            let label_w = 108.0;
+            let value_w = 48.0;
+            let lc = if hovered_last { TEXT } else if at_default { TEXT_2 } else { TEXT };
+            let r = ui.allocate_ui_with_layout(vec2(label_w, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_width(label_w);
+                ui.add(egui::Label::new(egui::RichText::new(label).size(12.5).color(lc)).truncate())
+            }).inner;
+            if r.hovered() && ui.painter().layout_no_wrap(label.to_string(), theme::sans(12.5), TEXT).size().x > label_w {
+                r.on_hover_text(label);
+            }
+            let sw = (ui.available_width() - value_w - 8.0).max(40.0);
+            ui.spacing_mut().slider_width = sw;
+            ui.spacing_mut().interact_size.y = 16.0;
+            // The rail: visible on the panel, the travelled part in the accent.
             let v = ui.visuals_mut();
-            v.widgets.inactive.bg_fill = Color32::TRANSPARENT;
-            v.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
-            v.widgets.inactive.bg_stroke = Stroke::NONE;
-            v.widgets.hovered.bg_fill = theme::RAISED;
-            v.widgets.hovered.weak_bg_fill = theme::RAISED;
-            v.widgets.hovered.bg_stroke = Stroke::new(1.0, HAIRLINE);
-            v.widgets.active.bg_fill = theme::RAISED;
-            v.widgets.inactive.fg_stroke = Stroke::new(1.0, TEXT_2);
-            ui.style_mut().drag_value_text_style = egui::TextStyle::Monospace;
-            ui.spacing_mut().button_padding = vec2(4.0, 1.0);
-            let speed = if log { value.to_f64().abs().max(span * 1e-3) * 0.01 } else { span / 400.0 };
-            let dv = egui::DragValue::new(value).range(range.clone()).speed(speed).custom_formatter(|n, _| fmt(n)).update_while_editing(false);
-            ui.add(dv).on_hover_text("drag for fine steps, click to type");
+            v.widgets.inactive.bg_fill = theme::with_alpha(TEXT_3, 110);
+            v.widgets.hovered.bg_fill = theme::with_alpha(TEXT_3, 150);
+            v.widgets.active.bg_fill = theme::with_alpha(TEXT_3, 150);
+            let mut sl = egui::Slider::new(value, range.clone()).show_value(false);
+            if log {
+                sl = sl.logarithmic(true);
+            }
+            let r = ui.add(sl);
+            // Default tick on the rail.
+            if let Some(d) = default {
+                let d = d.to_f64();
+                let t = if log && lo > 0.0 && hi > 0.0 { (d.ln() - lo.ln()) / (hi.ln() - lo.ln()) } else if log { -1.0 } else { (d - lo) / span };
+                if (0.0..=1.0).contains(&t) {
+                    let rail = r.rect;
+                    let x = rail.min.x + 8.0 + (rail.width() - 16.0) * t as f32;
+                    ui.painter().vline(x, (rail.center().y - 5.0)..=(rail.center().y + 5.0), Stroke::new(1.0, TEXT_3));
+                }
+                if r.double_clicked() {
+                    *value = d_as(d, default);
+                }
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let v = ui.visuals_mut();
+                v.widgets.inactive.bg_fill = Color32::TRANSPARENT;
+                v.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+                v.widgets.inactive.bg_stroke = Stroke::NONE;
+                v.widgets.hovered.bg_fill = theme::RAISED;
+                v.widgets.hovered.weak_bg_fill = theme::RAISED;
+                v.widgets.hovered.bg_stroke = Stroke::new(1.0, HAIRLINE);
+                v.widgets.active.bg_fill = theme::RAISED;
+                v.widgets.inactive.fg_stroke = Stroke::new(1.0, TEXT_2);
+                ui.style_mut().drag_value_text_style = egui::TextStyle::Small;
+                ui.style_mut().text_styles.insert(egui::TextStyle::Small, theme::mono(11.5));
+                ui.spacing_mut().button_padding = vec2(3.0, 1.0);
+                let speed = if log { value.to_f64().abs().max(span * 1e-3) * 0.01 } else { span / 400.0 };
+                let dv = egui::DragValue::new(value).range(range.clone()).speed(speed).custom_formatter(|n, _| fmt(n)).update_while_editing(false);
+                ui.add_sized(vec2(value_w, 18.0), dv).on_hover_text("drag for fine steps, click to type");
+            });
+            out = Some(r);
         });
     });
-    let w = ui.available_width();
-    ui.spacing_mut().slider_width = w;
-    let mut s = egui::Slider::new(value, range).show_value(false);
-    if log {
-        s = s.logarithmic(true);
-    }
-    let r = ui.add(s);
-    if let Some(d) = default {
-        if r.double_clicked() {
-            *value = d;
-        }
-    }
-    ui.add_space(4.0);
-    r
+    let hovered = fr.response.hovered() || fr.response.contains_pointer();
+    ui.data_mut(|d| d.insert_temp(id, hovered));
+    out.expect("slider row")
+}
+
+fn d_as<Num: egui::emath::Numeric>(_d: f64, default: Option<Num>) -> Num {
+    default.expect("default")
 }
 
 /// A segmented control: one cell per label, the selected one filled. Returns
@@ -106,7 +145,7 @@ pub fn segmented(ui: &mut Ui, labels: &[&str], selected: usize) -> Option<usize>
 pub fn dropdown(ui: &mut Ui, label: &str, items: &[&str], selected: Option<usize>) -> Option<usize> {
     let mut picked = None;
     ui.horizontal(|ui| {
-        ui.add_sized(vec2(78.0, 22.0), egui::Label::new(egui::RichText::new(label).color(TEXT_2)).halign(egui::Align::LEFT));
+        ui.add_sized(vec2(104.0, 22.0), egui::Label::new(egui::RichText::new(label).color(TEXT_2)).halign(egui::Align::LEFT));
         let text = selected.and_then(|i| items.get(i)).copied().unwrap_or("—");
         let w = ui.available_width();
         egui::ComboBox::from_id_salt(ui.scope_id().with(("dropdown", label))).selected_text(egui::RichText::new(text).color(TEXT)).width(w).show_ui(ui, |ui| {
@@ -222,6 +261,9 @@ pub fn inspector_header(ui: &mut Ui, hue: Color32, crumbs: &[&str], action: Opti
 /// A switch with a label, mockup style.
 pub fn toggle_row(ui: &mut Ui, label: &str, on: &mut bool) -> Response {
     let (rect, mut resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(rect.expand2(vec2(4.0, 0.0)), 4.0, theme::with_alpha(theme::RAISED, 160));
+    }
     if resp.clicked() {
         *on = !*on;
         resp.mark_changed();

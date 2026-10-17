@@ -949,7 +949,7 @@ fn display_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, a:
     }
     toggle_row(ui, "Reduce flashing", &mut settings.reduce_flashing);
     if settings.reduce_flashing {
-        slider_row(ui, "Allowed brightness rise", &mut settings.flash_rise, 0.5..=8.0, |v| format!("{v:.1}× / s"), false);
+        slider_row(ui, "Allowed brightness rise", &mut settings.flash_rise, 0.5..=8.0, |v| format!("{v:.1}×/s"), false);
         hint(ui, "Caps how fast the picture may brighten between frames. For photosensitive viewers; on by default.");
     }
 

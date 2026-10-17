@@ -2,11 +2,11 @@
 
 A spacey, line-based music visualizer for whatever Windows is playing, Spotify first. Native Rust + wgpu. Not a MilkDrop clone.
 
-| Phosphor scope | Flow-field ribbons | Lensed starfield |
+| Phosphor scope | Flow-field ribbons | Black hole |
 |---|---|---|
 | ![scope](docs/img/scene-1.png) | ![ribbons](docs/img/scene-2.png) | ![starfield](docs/img/scene-3.png) |
 
-Three scenes with cross-fades: a phosphor XY oscilloscope of the real stereo signal, chroma-steered flow-field ribbons (GPU compute), and a gravitationally lensed starfield with a Swiss-grid title overlay fed by the Windows now-playing metadata. Per-process Spotify loopback with auto-reconnect, full real-time analysis (bands, loudness, onsets, predictive beat clock, chroma), bloom + AgX + auto-exposure post stack, frame cap, monitor selection, optional auto director that changes scenes on track changes, drops and quiet passages.
+Three scenes with cross-fades: a phosphor XY oscilloscope of the real stereo signal, chroma-steered flow-field ribbons (GPU compute), and a ray-marched black hole (lensed accretion disk, point stars) with a Swiss-grid title overlay fed by the Windows now-playing metadata. Per-process Spotify loopback with auto-reconnect, full real-time analysis (bands, loudness, onsets, predictive beat clock, chroma), bloom + AgX + auto-exposure post stack, frame cap, monitor selection, optional auto director that changes scenes on track changes, drops and quiet passages.
 
 ## Install (Windows 10 2004+ / 11, DirectX 12 or Vulkan GPU)
 
@@ -21,7 +21,7 @@ Start Spotify, play something, start audioviz. If Spotify is not running the app
 
 The window is frameless. Move the mouse and a thin bar appears at the top (scene pips, status chips, window controls) with a transport strip at the bottom (album art, previous / play-pause / next, progress, tint from album art). Both hide after three seconds of mouse rest and in fullscreen. On first run a short welcome sheet asks for the monitor, offers the tap calibration and lets you pick a scene.
 
-**Scenes, layers, visuals.** The three *visuals* (phosphor scope, flow-field ribbons, lensed starfield) are the raw material. A *layer* is one instance of a visual with its own controls, opacity and audio band, and the same visual can be used more than once. A *scene* is a mix of up to three layers plus post settings and tint, saved by name; Scope, Ribbons, Starfield, Deep field, Night, Party and Studio come built in, and your own are JSON files in `%APPDATA%\audioviz\scenes\`. Each layer can react to the full mix or to one band (sub, bass, low mid, mid, presence, air, or a custom range): a scope layer set to bass draws only the bass waveform.
+**Scenes, layers, visuals.** The three *visuals* (phosphor scope, flow-field ribbons, black hole) are the raw material. A *layer* is one instance of a visual with its own controls, opacity and audio band, and the same visual can be used more than once. A *scene* is a mix of up to three layers plus post settings and tint, saved by name; Scope, Ribbons, Starfield, Deep field, Night, Party and Studio come built in, and your own are JSON files in `%APPDATA%\audioviz\scenes\`. Each layer can react to the full mix or to one band (sub, bass, low mid, mid, presence, air, or a custom range): a scope layer set to bass draws only the bass waveform.
 
 Press **Tab** for the settings panel: a docked sheet with an icon rail. Scenes, Layers (the three slots, the visual being edited, its band and controls, tint), Post, Sync (delay, calibration, which app to listen to), Display (monitor diagram, frame cap, low power, reduce flashing, chrome options), Meters (developer) and About (manual update check, diagnostics to paste into a bug report).
 

@@ -26,7 +26,7 @@ impl VisualKind {
         match self {
             VisualKind::Scope => "Phosphor scope",
             VisualKind::Ribbons => "Flow-field ribbons",
-            VisualKind::Starfield => "Lensed starfield",
+            VisualKind::Starfield => "Black hole",
         }
     }
     pub fn short(self) -> &'static str {
@@ -81,16 +81,22 @@ impl Default for RibbonsParams {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct StarfieldParams {
+    /// Lens mass: scales the shadow and the disk together.
     pub mass: f32,
     pub density: f32,
-    pub grid: f32,
     pub twinkle: f32,
     pub drift: f32,
+    /// Accretion disk brightness.
+    pub disk: f32,
+    /// Doppler beaming strength (approaching side brighter and bluer).
+    pub doppler: f32,
+    /// Camera elevation above the disk plane, degrees.
+    pub tilt: f32,
 }
 
 impl Default for StarfieldParams {
     fn default() -> Self {
-        Self { mass: 1.0, density: 1.0, grid: 1.0, twinkle: 0.6, drift: 1.0 }
+        Self { mass: 1.0, density: 1.0, twinkle: 0.6, drift: 1.0, disk: 1.0, doppler: 1.0, tilt: 5.0 }
     }
 }
 

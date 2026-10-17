@@ -88,7 +88,7 @@ pub fn migrate(raw: &mut Value) {
             "count": obj.get("ribbons_count").and_then(|v| v.as_u64()).unwrap_or(12_000)
         });
         let starfield = json!({
-            "mass": f(obj, "star_mass").unwrap_or(1.0), "density": f(obj, "star_density").unwrap_or(1.0), "grid": f(obj, "star_grid").unwrap_or(1.0),
+            "mass": f(obj, "star_mass").unwrap_or(1.0), "density": f(obj, "star_density").unwrap_or(1.0),
             "twinkle": f(obj, "star_twinkle").unwrap_or(0.6), "drift": f(obj, "star_drift").unwrap_or(1.0)
         });
         let visuals = ["scope", "ribbons", "starfield"];

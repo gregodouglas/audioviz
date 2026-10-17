@@ -1,4 +1,6 @@
-//! Scene 3: gravitationally lensed star field with geodesic grid lines.
+//! Black hole visual: a Schwarzschild lens with an edge-on accretion disk in
+//! front of a point starfield (see `starfield.wgsl`). Keeps the `Starfield`
+//! kind and `StarfieldParams` name so settings carry over.
 //! The Swiss type overlay (track metadata) is drawn by `overlay.rs` on top.
 
 use bytemuck::{Pod, Zeroable};
@@ -12,17 +14,25 @@ use crate::settings::{Layer, VisualKind};
 pub struct StarParams {
     pub resolution: [f32; 2],
     pub time: f32,
-    pub einstein: f32,
+    pub rs: f32,
     pub tint: [f32; 4],
     pub bands: [[f32; 4]; 4],
     pub onset: f32,
     pub beat: f32,
-    pub grid: f32,
+    pub energy: f32,
     pub density: f32,
     pub twinkle: f32,
     pub drift: f32,
+    pub disk: f32,
+    pub doppler: f32,
+    pub tilt: f32,
+    pub phase: f32,
+    pub turb: f32,
+    pub flare: f32,
+    pub az: f32,
     pub _p0: f32,
     pub _p1: f32,
+    pub _p2: f32,
 }
 
 pub struct Starfield {
@@ -32,7 +42,14 @@ pub struct Starfield {
     layout: wgpu::BindGroupLayout,
     group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
-    einstein: f32,
+    /// Slewed bass, 0..1: the hole's mass breathes with it.
+    breath: f32,
+    /// Slewed broadband energy, ~1 = average.
+    energy: f32,
+    /// Disk rotation phase; advances faster when the music is louder.
+    phase: f32,
+    /// Camera azimuth; the slow orbit that keeps the sky moving.
+    az: f32,
 }
 
 impl Starfield {
@@ -41,13 +58,16 @@ impl Starfield {
         let params_buf = scene::uniform_buffer(device, "starfield params", std::mem::size_of::<StarParams>() as u64);
         let layout = scene::tex_layout(device, "starfield", 0);
         let out = hdr_texture(device, "starfield out", width, height);
-        // The shader needs no input texture; bind the output's sibling to satisfy the layout.
+        // The shader needs no input texture; bind a sibling to satisfy the layout.
         let dummy = hdr_texture(device, "starfield dummy", 1, 1);
         let group = scene::tex_group(device, &layout, &[&dummy], &sampler, &params_buf);
         let pipeline = build(device, shaders, &layout)?;
-        Ok(Self { out, sampler, params_buf, layout, group, pipeline, einstein: 0.2 })
+        Ok(Self { out, sampler, params_buf, layout, group, pipeline, breath: 0.0, energy: 1.0, phase: 0.0, az: 0.0 })
     }
 }
+
+/// The default phosphor tint, for which the disk runs blackbody instead of green.
+const DEFAULT_TINT: [f32; 3] = [0.40, 1.0, 0.55];
 
 impl Scene for Starfield {
     fn kind(&self) -> VisualKind {
@@ -67,29 +87,47 @@ impl Scene for Starfield {
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
         let s = &layer.starfield;
         let f = ctx.features;
-        // Lens mass follows the slow bass; slewed so the ring breathes rather than jitters.
-        let target = (0.10 + 0.22 * (f.bass_att / 2.0).clamp(0.0, 1.0)) * s.mass;
-        self.einstein += (target - self.einstein) * (1.0 - (-ctx.dt / 0.4).exp());
+        let dt = ctx.dt.clamp(0.0, 0.1);
+        // Mass follows the slow bass, slewed so the shadow breathes rather than jitters.
+        let bass = (f.bass_att / 2.0).clamp(0.0, 1.0);
+        self.breath += (bass - self.breath) * (1.0 - (-dt / 0.35).exp());
+        let energy = ((f.bass_att + f.mid_att + f.treb_att) / 3.0).clamp(0.0, 2.5);
+        self.energy += (energy - self.energy) * (1.0 - (-dt / 0.5).exp());
+        self.phase += dt * (0.35 + 0.45 * self.energy);
+        self.az += dt * 0.012 * s.drift;
+        let rs = s.mass * (0.9 + 0.22 * self.breath);
+
         let mut bands = [[0.0f32; 4]; 4];
         for i in 0..16 {
             // Fold 32 bands into 16 by pairs.
             let v = f.bands.get(i * 2).copied().unwrap_or(0.0).max(f.bands.get(i * 2 + 1).copied().unwrap_or(0.0));
             bands[i / 4][i % 4] = v;
         }
+        let dist = ctx.tint.iter().zip(DEFAULT_TINT.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+        let warm = (1.0 - dist * 12.0).clamp(0.0, 1.0);
+        let onset = f.onset_pulse[3].min(1.0);
         let params = StarParams {
             resolution: [ctx.width as f32, ctx.height as f32],
             time: ctx.time,
-            einstein: self.einstein,
-            tint: [ctx.tint[0], ctx.tint[1], ctx.tint[2], 1.0],
+            rs,
+            tint: [ctx.tint[0], ctx.tint[1], ctx.tint[2], warm],
             bands,
-            onset: f.onset_pulse[3].min(1.0),
+            onset,
             beat: f.beat_pulse * f.beat_confidence,
-            grid: s.grid,
+            energy: self.energy,
             density: s.density,
             twinkle: s.twinkle,
             drift: s.drift,
+            disk: s.disk,
+            doppler: s.doppler,
+            tilt: s.tilt.to_radians(),
+            phase: self.phase,
+            turb: (0.35 + 0.65 * onset + 0.25 * (self.energy - 1.0)).clamp(0.0, 1.5),
+            flare: f.onset_pulse[0].min(1.0),
+            az: self.az,
             _p0: 0.0,
             _p1: 0.0,
+            _p2: 0.0,
         };
         queue.write_buffer(&self.params_buf, 0, bytemuck::bytes_of(&params));
         fullscreen_pass(encoder, "starfield", &self.out, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.pipeline, &self.group);
@@ -102,14 +140,16 @@ impl Scene for Starfield {
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         let s = &mut layer.starfield;
         use crate::widgets::{ghost_button, hint, slider_row};
-        slider_row(ui, "Lens mass", &mut s.mass, 0.2..=3.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Mass", &mut s.mass, 0.3..=2.5, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Disk brightness", &mut s.disk, 0.0..=2.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Doppler", &mut s.doppler, 0.0..=2.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Tilt", &mut s.tilt, 0.0..=25.0, |v| format!("{v:.0}°"), false);
         slider_row(ui, "Star density", &mut s.density, 0.1..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Grid lines", &mut s.grid, 0.0..=3.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Onset twinkle", &mut s.twinkle, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Drift", &mut s.drift, 0.0..=4.0, |v| format!("{v:.2}"), false);
-        hint(ui, "Lens mass follows the bass; the spectrum wobbles the ring; onsets twinkle.");
+        hint(ui, "Mass breathes with the bass; the disk follows energy and onsets; stars twinkle on transients.");
         ui.add_space(6.0);
-        if ghost_button(ui, "Reset starfield", false).clicked() {
+        if ghost_button(ui, "Reset black hole", false).clicked() {
             *s = Default::default();
         }
     }
@@ -120,4 +160,21 @@ fn build(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLay
         let m = scene::shader(device, shaders, "starfield.wgsl");
         scene::pipeline(device, "starfield", layout, &m, HDR_FORMAT, None)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem::offset_of;
+
+    #[test]
+    fn params_layout_matches_wgsl() {
+        assert_eq!(std::mem::size_of::<StarParams>(), 160);
+        assert_eq!(offset_of!(StarParams, tint), 16);
+        assert_eq!(offset_of!(StarParams, bands), 32);
+        assert_eq!(offset_of!(StarParams, onset), 96);
+        assert_eq!(offset_of!(StarParams, twinkle), 112);
+        assert_eq!(offset_of!(StarParams, tilt), 128);
+        assert_eq!(offset_of!(StarParams, az), 144);
+    }
 }

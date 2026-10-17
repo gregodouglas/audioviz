@@ -13,10 +13,11 @@ Done and verified locally:
 - `PRIVACY.md`, `SECURITY.md`, README with screenshots (`docs/img/`), `docs/release-notes-template.md`, `docs/ROADMAP.md`.
 - Loose ends: per-scene post settings (blended across cross-fades, old global values migrated), tap-along latency calibration (C, Space, Enter), panel hidden on first run with a hint, on-screen notice when capture falls back to the endpoint or fails.
 
+Later the same day: pushed (CI green on Windows, macOS, cargo-deny), tagged `v0.1.0`; the Release workflow produced a **draft** release with installer, portable zip and SHA256SUMS (Windows job 14 min, macOS 6 min). Greg installed the local build, confirmed the tap calibration works. Per Greg, nothing user-facing mentions winget until the package is actually published; the manifests remain a workflow artifact.
+
 Open:
-- The repo exists on GitHub but is empty: the `gh` token lacks the `workflow` scope, so the push with `.github/workflows/` was rejected. Run `gh auth refresh -h github.com -s workflow`, then `git push -u origin main`.
-- First tag (`v0.1.0`) after CI is green; then publish the draft release and submit the winget manifest with `wingetcreate`.
-- Exit-criteria check on a second machine or clean VM (`winget install` / installer).
+- Publish the draft release when Greg is ready (edit the highlights in the notes first).
+- Exit-criteria check on a second machine or clean VM with the installer from the release.
 - Measured default delay: Greg to run the tap calibration on the reference rig and record it in `docs/phase1-spike.md`.
 - UI refresh (custom chrome, panel, installer look) is tracked in `docs/ROADMAP.md` and GitHub issues, not in this phase.
 

@@ -90,11 +90,12 @@ jobs:
           name: audioviz ${{ env.AUDIOVIZ_VERSION }}
           body_path: dist/RELEASE_NOTES.md
           draft: true
+          # winget manifests stay in the workflow artifact (not on the release page)
+          # until the package is actually published in winget-pkgs.
           files: |
             dist/audioviz-*-setup.exe
             dist/audioviz-*-portable-win64.zip
             dist/SHA256SUMS.txt
-            dist/audioviz-*-winget-manifests.zip
 
   macos:
     name: macOS build (core only)

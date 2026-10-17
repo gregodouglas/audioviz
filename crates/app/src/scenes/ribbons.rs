@@ -9,7 +9,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, Scene, begin_pass, fullscreen_pass, hdr_texture, HDR_FORMAT};
 use crate::shaders::ShaderSet;
-use crate::settings::Settings;
+use crate::settings::{Layer, VisualKind};
 
 pub const PARTICLES: u32 = 65_536;
 
@@ -150,8 +150,8 @@ impl Ribbons {
 }
 
 impl Scene for Ribbons {
-    fn name(&self) -> &'static str {
-        "Flow-field ribbons"
+    fn kind(&self) -> VisualKind {
+        VisualKind::Ribbons
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -167,8 +167,8 @@ impl Scene for Ribbons {
         Ok(())
     }
 
-    fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx) {
-        let s = ctx.settings;
+    fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
+        let s = &layer.ribbons;
         let f = ctx.features;
         let mut chroma = [[0.0f32; 4]; 3];
         for (i, c) in f.chroma.iter().enumerate() {
@@ -178,25 +178,25 @@ impl Scene for Ribbons {
             resolution: [ctx.width as f32, ctx.height as f32],
             gain: 1.0,
             rotation: ctx.time * 0.02,
-            beam_width: s.ribbons_width,
-            beam_intensity: s.ribbons_intensity * 0.004,
-            decay: s.ribbons_persistence.max(1e-6).powf(ctx.dt),
+            beam_width: s.width,
+            beam_intensity: s.intensity * 0.004,
+            decay: s.persistence.max(1e-6).powf(ctx.dt),
             _pad: 0.0,
-            tint: [s.tint[0], s.tint[1], s.tint[2], 1.0],
-            point_count: s.ribbons_count.clamp(256, PARTICLES),
+            tint: [ctx.tint[0], ctx.tint[1], ctx.tint[2], 1.0],
+            point_count: s.count.clamp(256, PARTICLES),
             _pad2: [0; 3],
             chroma,
             time: ctx.time,
             dt: ctx.dt.min(0.05),
-            speed: s.ribbons_speed,
-            field_scale: s.ribbons_scale * (1.0 + 0.3 * (f.bass_att - 1.0).clamp(-0.5, 1.0)),
+            speed: s.speed,
+            field_scale: s.scale * (1.0 + 0.3 * (f.bass_att - 1.0).clamp(-0.5, 1.0)),
             onset: f.onset_pulse[3].min(1.0),
             bass: f.bass_att.min(2.0),
             key_hue: audioviz_analysis::chroma::pitch_class_hue(f.key_class),
-            saturation: s.ribbons_saturation,
+            saturation: s.saturation,
             seed: self.seed,
-            vortex: s.ribbons_vortex,
-            curl: s.ribbons_curl,
+            vortex: s.vortex,
+            curl: s.curl,
             lifetime: 5.0,
         };
         queue.write_buffer(&self.params_buf, 0, bytemuck::bytes_of(&params));
@@ -224,21 +224,22 @@ impl Scene for Ribbons {
         &self.hdr[self.current]
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, s: &mut Settings) {
+    fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
+        let s = &mut layer.ribbons;
         use crate::widgets::{ghost_button, hint, slider_row};
-        slider_row(ui, "Particles", &mut s.ribbons_count, 256..=PARTICLES, |v| format!("{v:.0}"), true);
-        slider_row(ui, "Speed", &mut s.ribbons_speed, 0.02..=2.0, |v| format!("{v:.2}"), true);
-        slider_row(ui, "Field scale", &mut s.ribbons_scale, 0.3..=6.0, |v| format!("{v:.2}"), true);
-        slider_row(ui, "Curl", &mut s.ribbons_curl, 0.0..=3.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Chroma vortices", &mut s.ribbons_vortex, 0.0..=3.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Line width", &mut s.ribbons_width, 0.3..=4.0, |v| format!("{v:.1} px"), false);
-        slider_row(ui, "Intensity", &mut s.ribbons_intensity, 0.05..=10.0, |v| format!("{v:.2}"), true);
-        slider_row(ui, "Persistence", &mut s.ribbons_persistence, 0.0001..=0.95, |v| format!("{v:.3} /s"), true);
-        slider_row(ui, "Saturation", &mut s.ribbons_saturation, 0.0..=1.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Particles", &mut s.count, 256..=PARTICLES, |v| format!("{v:.0}"), true);
+        slider_row(ui, "Speed", &mut s.speed, 0.02..=2.0, |v| format!("{v:.2}"), true);
+        slider_row(ui, "Field scale", &mut s.scale, 0.3..=6.0, |v| format!("{v:.2}"), true);
+        slider_row(ui, "Curl", &mut s.curl, 0.0..=3.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Chroma vortices", &mut s.vortex, 0.0..=3.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Line width", &mut s.width, 0.3..=4.0, |v| format!("{v:.1} px"), false);
+        slider_row(ui, "Intensity", &mut s.intensity, 0.05..=10.0, |v| format!("{v:.2}"), true);
+        slider_row(ui, "Persistence", &mut s.persistence, 0.0001..=0.95, |v| format!("{v:.3} /s"), true);
+        slider_row(ui, "Saturation", &mut s.saturation, 0.0..=1.0, |v| format!("{v:.2}"), false);
         hint(ui, "Colours: pitch class on a circle of fifths, pulled toward the key. The scope tint is the base.");
         ui.add_space(6.0);
         if ghost_button(ui, "Reset ribbons", false).clicked() {
-            s.reset_ribbons();
+            *s = Default::default();
         }
     }
 }

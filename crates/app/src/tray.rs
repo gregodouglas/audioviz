@@ -9,7 +9,7 @@ use crate::panel::MonitorInfo;
 
 pub enum TrayAction {
     Show,
-    Scene(usize),
+    Scene(String),
     ToggleAuto,
     Fullscreen(usize),
     Quit,
@@ -18,7 +18,7 @@ pub enum TrayAction {
 pub struct Tray {
     _icon: TrayIcon,
     show: MenuId,
-    scenes: Vec<MenuId>,
+    scenes: Vec<(MenuId, String)>,
     auto: CheckMenuItem,
     monitors: Vec<MenuId>,
     quit: MenuId,
@@ -36,10 +36,14 @@ impl Tray {
         menu.append(&show)?;
         menu.append(&PredefinedMenuItem::separator())?;
         let mut scenes = Vec::new();
-        for (i, name) in scene_names.iter().enumerate() {
-            let item = MenuItem::new(format!("{}  {}", i + 1, name), true, None);
-            scenes.push(item.id().clone());
-            menu.append(&item)?;
+        if !scene_names.is_empty() {
+            let sub = Submenu::new("Scene", true);
+            for name in scene_names {
+                let item = MenuItem::new(*name, true, None);
+                scenes.push((item.id().clone(), name.to_string()));
+                sub.append(&item)?;
+            }
+            menu.append(&sub)?;
         }
         let auto_item = CheckMenuItem::new("Auto director", true, auto, None);
         menu.append(&auto_item)?;
@@ -82,8 +86,8 @@ impl Tray {
                 out.push(TrayAction::Quit);
             } else if *id == *self.auto.id() {
                 out.push(TrayAction::ToggleAuto);
-            } else if let Some(i) = self.scenes.iter().position(|s| s == id) {
-                out.push(TrayAction::Scene(i));
+            } else if let Some((_, n)) = self.scenes.iter().find(|(s, _)| s == id) {
+                out.push(TrayAction::Scene(n.clone()));
             } else if let Some(i) = self.monitors.iter().position(|s| s == id) {
                 out.push(TrayAction::Fullscreen(i));
             }

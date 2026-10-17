@@ -11,28 +11,23 @@ use winit::window::{Fullscreen, Window, WindowId};
 
 use crate::chrome::{Chrome, ChromeInput};
 use crate::config;
-use crate::director::Director;
+use crate::director::{Director, FADE_AUTO_S, FADE_MANUAL_S};
 use crate::engine::Engine;
 use crate::gpu::Gpu;
 use crate::hittest;
-use crate::looks::{self, Look};
 use crate::overlay::Overlay;
 use crate::overlays::{self, CALIBRATION_MIN_TAPS, CalibrationView, FirstRun};
 use crate::panel::{self, MonitorInfo, PanelState, Stats, UpdateStatus};
 use crate::platform;
 use crate::post::{Post, PostParams};
-use crate::scene::FrameCtx;
-use crate::scenes::ribbons::Ribbons;
-use crate::scenes::scope::{MAX_POINTS, Scope};
-use crate::scenes::starfield::Starfield;
-use crate::settings::{Section, Settings};
+use crate::scene_store::{self, SceneDef};
+use crate::scenes::scope::MAX_POINTS;
+use crate::settings::{MAX_LAYERS, Section, Settings, VisualKind};
 use crate::shaders::ShaderSet;
 use crate::strip::Strip;
 use crate::theme::{self, BAR_H, PANEL_W, STRIP_H};
 use crate::tray::{Tray, TrayAction};
 
-/// Scene index of the starfield (the one with the type overlay).
-const STARFIELD_SCENE: usize = 2;
 const NOTICE_SECONDS: f32 = 10.0;
 const TOAST_SECONDS: f32 = 4.0;
 const REPO: &str = "gregodouglas/audioviz";
@@ -141,7 +136,7 @@ struct Running {
     show_shortcuts: bool,
     last_track: Option<u64>,
     toast: Option<(String, String, Instant)>,
-    looks: Vec<Look>,
+    scenes: Vec<SceneDef>,
     update: Arc<Mutex<UpdateStatus>>,
     /// Smoothed effective tint (follows the art when enabled).
     tint_current: [f32; 3],
@@ -214,13 +209,13 @@ impl Running {
         let gpu = Gpu::new(window.clone())?;
         let shaders = ShaderSet::load();
         let (w, h) = (gpu.config.width, gpu.config.height);
-        let scope = Scope::new(&gpu.device, w, h, &shaders).map_err(|e| anyhow::anyhow!("scope: {e}"))?;
-        let ribbons = Ribbons::new(&gpu.device, w, h, &shaders).map_err(|e| anyhow::anyhow!("ribbons: {e}"))?;
-        let starfield = Starfield::new(&gpu.device, w, h, &shaders).map_err(|e| anyhow::anyhow!("starfield: {e}"))?;
-        let mut director = Director::new(&gpu.device, &shaders, vec![Box::new(scope), Box::new(ribbons), Box::new(starfield)]).map_err(|e| anyhow::anyhow!("director: {e}"))?;
-        let start_scene = std::env::var("AUDIOVIZ_SCENE").ok().and_then(|v| v.parse().ok()).unwrap_or(settings.scene);
-        director.current = start_scene.min(director.scenes.len() - 1);
-        director.auto = settings.auto_scenes;
+        // AUDIOVIZ_SCENE=n starts on built-in scene n (dev).
+        if let Some(n) = std::env::var("AUDIOVIZ_SCENE").ok().and_then(|v| v.parse::<usize>().ok()) {
+            if let Some(def) = scene_store::builtin().get(n) {
+                settings.apply_scene(&def.settings);
+            }
+        }
+        let director = Director::new(&gpu.device, &shaders, w, h, &settings).map_err(|e| anyhow::anyhow!("director: {e}"))?;
         let post = Post::new(&gpu.device, gpu.config.format, w, h, &shaders).map_err(|e| anyhow::anyhow!("post: {e}"))?;
 
         let egui_ctx = egui::Context::default();
@@ -272,7 +267,7 @@ impl Running {
             show_shortcuts: false,
             last_track: None,
             toast: None,
-            looks: looks::all(),
+            scenes: scene_store::all(),
             update: Arc::new(Mutex::new(UpdateStatus::Idle)),
             art_tint: None,
             occluded: false,
@@ -284,7 +279,7 @@ impl Running {
             zen: false,
             cursor_hidden: false,
         };
-        let scene_names: Vec<&str> = running.director.scenes.iter().map(|s| s.name()).collect();
+        let scene_names: Vec<&str> = running.scenes.iter().map(|s| s.name.as_str()).collect();
         let monitors = running.monitors();
         match Tray::new(&scene_names, &monitors, running.settings.auto_scenes) {
             Ok(t) => running.tray = Some(t),
@@ -414,22 +409,25 @@ impl Running {
         }
     }
 
-    fn apply_look(&mut self, look: &Settings) {
-        self.settings.apply_look(look);
-        let scene = self.settings.scene;
-        self.select_scene(scene);
-        self.director.auto = self.settings.auto_scenes;
+    fn apply_scene_named(&mut self, name: &str, fade: f32) {
+        let Some(def) = self.scenes.iter().find(|d| d.name == name).cloned() else { return };
+        self.settings.apply_scene(&def.settings);
+        self.director.begin_dissolve(fade);
+        self.calibration_result = Some((format!("Scene: {}", def.name), Instant::now()));
     }
 
-    fn next_look(&mut self) {
-        if self.looks.is_empty() {
+    /// Space / the director: the next scene in the list after the current one.
+    fn next_scene(&mut self, fade: f32) {
+        if self.scenes.is_empty() {
             return;
         }
-        let i = self.looks.iter().position(|l| l.name == self.settings.look).map(|i| (i + 1) % self.looks.len()).unwrap_or(0);
-        let look = self.looks[i].clone();
-        self.apply_look(&look.settings);
-        self.settings.look = look.name.clone();
-        self.calibration_result = Some((format!("Look: {}", look.name), Instant::now()));
+        let i = self.scenes.iter().position(|d| d.name == self.settings.scene_name).map(|i| (i + 1) % self.scenes.len()).unwrap_or(0);
+        let name = self.scenes[i].name.clone();
+        self.apply_scene_named(&name, fade);
+    }
+
+    fn select_layer(&mut self, i: usize) {
+        self.settings.editing = i.min(MAX_LAYERS - 1);
     }
 
     fn check_updates(&mut self) {
@@ -471,7 +469,7 @@ impl Running {
         if self.settings.monitor != self.applied_monitor && self.gpu.window.fullscreen().is_some() {
             self.set_fullscreen(true);
         }
-        self.director.auto = self.settings.auto_scenes;
+        self.director.sync(&self.gpu.device, &self.shaders, &self.settings);
         self.maybe_save(false);
         if self.last_battery_check.elapsed() > Duration::from_secs(30) {
             self.last_battery_check = Instant::now();
@@ -496,7 +494,9 @@ impl Running {
         }
         let target = if features.peak > 0.0005 { (0.9 / features.peak).clamp(0.3, 200.0) } else { self.auto_gain_value };
         self.auto_gain_value += (target - self.auto_gain_value) * (1.0 - (-dt / 1.5).exp());
-        self.director.consider(&features, now_playing.as_ref().map(|n| n.track_id), dt);
+        if self.director.consider(&features, now_playing.as_ref().map(|n| n.track_id), dt, self.settings.auto_scenes).is_some() {
+            self.next_scene(FADE_AUTO_S);
+        }
 
         // Track change: toast and art tint.
         let track_id = now_playing.as_ref().map(|n| n.track_id);
@@ -535,9 +535,9 @@ impl Running {
         for a in tray_actions {
             match a {
                 TrayAction::Show => self.show_window(),
-                TrayAction::Scene(i) => {
+                TrayAction::Scene(name) => {
                     self.show_window();
-                    self.director.switch_to(i);
+                    self.apply_scene_named(&name, FADE_MANUAL_S);
                 }
                 TrayAction::ToggleAuto => self.settings.auto_scenes = !self.settings.auto_scenes,
                 TrayAction::Fullscreen(i) => {
@@ -577,21 +577,10 @@ impl Running {
 
         // --- scenes → composite → post ---
         let time = self.start.elapsed().as_secs_f32();
-        {
-            let mut frame_settings = self.settings.clone();
-            frame_settings.tint = self.tint_current;
-            let ctx = FrameCtx { features: &features, settings: &frame_settings, dt, time, width: self.gpu.config.width, height: self.gpu.config.height, points: &self.pending_points, auto_gain: self.auto_gain_value };
-            self.director.render(&self.gpu.device, &self.gpu.queue, &mut encoder, &ctx, self.post.input());
-        }
+        self.director.render(&self.gpu.device, &self.gpu.queue, &mut encoder, &self.settings, &features, &self.pending_points, self.engine.sample_rate, self.tint_current, dt, time, self.auto_gain_value, self.post.input());
         self.points_per_sec = self.points_per_sec * 0.98 + (self.pending_points.len() as f32 / dt) * 0.02;
         self.pending_points.clear();
-        let post = {
-            let cur = self.settings.post_for(self.director.current);
-            match self.director.fade_state() {
-                Some((to, t)) => cur.lerp(self.settings.post_for(to), t),
-                None => cur,
-            }
-        };
+        let post = self.settings.post;
         let mut flags = 0u32;
         if post.auto_exposure {
             flags |= 1;
@@ -604,7 +593,8 @@ impl Running {
         // --- egui: overlays, chrome, strip, panel ---
         let fullscreen = self.gpu.window.fullscreen().is_some();
         let maximized = self.gpu.window.is_maximized();
-        let overlay_on = self.settings.show_now_playing && self.settings.type_overlay && (self.director.current == STARFIELD_SCENE || self.director.is_fading());
+        let has_starfield = self.settings.layers.iter().any(|l| l.enabled && l.visual == VisualKind::Starfield);
+        let overlay_on = self.settings.show_now_playing && self.settings.type_overlay && has_starfield;
         let calibrating = self.calibration.is_some();
         let empty = matches!(capture, CaptureMode::Endpoint { .. }) && self.first_run.is_none() && !calibrating;
         let ui_view = frame.texture.create_view(&wgpu::TextureViewDescriptor { format: Some(self.gpu.ui_format), ..Default::default() });
@@ -622,13 +612,11 @@ impl Running {
             monitors: self.monitors(),
             fullscreen,
             settings_path: config::path().map(|p| p.display().to_string()).unwrap_or_default(),
-            scene_names: self.director.scenes.iter().map(|s| s.name()).collect(),
-            scene_current: self.director.target(),
-            scene_fading: self.director.is_fading(),
+            fading: self.director.is_fading(),
             last_cue: self.director.last_cue,
             now_playing: now_playing.as_ref().map(|n| format!("{} — {}{}", n.artist, n.title, if n.playing { "" } else { " (paused)" })),
             calibration: self.calibration.as_ref().map(|c| c.view()),
-            looks: self.looks.clone(),
+            scenes: self.scenes.clone(),
             update: self.update.lock().map(|u| u.clone()).unwrap_or_default(),
             diagnostics: self.diagnostics(),
             on_battery: self.battery,
@@ -692,11 +680,11 @@ impl Running {
                 empty_actions = overlays::empty_state(ctx, &settings.target_process, &device, spotify_installed);
             }
             strip_actions = strip.draw(ctx, now_playing.as_ref(), &mut settings.tint_from_art, settings.show_now_playing, accent, t_strip, right);
-            let shown = director.target();
-            panel_actions = panel::draw(ctx, settings, panel_state, &features, &stats, &mut *director.scenes[shown], t_panel);
+            panel_actions = panel::draw(ctx, settings, panel_state, &features, &stats, &mut director.layers, t_panel);
             let input = ChromeInput {
-                scene_names: &stats.scene_names,
-                scene_current: stats.scene_current,
+                layers: (0..MAX_LAYERS).map(|i| { let l = settings.layer(i); (l.visual.short().to_string(), l.enabled && l.opacity > 0.0) }).collect(),
+                editing: settings.editing.min(MAX_LAYERS - 1),
+                scene_name: &settings.scene_name,
                 auto: settings.auto_scenes,
                 capture: &capture,
                 target_short: &target_short,
@@ -705,7 +693,6 @@ impl Running {
                 fps: stats.fps,
                 maximized,
                 accent,
-                layers: settings.layer_mode.then(|| (0..stats.scene_names.len()).map(|i| settings.layer(i).enabled && settings.layer(i).opacity > 0.0).collect()),
             };
             chrome_actions = chrome.draw(ctx, &input, t_chrome);
             if let Some(view) = &calibration_view {
@@ -715,7 +702,8 @@ impl Running {
                 close_shortcuts = overlays::shortcuts(ctx);
             }
             if let Some(fr) = first_run {
-                fr_actions = overlays::first_run(ctx, fr, &stats.monitors, settings.monitor, settings.start_fullscreen, &stats.scene_names, stats.scene_current);
+                let names: Vec<String> = stats.scenes.iter().map(|d| d.name.clone()).collect();
+                fr_actions = overlays::first_run(ctx, fr, &stats.monitors, settings.monitor, settings.start_fullscreen, &names, &settings.scene_name);
             }
             overlays::notices(ctx, &notices, bottom);
 
@@ -783,8 +771,15 @@ impl Running {
             self.settings.section = s;
             self.settings.show_ui = true;
         }
-        if let Some(i) = chrome_actions.switch_scene.or(panel_actions.switch_scene) {
-            self.select_scene(i);
+        if chrome_actions.open_scenes {
+            self.settings.section = Section::Scenes;
+            self.settings.show_ui = true;
+        }
+        if let Some(i) = chrome_actions.select_layer.or(panel_actions.select_layer) {
+            self.select_layer(i);
+            if self.settings.show_ui && chrome_actions.select_layer.is_some() {
+                self.settings.section = Section::Layers;
+            }
         }
         if panel_actions.toggle_fullscreen {
             self.toggle_fullscreen();
@@ -795,32 +790,32 @@ impl Running {
         if panel_actions.calibrate_apply || cal_actions.apply {
             self.apply_calibration();
         }
-        if let Some(look) = panel_actions.apply_look {
-            self.apply_look(&look);
+        if let Some(name) = panel_actions.apply_scene {
+            self.apply_scene_named(&name, FADE_MANUAL_S);
         }
-        if let Some(name) = panel_actions.save_look {
-            match looks::save(&name, &self.settings) {
+        if let Some(name) = panel_actions.save_scene {
+            match scene_store::save(&name, &self.settings) {
                 Ok(n) => {
-                    self.settings.look = n;
-                    self.panel_state.look_name.clear();
-                    self.looks = looks::all();
+                    self.settings.scene_name = n;
+                    self.panel_state.scene_name.clear();
+                    self.scenes = scene_store::all();
                 }
-                Err(e) => self.calibration_result = Some((format!("Could not save look: {e}"), Instant::now())),
+                Err(e) => self.calibration_result = Some((format!("Could not save scene: {e}"), Instant::now())),
             }
         }
-        if let Some(name) = panel_actions.delete_look {
-            if let Err(e) = looks::delete(&name) {
-                tracing::warn!("delete look: {e}");
+        if let Some(name) = panel_actions.delete_scene {
+            if let Err(e) = scene_store::delete(&name) {
+                tracing::warn!("delete scene: {e}");
             }
-            self.looks = looks::all();
+            self.scenes = scene_store::all();
         }
         if let Some(url) = panel_actions.open_url {
             if let Err(e) = platform::open_url(&url) {
                 tracing::warn!("open url: {e}");
             }
         }
-        if panel_actions.open_looks_folder {
-            if let Some(d) = looks::dir() {
+        if panel_actions.open_scenes_folder {
+            if let Some(d) = scene_store::dir() {
                 let _ = std::fs::create_dir_all(&d);
                 let _ = platform::open_url(&d.display().to_string());
             }
@@ -862,8 +857,8 @@ impl Running {
         if let Some(sf) = fr_actions.start_fullscreen {
             self.settings.start_fullscreen = sf;
         }
-        if let Some(i) = fr_actions.scene {
-            self.select_scene(i);
+        if let Some(name) = fr_actions.scene {
+            self.apply_scene_named(&name, FADE_MANUAL_S);
         }
         if fr_actions.calibrate {
             self.first_run = None;
@@ -876,7 +871,6 @@ impl Running {
             self.first_run = None;
             self.settings.onboarded = true;
         }
-        self.settings.scene = self.director.target();
     }
 
     /// Bottom-left one-liners: capture failure, calibration result, look name.
@@ -902,15 +896,6 @@ impl Running {
             self.settings.show_ui = false;
             self.show_shortcuts = false;
             self.calibration_result = Some(("UI hidden · H or Tab shows it again".into(), Instant::now() - Duration::from_secs_f32(NOTICE_SECONDS - 2.5)));
-        }
-    }
-
-    /// Keys / pips / panel: switch scene, or in layer mode just focus it for editing.
-    fn select_scene(&mut self, i: usize) {
-        if self.settings.layer_mode {
-            self.director.focus(i);
-        } else {
-            self.director.switch_to(i);
         }
     }
 
@@ -967,23 +952,17 @@ impl Running {
             }
             KeyCode::Space => match &mut self.calibration {
                 Some(c) => c.tap(),
-                None => {
-                    let n = self.director.scenes.len();
-                    let next = (self.director.target() + 1) % n.max(1);
-                    self.select_scene(next);
-                }
+                None => self.next_scene(FADE_MANUAL_S),
             },
             KeyCode::Enter | KeyCode::NumpadEnter => self.apply_calibration(),
             KeyCode::KeyC => self.toggle_calibration(),
             KeyCode::KeyA => self.settings.auto_scenes = !self.settings.auto_scenes,
             KeyCode::KeyT => self.settings.type_overlay = !self.settings.type_overlay,
             KeyCode::KeyN => self.settings.show_now_playing = !self.settings.show_now_playing,
-            KeyCode::KeyL => self.next_look(),
             KeyCode::Slash | KeyCode::F1 => self.show_shortcuts = !self.show_shortcuts,
-            KeyCode::Digit1 => self.select_scene(0),
-            KeyCode::Digit2 => self.select_scene(1),
-            KeyCode::Digit3 => self.select_scene(2),
-            KeyCode::Digit4 => self.select_scene(3),
+            KeyCode::Digit1 => self.select_layer(0),
+            KeyCode::Digit2 => self.select_layer(1),
+            KeyCode::Digit3 => self.select_layer(2),
             _ => {}
         }
     }

@@ -187,14 +187,13 @@ pub fn calibration(ctx: &egui::Context, view: &CalibrationView, current_delay: f
 pub const SHORTCUTS: &[(&str, &str)] = &[
     ("Tab", "settings panel"),
     ("H", "hide everything; H or Tab shows it again"),
-    ("1 2 3", "scene (in layer mode: the layer to edit)"),
+    ("1 2 3", "layer to edit"),
     ("Space", "next scene (tap while calibrating)"),
     ("A", "auto scene director"),
     ("N", "show what is playing"),
     ("T", "title overlay layout (starfield)"),
     ("C", "calibrate audio delay"),
     ("Enter", "apply calibration"),
-    ("L", "next look"),
     ("F11", "fullscreen on this monitor"),
     ("F5", "reload shaders (dev)"),
     ("?", "this sheet"),
@@ -243,11 +242,11 @@ pub struct FirstRunActions {
     pub monitor: Option<usize>,
     pub start_fullscreen: Option<bool>,
     pub calibrate: bool,
-    pub scene: Option<usize>,
+    pub scene: Option<String>,
     pub done: bool,
 }
 
-pub fn first_run(ctx: &egui::Context, state: &mut FirstRun, monitors: &[MonitorInfo], selected_monitor: usize, start_fullscreen: bool, scene_names: &[&str], scene: usize) -> FirstRunActions {
+pub fn first_run(ctx: &egui::Context, state: &mut FirstRun, monitors: &[MonitorInfo], selected_monitor: usize, start_fullscreen: bool, scene_names: &[String], scene: &str) -> FirstRunActions {
     let mut a = FirstRunActions::default();
     dim(ctx, 170);
     let size = vec2(480.0, 300.0);
@@ -288,14 +287,14 @@ pub fn first_run(ctx: &egui::Context, state: &mut FirstRun, monitors: &[MonitorI
                 }
                 _ => {
                     ui.label("Pick a starting scene.");
-                    widgets::hint(ui, "1, 2, 3 switch any time. A lets the director change scenes on track changes and drops.");
+                    widgets::hint(ui, "Space cycles scenes any time. A lets the director change scenes on track changes and drops.");
                     ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        for (i, name) in scene_names.iter().enumerate() {
-                            let active = i == scene;
-                            let b = egui::Button::new(egui::RichText::new(format!("{}  {}", i + 1, name)).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE }));
-                            if ui.add_sized([120.0, 28.0], b).clicked() {
-                                a.scene = Some(i);
+                    ui.horizontal_wrapped(|ui| {
+                        for name in scene_names {
+                            let active = name == scene;
+                            let b = egui::Button::new(egui::RichText::new(name).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE }));
+                            if ui.add_sized([100.0, 28.0], b).clicked() {
+                                a.scene = Some(name.clone());
                             }
                         }
                     });

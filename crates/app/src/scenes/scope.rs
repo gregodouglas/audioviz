@@ -10,7 +10,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, Scene, begin_pass, fullscreen_pass, hdr_texture, HDR_FORMAT};
 use crate::shaders::ShaderSet;
-use crate::settings::Settings;
+use crate::settings::{Layer, VisualKind};
 
 pub const MAX_POINTS: usize = 32_768;
 
@@ -95,8 +95,8 @@ impl Scope {
 }
 
 impl Scene for Scope {
-    fn name(&self) -> &'static str {
-        "Phosphor scope"
+    fn kind(&self) -> VisualKind {
+        VisualKind::Scope
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -112,8 +112,8 @@ impl Scene for Scope {
         Ok(())
     }
 
-    fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx) {
-        let s = ctx.settings;
+    fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
+        let s = &layer.scope;
         let f = ctx.features;
         let gain = if s.auto_gain { s.gain * ctx.auto_gain } else { s.gain };
         let pulse = 1.0 + s.beat_pulse * f.beat_pulse * f.beat_confidence;
@@ -135,7 +135,7 @@ impl Scene for Scope {
             beam_intensity: s.beam_intensity * pulse,
             decay: s.persistence.max(1e-6).powf(ctx.dt),
             _pad: 0.0,
-            tint: [s.tint[0], s.tint[1], s.tint[2], 1.0],
+            tint: [ctx.tint[0], ctx.tint[1], ctx.tint[2], 1.0],
             point_count: n as u32,
             _pad2: [0; 3],
         };
@@ -160,8 +160,9 @@ impl Scene for Scope {
         &self.hdr[self.current]
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, s: &mut Settings) {
-        use crate::widgets::{ghost_button, hint, slider_row, toggle_row};
+    fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
+        let s = &mut layer.scope;
+        use crate::widgets::{ghost_button, slider_row, toggle_row};
         slider_row(ui, "Gain", &mut s.gain, 0.05..=3.0, |v| format!("{v:.2}"), true);
         toggle_row(ui, "Auto gain", &mut s.auto_gain);
         ui.add_space(4.0);
@@ -170,19 +171,9 @@ impl Scene for Scope {
         slider_row(ui, "Beam intensity", &mut s.beam_intensity, 0.05..=20.0, |v| format!("{v:.2}"), true);
         slider_row(ui, "Persistence", &mut s.persistence, 0.0001..=0.9, |v| format!("{v:.3} /s"), true);
         slider_row(ui, "Beat pulse", &mut s.beat_pulse, 0.0..=1.0, |v| format!("{v:.2}"), false);
-        ui.horizontal(|ui| {
-            ui.label("Tint");
-            ui.color_edit_button_rgb(&mut s.tint);
-            for (name, tint) in [("green", [0.40, 1.0, 0.55]), ("white", [0.85, 0.9, 1.0]), ("amber", [1.0, 0.65, 0.2]), ("ice", [0.55, 0.8, 1.0])] {
-                if ui.add(egui::Button::new(egui::RichText::new(name).size(11.0)).frame(false)).clicked() {
-                    s.tint = tint;
-                }
-            }
-        });
-        hint(ui, "The tint is the base colour for every scene.");
         ui.add_space(6.0);
         if ghost_button(ui, "Reset scope", false).clicked() {
-            s.reset_scope();
+            *s = Default::default();
         }
     }
 }

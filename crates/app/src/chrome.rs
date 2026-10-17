@@ -14,8 +14,10 @@ use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, TEXT, TEXT_2, TEXT_3};
 use crate::widgets::{self, Glyph};
 
 pub struct ChromeInput<'a> {
-    pub scene_names: &'a [&'static str],
-    pub scene_current: usize,
+    /// (label, enabled) per layer; the editing layer is underlined.
+    pub layers: Vec<(String, bool)>,
+    pub editing: usize,
+    pub scene_name: &'a str,
     pub auto: bool,
     pub capture: &'a CaptureMode,
     pub target_short: &'a str,
@@ -24,13 +26,12 @@ pub struct ChromeInput<'a> {
     pub fps: f32,
     pub maximized: bool,
     pub accent: Color32,
-    /// Layer mode: which scenes are on (a dot marks each enabled layer).
-    pub layers: Option<Vec<bool>>,
 }
 
 #[derive(Default)]
 pub struct ChromeActions {
-    pub switch_scene: Option<usize>,
+    pub select_layer: Option<usize>,
+    pub open_scenes: bool,
     pub toggle_auto: bool,
     pub open_section: Option<Section>,
     pub minimize: bool,
@@ -118,27 +119,35 @@ impl Chrome {
             widgets::mark(&painter, pos2(bar.min.x + 22.0, bar.center().y), 7.0, input.accent, true);
             painter.text(pos2(bar.min.x + 36.0, bar.center().y), Align2::LEFT_CENTER, "audioviz", theme::bold(13.0), TEXT);
 
-            // Scene pips, centred, sized to their text (short name = last word).
-            let labels: Vec<String> = input.scene_names.iter().enumerate().map(|(i, n)| format!("{}  {}", i + 1, n.rsplit(' ').next().unwrap_or(n).to_lowercase())).collect();
-            let widths: Vec<f32> = labels.iter().map(|l| painter.layout_no_wrap(l.clone(), theme::bold(12.0), TEXT).size().x + 28.0).collect();
-            let total: f32 = widths.iter().sum();
+            // Scene name, then one pip per layer (dot = on, underline = editing), centred.
+            let scene_label = if input.scene_name.is_empty() { "unsaved scene".to_string() } else { input.scene_name.to_string() };
+            let scene_w = painter.layout_no_wrap(scene_label.clone(), theme::sans(12.0), TEXT).size().x + 26.0;
+            let widths: Vec<f32> = input.layers.iter().map(|(l, _)| painter.layout_no_wrap(l.clone(), theme::bold(12.0), TEXT).size().x + 30.0).collect();
+            let total: f32 = widths.iter().sum::<f32>() + scene_w + 64.0;
             let mut x = bar.center().x - total * 0.5;
-            for (i, label) in labels.iter().enumerate() {
+            let sr = Rect::from_min_size(pos2(x, bar.min.y), vec2(scene_w, BAR_H));
+            let sresp = ui.interact(sr, egui::Id::unique("chrome-scene"), Sense::click()).on_hover_text("Scenes");
+            painter.text(pos2(sr.min.x + 10.0, bar.center().y), Align2::LEFT_CENTER, &scene_label, theme::sans(12.0), if sresp.hovered() { TEXT } else { TEXT_2 });
+            painter.text(pos2(sr.max.x - 10.0, bar.center().y), Align2::RIGHT_CENTER, "·", theme::sans(12.0), TEXT_3);
+            if sresp.clicked() {
+                actions.open_scenes = true;
+            }
+            self.regions.interactive.push(sr);
+            x += scene_w;
+            for (i, (label, on)) in input.layers.iter().enumerate() {
                 let pw = widths[i];
                 let r = Rect::from_min_size(pos2(x, bar.min.y), vec2(pw, BAR_H));
                 let resp = ui.interact(r, egui::Id::unique(("pip", i)), Sense::click());
-                let active = i == input.scene_current;
-                if resp.clicked() && !active {
-                    actions.switch_scene = Some(i);
+                let active = i == input.editing;
+                if resp.clicked() {
+                    actions.select_layer = Some(i);
                 }
-                let color = if active { TEXT } else if resp.hovered() { TEXT } else { TEXT_2 };
+                let color = if active || resp.hovered() { TEXT } else { TEXT_2 };
                 let font = if active { theme::bold(12.0) } else { theme::sans(12.0) };
-                painter.text(r.center(), Align2::CENTER_CENTER, label, font, color);
+                painter.circle_filled(pos2(r.min.x + 10.0, bar.center().y), 2.0, if *on { input.accent } else { TEXT_3 });
+                painter.text(pos2(r.min.x + 18.0, bar.center().y), Align2::LEFT_CENTER, label, font, color);
                 if active {
                     painter.rect_filled(Rect::from_min_size(pos2(r.min.x + 6.0, r.max.y - 2.0), vec2(pw - 12.0, 2.0)), 0.0, input.accent);
-                }
-                if let Some(on) = input.layers.as_ref().and_then(|l| l.get(i)) {
-                    painter.circle_filled(pos2(r.min.x + 9.0, bar.center().y), 2.0, if *on { input.accent } else { TEXT_3 });
                 }
                 self.regions.interactive.push(r);
                 x += pw;

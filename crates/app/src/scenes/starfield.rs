@@ -5,7 +5,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, Scene, fullscreen_pass, hdr_texture, HDR_FORMAT};
 use crate::shaders::ShaderSet;
-use crate::settings::Settings;
+use crate::settings::{Layer, VisualKind};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug, Default)]
@@ -50,8 +50,8 @@ impl Starfield {
 }
 
 impl Scene for Starfield {
-    fn name(&self) -> &'static str {
-        "Lensed starfield"
+    fn kind(&self) -> VisualKind {
+        VisualKind::Starfield
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -64,11 +64,11 @@ impl Scene for Starfield {
         Ok(())
     }
 
-    fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx) {
-        let s = ctx.settings;
+    fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
+        let s = &layer.starfield;
         let f = ctx.features;
         // Lens mass follows the slow bass; slewed so the ring breathes rather than jitters.
-        let target = (0.10 + 0.22 * (f.bass_att / 2.0).clamp(0.0, 1.0)) * s.star_mass;
+        let target = (0.10 + 0.22 * (f.bass_att / 2.0).clamp(0.0, 1.0)) * s.mass;
         self.einstein += (target - self.einstein) * (1.0 - (-ctx.dt / 0.4).exp());
         let mut bands = [[0.0f32; 4]; 4];
         for i in 0..16 {
@@ -80,14 +80,14 @@ impl Scene for Starfield {
             resolution: [ctx.width as f32, ctx.height as f32],
             time: ctx.time,
             einstein: self.einstein,
-            tint: [s.tint[0], s.tint[1], s.tint[2], 1.0],
+            tint: [ctx.tint[0], ctx.tint[1], ctx.tint[2], 1.0],
             bands,
             onset: f.onset_pulse[3].min(1.0),
             beat: f.beat_pulse * f.beat_confidence,
-            grid: s.star_grid,
-            density: s.star_density,
-            twinkle: s.star_twinkle,
-            drift: s.star_drift,
+            grid: s.grid,
+            density: s.density,
+            twinkle: s.twinkle,
+            drift: s.drift,
             _p0: 0.0,
             _p1: 0.0,
         };
@@ -99,18 +99,18 @@ impl Scene for Starfield {
         &self.out
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, s: &mut Settings) {
+    fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
+        let s = &mut layer.starfield;
         use crate::widgets::{ghost_button, hint, slider_row};
-        slider_row(ui, "Lens mass", &mut s.star_mass, 0.2..=3.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Star density", &mut s.star_density, 0.1..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Grid lines", &mut s.star_grid, 0.0..=3.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Onset twinkle", &mut s.star_twinkle, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Drift", &mut s.star_drift, 0.0..=4.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Type scale", &mut s.type_scale, 0.5..=2.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Lens mass", &mut s.mass, 0.2..=3.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Star density", &mut s.density, 0.1..=2.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Grid lines", &mut s.grid, 0.0..=3.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Onset twinkle", &mut s.twinkle, 0.0..=2.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Drift", &mut s.drift, 0.0..=4.0, |v| format!("{v:.2}"), false);
         hint(ui, "Lens mass follows the bass; the spectrum wobbles the ring; onsets twinkle.");
         ui.add_space(6.0);
         if ghost_button(ui, "Reset starfield", false).clicked() {
-            s.reset_starfield();
+            *s = Default::default();
         }
     }
 }

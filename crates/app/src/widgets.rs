@@ -109,7 +109,7 @@ pub fn rail_icon(painter: &egui::Painter, c: Pos2, section: Section, color: Colo
     let sw = 1.5;
     let st = Stroke::new(sw, color);
     match section {
-        Section::Scene => {
+        Section::Scenes => {
             painter.circle_stroke(c, 6.5, st);
             painter.circle_filled(c, 2.0, color);
         }
@@ -126,9 +126,11 @@ pub fn rail_icon(painter: &egui::Painter, c: Pos2, section: Section, color: Colo
             painter.rect_stroke(Rect::from_min_size(pos2(c.x - 7.5, c.y - 6.5), vec2(15.0, 10.0)), 1.5, st, egui::StrokeKind::Middle);
             painter.line_segment([pos2(c.x - 4.0, c.y + 7.0), pos2(c.x + 4.0, c.y + 7.0)], st);
         }
-        Section::Looks => {
-            painter.rect_stroke(Rect::from_min_size(pos2(c.x - 7.0, c.y - 7.0), vec2(14.0, 14.0)), 2.0, st, egui::StrokeKind::Middle);
-            painter.line_segment([pos2(c.x - 3.0, c.y), pos2(c.x + 3.0, c.y)], st);
+        Section::Layers => {
+            // three stacked tiles
+            painter.rect_stroke(Rect::from_min_size(pos2(c.x - 7.0, c.y - 7.0), vec2(10.0, 10.0)), 1.5, st, egui::StrokeKind::Middle);
+            painter.rect_stroke(Rect::from_min_size(pos2(c.x - 4.0, c.y - 4.0), vec2(10.0, 10.0)), 1.5, st, egui::StrokeKind::Middle);
+            painter.rect_filled(Rect::from_min_size(pos2(c.x - 1.0, c.y - 1.0), vec2(9.0, 9.0)), 1.5, color);
         }
         Section::Meters => {
             painter.rect_filled(Rect::from_min_size(pos2(c.x - 7.5, c.y + 1.0), vec2(3.0, 6.0)), 0.0, color);

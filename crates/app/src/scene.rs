@@ -1,37 +1,43 @@
-//! Scene abstraction. A scene renders *linear HDR color* into its own texture;
-//! the director cross-fades scenes and the post stack (bloom, exposure, AgX)
-//! turns the result into pixels.
+//! Visual abstraction. A visual renders *linear HDR color* into its own
+//! texture from a `Layer`'s parameters; the director adds the enabled layers
+//! together and the post stack (bloom, exposure, AgX) turns the result into
+//! pixels.
 
 use audioviz_analysis::FeatureFrame;
 
+use crate::settings::{Layer, VisualKind};
 use crate::shaders::ShaderSet;
-use crate::settings::Settings;
 
 pub struct FrameCtx<'a> {
+    /// Features for this layer (already band-filtered when the layer asks).
     pub features: &'a FeatureFrame,
-    pub settings: &'a Settings,
+    /// Base colour, linear 0..1.
+    pub tint: [f32; 3],
     pub dt: f32,
     pub time: f32,
     pub width: u32,
     pub height: u32,
-    /// Raw (L, R) samples since the last frame, newest last (for the scope).
+    /// (L, R) samples since the last frame, newest last (band-passed for the layer).
     pub points: &'a [[f32; 2]],
-    /// Scene-level auto gain (0.9 / recent peak), smoothed.
+    /// Scope auto gain (0.9 / recent peak), smoothed.
     pub auto_gain: f32,
 }
 
 pub trait Scene {
-    fn name(&self) -> &'static str;
+    fn kind(&self) -> VisualKind;
+    fn name(&self) -> &'static str {
+        self.kind().name()
+    }
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32);
     fn reload_shaders(&mut self, device: &wgpu::Device, shaders: &ShaderSet) -> Result<(), String>;
-    fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx);
-    /// The scene's HDR color output for this frame.
+    fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer);
+    /// The visual's HDR color output for this frame.
     fn output(&self) -> &wgpu::TextureView;
-    /// Scene-specific controls in the panel.
-    fn ui(&mut self, _ui: &mut egui::Ui, _settings: &mut Settings) {}
+    /// Visual-specific controls in the panel.
+    fn ui(&mut self, _ui: &mut egui::Ui, _layer: &mut Layer) {}
 }
 
-/// Helpers shared by scenes.
+/// Helpers shared by visuals.
 pub fn hdr_texture(device: &wgpu::Device, label: &str, width: u32, height: u32) -> wgpu::TextureView {
     device
         .create_texture(&wgpu::TextureDescriptor {
@@ -94,7 +100,7 @@ pub fn tex_group(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, textures
     for (i, t) in textures.iter().enumerate().skip(1) {
         entries.push(wgpu::BindGroupEntry { binding: 2 + i as u32, resource: wgpu::BindingResource::TextureView(t) });
     }
-    device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("tex group"), layout, entries: &entries })
+    device.create_bind_group(&wgpu::BindGroupDescriptor { label: None, layout, entries: &entries })
 }
 
 pub fn uniform_buffer(device: &wgpu::Device, label: &str, size: u64) -> wgpu::Buffer {
@@ -104,12 +110,7 @@ pub fn uniform_buffer(device: &wgpu::Device, label: &str, size: u64) -> wgpu::Bu
 pub fn begin_pass<'a>(encoder: &'a mut wgpu::CommandEncoder, label: &str, view: &'a wgpu::TextureView, load: wgpu::LoadOp<wgpu::Color>) -> wgpu::RenderPass<'a> {
     encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some(label),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view,
-            depth_slice: None,
-            resolve_target: None,
-            ops: wgpu::Operations { load, store: wgpu::StoreOp::Store },
-        })],
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment { view, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load, store: wgpu::StoreOp::Store } })],
         depth_stencil_attachment: None,
         timestamp_writes: None,
         occlusion_query_set: None,
@@ -134,21 +135,15 @@ pub const ADDITIVE: wgpu::BlendState = wgpu::BlendState {
     alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
 };
 
-/// Build a render pipeline with a fullscreen-style vertex shader (`vs_main`)
-/// and `fs_main`, no vertex buffers.
+/// A fullscreen-triangle pipeline (vs_main / fs_main) writing `format`.
 pub fn pipeline(device: &wgpu::Device, label: &str, layout: &wgpu::BindGroupLayout, module: &wgpu::ShaderModule, format: wgpu::TextureFormat, blend: Option<wgpu::BlendState>) -> wgpu::RenderPipeline {
     let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some(label), bind_group_layouts: &[Some(layout)], immediate_size: 0 });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
         layout: Some(&pl),
         vertex: wgpu::VertexState { module, entry_point: Some("vs_main"), buffers: &[], compilation_options: Default::default() },
-        fragment: Some(wgpu::FragmentState {
-            module,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState { format, blend, write_mask: wgpu::ColorWrites::ALL })],
-        }),
-        primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
+        fragment: Some(wgpu::FragmentState { module, entry_point: Some("fs_main"), targets: &[Some(wgpu::ColorTargetState { format, blend, write_mask: wgpu::ColorWrites::ALL })], compilation_options: Default::default() }),
+        primitive: wgpu::PrimitiveState::default(),
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
         multiview_mask: None,
@@ -160,13 +155,13 @@ pub fn shader(device: &wgpu::Device, shaders: &ShaderSet, name: &str) -> wgpu::S
     device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(name), source: wgpu::ShaderSource::Wgsl(shaders.source(name).into()) })
 }
 
-/// Run `build` inside a validation error scope; returns the error text instead
-/// of panicking so a broken shader keeps the last good pipeline.
+/// Build pipelines inside a validation error scope so a broken shader returns
+/// an error string instead of panicking (hot reload keeps the old pipeline).
 pub fn guarded<T>(device: &wgpu::Device, build: impl FnOnce() -> T) -> Result<T, String> {
     let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let out = build();
     match pollster::block_on(scope.pop()) {
-        Some(err) => Err(err.to_string()),
         None => Ok(out),
+        Some(e) => Err(e.to_string()),
     }
 }

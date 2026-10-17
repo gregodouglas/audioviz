@@ -1,14 +1,15 @@
 //! The settings panel: a right-docked sheet with an icon rail, one section at
-//! a time. Replaces the old floating debug window.
+//! a time. Sections: Scenes (compositions), Layers (the three slots and the
+//! visual being edited), Post, Sync, Display, Meters (developer), About.
 
 use audioviz_analysis::FeatureFrame;
 use audioviz_audio::CaptureMode;
 use egui::{Align2, Color32, Rect, Sense, pos2, vec2};
 
-use crate::looks::Look;
 use crate::overlays::CalibrationView;
 use crate::scene::Scene;
-use crate::settings::{SCENE_COUNT, Section, Settings};
+use crate::scene_store::SceneDef;
+use crate::settings::{AudioBand, MAX_LAYERS, Section, Settings, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3};
 use crate::widgets::{self, ghost_button, hint, section_header, slider_row, small_caps, toggle_row};
 
@@ -46,13 +47,11 @@ pub struct Stats {
     pub monitors: Vec<MonitorInfo>,
     pub fullscreen: bool,
     pub settings_path: String,
-    pub scene_names: Vec<&'static str>,
-    pub scene_current: usize,
-    pub scene_fading: bool,
+    pub fading: bool,
     pub last_cue: &'static str,
     pub now_playing: Option<String>,
     pub calibration: Option<CalibrationView>,
-    pub looks: Vec<Look>,
+    pub scenes: Vec<SceneDef>,
     pub update: UpdateStatus,
     pub diagnostics: String,
     pub on_battery: Option<bool>,
@@ -61,14 +60,14 @@ pub struct Stats {
 #[derive(Default)]
 pub struct Actions {
     pub toggle_fullscreen: bool,
-    pub switch_scene: Option<usize>,
+    pub select_layer: Option<usize>,
+    pub apply_scene: Option<String>,
+    pub save_scene: Option<String>,
+    pub delete_scene: Option<String>,
     pub calibrate_toggle: bool,
     pub calibrate_apply: bool,
-    pub apply_look: Option<Settings>,
-    pub save_look: Option<String>,
-    pub delete_look: Option<String>,
     pub open_url: Option<String>,
-    pub open_looks_folder: bool,
+    pub open_scenes_folder: bool,
     pub check_updates: bool,
     pub copy_diagnostics: bool,
     pub launch_spotify: bool,
@@ -81,12 +80,12 @@ pub struct Actions {
 /// Scratch UI state that is not a setting.
 #[derive(Default)]
 pub struct PanelState {
-    pub look_name: String,
+    pub scene_name: String,
     pub target_edit: String,
     pub target_editing: bool,
 }
 
-pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState, f: &FeatureFrame, stats: &Stats, scene: &mut dyn Scene, t: f32) -> Actions {
+pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState, f: &FeatureFrame, stats: &Stats, layers: &mut [Box<dyn Scene>], t: f32) -> Actions {
     let mut a = Actions::default();
     if t <= 0.001 {
         return a;
@@ -102,7 +101,6 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState
         p.rect_filled(rect, 0.0, theme::panel_fill());
         p.vline(rect.min.x + 0.5, rect.y_range(), egui::Stroke::new(1.0, HAIRLINE));
         p.vline(rect.min.x + RAIL_W + 0.5, rect.y_range(), egui::Stroke::new(1.0, HAIRLINE));
-        // Swallow pointer input on the panel background.
         ui.interact(rect, egui::Id::unique("panel-bg"), Sense::click_and_drag());
 
         // Rail.
@@ -131,11 +129,11 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(&mut cui, |ui| {
             ui.set_width(content.width() - 8.0);
             match settings.section {
-                Section::Scene => scene_section(ui, settings, stats, scene, &mut a),
-                Section::Post => post_section(ui, settings, stats),
+                Section::Scenes => scenes_section(ui, settings, state, stats, &mut a),
+                Section::Layers => layers_section(ui, settings, stats, layers, &mut a),
+                Section::Post => post_section(ui, settings),
                 Section::Sync => sync_section(ui, settings, state, stats, &mut a),
                 Section::Display => display_section(ui, settings, stats, &mut a),
-                Section::Looks => looks_section(ui, settings, state, stats, &mut a),
                 Section::Meters => meters_section(ui, f, stats),
                 Section::About => about_section(ui, stats, &mut a),
             }
@@ -145,9 +143,9 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState
         let fy = rect.max.y - 44.0;
         p.hline((rect.min.x + RAIL_W + 20.0)..=(rect.max.x - 20.0), fy, egui::Stroke::new(1.0, HAIRLINE));
         p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 14.0), Align2::LEFT_CENTER, "H hide all   N now playing   ? keys", theme::mono(10.5), TEXT_3);
-        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 30.0), Align2::LEFT_CENTER, "C calibrate   F11 fullscreen", theme::mono(10.5), TEXT_3);
+        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 30.0), Align2::LEFT_CENTER, "1-3 layer   Space scene", theme::mono(10.5), TEXT_3);
         p.text(pos2(rect.max.x - 20.0, fy + 30.0), Align2::RIGHT_CENTER, crate::VERSION, theme::mono(10.0), TEXT_3);
-        let sc = ui.interact(Rect::from_min_size(pos2(rect.min.x + RAIL_W + 20.0, fy + 22.0), vec2(220.0, 16.0)), egui::Id::unique("footer-shortcuts"), Sense::click());
+        let sc = ui.interact(Rect::from_min_size(pos2(rect.min.x + RAIL_W + 20.0, fy + 6.0), vec2(220.0, 16.0)), egui::Id::unique("footer-shortcuts"), Sense::click());
         if sc.clicked() {
             a.show_shortcuts = true;
         }
@@ -155,87 +153,187 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState
     a
 }
 
-fn scene_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, scene: &mut dyn Scene, a: &mut Actions) {
-    if section_header(ui, "Scene", None, Some("Hide UI (H)")) {
+fn scene_button(ui: &mut egui::Ui, label: &str, active: bool, width: f32) -> bool {
+    let b = egui::Button::new(egui::RichText::new(label).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE })).min_size(vec2(width, 26.0));
+    ui.add(b).clicked()
+}
+
+fn scenes_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, a: &mut Actions) {
+    if section_header(ui, "Scenes", None, Some("Hide UI (H)")) {
         a.hide_ui = true;
     }
-    toggle_row(ui, "Layers: blend several scenes", &mut settings.layer_mode);
-    if settings.layer_mode {
-        hint(ui, "Every layer that is on is added to the picture with its opacity. 1-3 picks the layer to edit.");
-        ui.add_space(4.0);
-        for (i, name) in stats.scene_names.iter().enumerate() {
-            let focused = i == stats.scene_current;
-            ui.horizontal(|ui| {
-                let l = settings.layer_mut(i);
-                let (sw, resp) = ui.allocate_exact_size(vec2(28.0, 16.0), Sense::click());
-                if resp.clicked() {
-                    l.enabled = !l.enabled;
-                }
-                let t = ui.ctx().animate_bool_with_time(resp.id, l.enabled, theme::ANIM_S);
-                ui.painter().rect_filled(sw, 8.0, widgets::lerp_color(HAIRLINE, ACCENT, t));
-                ui.painter().circle_filled(pos2(sw.min.x + 8.0 + 12.0 * t, sw.center().y), 6.0, widgets::lerp_color(TEXT_2, theme::BG, t));
-                let label = egui::RichText::new(format!("{}  {}", i + 1, name)).color(if focused { ACCENT } else { TEXT });
-                if ui.add(egui::Button::new(label).frame(false)).clicked() {
-                    a.switch_scene = Some(i);
-                }
-                if focused {
-                    ui.label(egui::RichText::new("editing").size(11.0).color(TEXT_3));
-                }
-            });
-            if settings.layer(i).enabled {
-                let l = settings.layer_mut(i);
-                slider_row(ui, "    opacity", &mut l.opacity, 0.0..=2.0, |v| format!("{v:.2}"), false);
-            }
-        }
-    } else {
-        ui.horizontal_wrapped(|ui| {
-            for (i, name) in stats.scene_names.iter().enumerate() {
-                let active = i == stats.scene_current;
-                let b = egui::Button::new(egui::RichText::new(format!("{}  {}", i + 1, name)).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE }));
-                if ui.add(b).clicked() && !active {
-                    a.switch_scene = Some(i);
-                }
-            }
-            if stats.scene_fading {
-                ui.label(egui::RichText::new("fading…").color(TEXT_3));
-            }
-        });
-        ui.add_space(4.0);
-        toggle_row(ui, "Auto director (A)", &mut settings.auto_scenes);
-        hint(ui, &format!("Changes scene on track change, drops, quiet, dwell. Last cue: {}", stats.last_cue));
-    }
+    hint(ui, "A scene is a mix of up to three layers plus post and tint. Space cycles; A lets the director pick on track changes and drops.");
+    ui.add_space(8.0);
+    toggle_row(ui, "Auto director (A)", &mut settings.auto_scenes);
+    hint(ui, &format!("Last cue: {}{}", stats.last_cue, if stats.fading { " · dissolving" } else { "" }));
     if let Some(np) = &stats.now_playing {
         hint(ui, np);
     }
     ui.add_space(8.0);
-    widgets::hairline(ui);
-    ui.add_space(8.0);
-    small_caps(ui, stats.scene_names.get(stats.scene_current).copied().unwrap_or("scene"));
-    ui.add_space(4.0);
-    scene.ui(ui, settings);
-
+    small_caps(ui, "Built in");
+    for def in stats.scenes.iter().filter(|s| s.builtin) {
+        let active = settings.scene_name == def.name;
+        if scene_button(ui, &def.name, active, 150.0) {
+            a.apply_scene = Some(def.name.clone());
+        }
+    }
+    let user: Vec<&SceneDef> = stats.scenes.iter().filter(|s| !s.builtin).collect();
+    if !user.is_empty() {
+        small_caps(ui, "Yours");
+        for def in user {
+            let active = settings.scene_name == def.name;
+            ui.horizontal(|ui| {
+                if scene_button(ui, &def.name, active, 150.0) {
+                    a.apply_scene = Some(def.name.clone());
+                }
+                if ui.add(egui::Button::new(egui::RichText::new("delete").size(11.0).color(TEXT_3)).frame(false)).clicked() {
+                    a.delete_scene = Some(def.name.clone());
+                }
+            });
+        }
+    }
+    if !settings.scene_name.is_empty() && !stats.scenes.iter().any(|s| s.name == settings.scene_name) {
+        hint(ui, &format!("'{}' (edited, not saved)", settings.scene_name));
+    }
+    ui.add_space(10.0);
+    small_caps(ui, "Save current as");
+    ui.horizontal(|ui| {
+        ui.add(egui::TextEdit::singleline(&mut state.scene_name).desired_width(150.0).hint_text("name"));
+        if ui.add_enabled(!state.scene_name.trim().is_empty(), egui::Button::new("Save")).clicked() {
+            a.save_scene = Some(state.scene_name.trim().to_string());
+        }
+    });
+    if !settings.scene_name.is_empty() && stats.scenes.iter().any(|s| s.name == settings.scene_name && !s.builtin) {
+        let name = settings.scene_name.clone();
+        if ghost_button(ui, &format!("Update '{name}'"), false).clicked() {
+            a.save_scene = Some(name);
+        }
+    }
+    ui.add_space(6.0);
+    if ghost_button(ui, "Open scenes folder", false).clicked() {
+        a.open_scenes_folder = true;
+    }
+    hint(ui, "Each scene is a JSON file. Copy one to share it; drop one in to import.");
 }
 
-fn post_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats) {
-    let cur = stats.scene_current;
-    let name = stats.scene_names.get(cur).copied().unwrap_or("scene");
-    if section_header(ui, "Post", Some(&format!("· {name}")), Some("Reset")) {
-        settings.reset_post(cur);
+fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, layers: &mut [Box<dyn Scene>], a: &mut Actions) {
+    if section_header(ui, "Layers", None, Some("Hide UI (H)")) {
+        a.hide_ui = true;
     }
-    let p = settings.post_mut(cur);
+    hint(ui, "Every layer that is on is added to the picture with its opacity. Pick one to edit it below.");
+    ui.add_space(4.0);
+    let editing = settings.editing.min(MAX_LAYERS - 1);
+    for i in 0..MAX_LAYERS {
+        let focused = i == editing;
+        ui.horizontal(|ui| {
+            let l = settings.layer_mut(i);
+            let (sw, resp) = ui.allocate_exact_size(vec2(28.0, 16.0), Sense::click());
+            if resp.clicked() {
+                l.enabled = !l.enabled;
+            }
+            let t = ui.ctx().animate_bool_with_time(resp.id, l.enabled, theme::ANIM_S);
+            ui.painter().rect_filled(sw, 8.0, widgets::lerp_color(HAIRLINE, ACCENT, t));
+            ui.painter().circle_filled(pos2(sw.min.x + 8.0 + 12.0 * t, sw.center().y), 6.0, widgets::lerp_color(TEXT_2, theme::BG, t));
+            let label = egui::RichText::new(format!("{}  {}", i + 1, l.visual.short())).color(if focused { ACCENT } else { TEXT });
+            if ui.add(egui::Button::new(label).frame(false)).clicked() {
+                a.select_layer = Some(i);
+            }
+            if l.band.enabled {
+                ui.label(egui::RichText::new(l.band.label()).font(theme::mono(10.5)).color(TEXT_3));
+            }
+            if focused {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(egui::RichText::new("editing").size(11.0).color(ACCENT));
+                });
+            }
+        });
+        if settings.layer(i).enabled {
+            let l = settings.layer_mut(i);
+            slider_row(ui, "    opacity", &mut l.opacity, 0.0..=2.0, |v| format!("{v:.2}"), false);
+        }
+    }
+
+    ui.add_space(8.0);
+    widgets::hairline(ui);
+    ui.add_space(8.0);
+    small_caps(ui, &format!("Layer {}", editing + 1));
+    ui.add_space(4.0);
+    // Visual picker.
+    ui.horizontal(|ui| {
+        ui.label("Visual");
+        let l = settings.layer_mut(editing);
+        for k in VisualKind::ALL {
+            let active = l.visual == k;
+            if ui.add(egui::Button::new(egui::RichText::new(k.short()).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE }))).clicked() {
+                l.visual = k;
+            }
+        }
+    });
+    // Audio band.
+    ui.add_space(4.0);
+    {
+        let l = settings.layer_mut(editing);
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Reacts to");
+            let full = !l.band.enabled;
+            if ui.add(egui::Button::new(egui::RichText::new("full mix").color(if full { ACCENT } else { TEXT })).fill(if full { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if full { ACCENT } else { HAIRLINE }))).clicked() {
+                l.band.enabled = false;
+            }
+            for (name, lo, hi) in AudioBand::PRESETS {
+                let active = l.band.enabled && (l.band.lo_hz - lo).abs() < 1.0 && (l.band.hi_hz - hi).abs() < 1.0;
+                if ui.add(egui::Button::new(egui::RichText::new(name).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE }))).clicked() {
+                    l.band = AudioBand { enabled: true, lo_hz: lo, hi_hz: hi };
+                }
+            }
+        });
+        if l.band.enabled {
+            slider_row(ui, "Low cut", &mut l.band.lo_hz, 20.0..=16000.0, |v| format!("{v:.0} Hz"), true);
+            slider_row(ui, "High cut", &mut l.band.hi_hz, 20.0..=16000.0, |v| format!("{v:.0} Hz"), true);
+            if l.band.hi_hz < l.band.lo_hz * 1.2 {
+                l.band.hi_hz = l.band.lo_hz * 1.2;
+            }
+            hint(ui, "The scope draws only this band of the waveform; other visuals take their energy, onsets and spectrum from it.");
+        }
+    }
+    ui.add_space(8.0);
+    widgets::hairline(ui);
+    ui.add_space(8.0);
+    let kind = settings.layer(editing).visual;
+    small_caps(ui, kind.name());
+    ui.add_space(4.0);
+    if let Some(scene) = layers.get_mut(editing) {
+        if scene.kind() == kind {
+            let l = settings.layer_mut(editing);
+            scene.ui(ui, l);
+        } else {
+            hint(ui, "switching visual…");
+        }
+    }
+    ui.add_space(8.0);
+    small_caps(ui, "Tint (all layers)");
+    ui.horizontal(|ui| {
+        ui.color_edit_button_rgb(&mut settings.tint);
+        for (name, tint) in [("green", [0.40, 1.0, 0.55]), ("white", [0.85, 0.9, 1.0]), ("amber", [1.0, 0.65, 0.2]), ("ice", [0.55, 0.8, 1.0])] {
+            if ui.add(egui::Button::new(egui::RichText::new(name).size(11.0)).frame(false)).clicked() {
+                settings.tint = tint;
+            }
+        }
+    });
+    toggle_row(ui, "Tint from album art", &mut settings.tint_from_art);
+    let _ = stats;
+}
+
+fn post_section(ui: &mut egui::Ui, settings: &mut Settings) {
+    if section_header(ui, "Post", Some("· whole picture"), Some("Reset")) {
+        settings.reset_post();
+    }
+    let p = &mut settings.post;
     slider_row(ui, "Exposure", &mut p.exposure, 0.1..=10.0, |v| format!("{v:.2}"), true);
     toggle_row(ui, "Auto exposure", &mut p.auto_exposure);
     ui.add_space(6.0);
     slider_row(ui, "Bloom", &mut p.bloom, 0.0..=3.0, |v| format!("{v:.2}"), false);
     slider_row(ui, "Grain", &mut p.grain, 0.0..=1.0, |v| format!("{v:.2}"), false);
-    hint(ui, "Per scene. Blended across cross-fades.");
-    ui.add_space(8.0);
-    if ghost_button(ui, "Copy to all scenes", false).clicked() {
-        let p = settings.post_for(cur);
-        for i in 0..SCENE_COUNT.max(settings.post.len()) {
-            *settings.post_mut(i) = p;
-        }
-    }
+    hint(ui, "Saved with the scene.");
 }
 
 fn sync_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, a: &mut Actions) {
@@ -362,9 +460,11 @@ fn display_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, a:
     toggle_row(ui, "Show what's playing (N)", &mut settings.show_now_playing);
     if settings.show_now_playing {
         toggle_row(ui, "Title overlay in the starfield (T)", &mut settings.type_overlay);
+        if settings.type_overlay {
+            slider_row(ui, "Title size", &mut settings.type_scale, 0.5..=2.0, |v| format!("{v:.2}"), false);
+        }
         toggle_row(ui, "Track-change toast", &mut settings.toast);
     }
-    toggle_row(ui, "Tint from album art", &mut settings.tint_from_art);
     ui.add_space(8.0);
     small_caps(ui, "Developer");
     toggle_row(ui, "Show meters", &mut settings.developer);
@@ -372,43 +472,6 @@ fn display_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, a:
         a.rerun_first_run = true;
     }
     hint(ui, &format!("settings: {}", stats.settings_path));
-}
-
-fn looks_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, a: &mut Actions) {
-    section_header(ui, "Looks", None, None);
-    hint(ui, "A look is every visual setting at once. Scene, sliders, post, tint. Not your monitor, delay or window.");
-    ui.add_space(8.0);
-    for look in &stats.looks {
-        let active = settings.look == look.name;
-        ui.horizontal(|ui| {
-            let b = egui::Button::new(egui::RichText::new(&look.name).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE })).min_size(vec2(140.0, 26.0));
-            if ui.add(b).clicked() {
-                a.apply_look = Some(look.settings.clone());
-                settings.look = look.name.clone();
-            }
-            if look.builtin {
-                ui.label(egui::RichText::new("built in").size(11.0).color(TEXT_3));
-            } else if ui.add(egui::Button::new(egui::RichText::new("delete").size(11.0).color(TEXT_3)).frame(false)).clicked() {
-                a.delete_look = Some(look.name.clone());
-            }
-        });
-    }
-    if !settings.look.is_empty() && !stats.looks.iter().any(|l| l.name == settings.look) {
-        hint(ui, &format!("'{}' (edited)", settings.look));
-    }
-    ui.add_space(10.0);
-    small_caps(ui, "Save current as");
-    ui.horizontal(|ui| {
-        ui.add(egui::TextEdit::singleline(&mut state.look_name).desired_width(150.0).hint_text("name"));
-        if ui.add_enabled(!state.look_name.trim().is_empty(), egui::Button::new("Save")).clicked() {
-            a.save_look = Some(state.look_name.trim().to_string());
-        }
-    });
-    ui.add_space(6.0);
-    if ghost_button(ui, "Open looks folder", false).clicked() {
-        a.open_looks_folder = true;
-    }
-    hint(ui, "Each look is a JSON file. Copy one to share it; drop one in to import.");
 }
 
 fn meters_section(ui: &mut egui::Ui, f: &FeatureFrame, stats: &Stats) {

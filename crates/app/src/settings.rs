@@ -1,14 +1,159 @@
 //! User settings: everything the panel can change, persisted as JSON
 //! (`config.rs`). New fields must have a serde default so old files load;
-//! removed or renamed fields must be migrated in `config::load`, never dropped.
+//! removed or renamed fields must be migrated in `config::migrate`, never
+//! dropped.
+//!
+//! Model: a **visual** is a renderer (scope, ribbons, starfield); a **layer**
+//! is one instance of a visual with its own parameters, opacity and audio
+//! band; a **scene** is the composition of up to `MAX_LAYERS` layers plus the
+//! post settings, saved by name (`scene_store.rs`).
 
 use serde::{Deserialize, Serialize};
 
-/// Number of scenes the per-scene settings are sized for.
-pub const SCENE_COUNT: usize = 3;
+pub const MAX_LAYERS: usize = 3;
 
-/// Post-stack settings, one set per scene (the starfield wants less bloom
-/// than the scope). Blended during cross-fades.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VisualKind {
+    Scope,
+    Ribbons,
+    Starfield,
+}
+
+impl VisualKind {
+    pub const ALL: [VisualKind; 3] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield];
+    pub fn name(self) -> &'static str {
+        match self {
+            VisualKind::Scope => "Phosphor scope",
+            VisualKind::Ribbons => "Flow-field ribbons",
+            VisualKind::Starfield => "Lensed starfield",
+        }
+    }
+    pub fn short(self) -> &'static str {
+        match self {
+            VisualKind::Scope => "scope",
+            VisualKind::Ribbons => "ribbons",
+            VisualKind::Starfield => "starfield",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScopeParams {
+    pub gain: f32,
+    pub auto_gain: bool,
+    pub rotation_deg: f32,
+    pub beam_width: f32,
+    pub beam_intensity: f32,
+    /// Fraction of brightness remaining after one second.
+    pub persistence: f32,
+    /// How much the beat clock pulses the beam (0 = off).
+    pub beat_pulse: f32,
+}
+
+impl Default for ScopeParams {
+    fn default() -> Self {
+        Self { gain: 0.85, auto_gain: true, rotation_deg: 45.0, beam_width: 1.2, beam_intensity: 1.0, persistence: 0.05, beat_pulse: 0.3 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RibbonsParams {
+    pub speed: f32,
+    pub scale: f32,
+    pub curl: f32,
+    pub vortex: f32,
+    pub width: f32,
+    pub intensity: f32,
+    pub persistence: f32,
+    pub saturation: f32,
+    pub count: u32,
+}
+
+impl Default for RibbonsParams {
+    fn default() -> Self {
+        Self { speed: 0.3, scale: 1.5, curl: 1.0, vortex: 1.0, width: 1.0, intensity: 1.0, persistence: 0.3, saturation: 0.45, count: 12_000 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct StarfieldParams {
+    pub mass: f32,
+    pub density: f32,
+    pub grid: f32,
+    pub twinkle: f32,
+    pub drift: f32,
+}
+
+impl Default for StarfieldParams {
+    fn default() -> Self {
+        Self { mass: 1.0, density: 1.0, grid: 1.0, twinkle: 0.6, drift: 1.0 }
+    }
+}
+
+/// Which part of the spectrum a layer reacts to.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AudioBand {
+    /// false = the full mix (what every layer did before bands existed).
+    pub enabled: bool,
+    pub lo_hz: f32,
+    pub hi_hz: f32,
+}
+
+impl Default for AudioBand {
+    fn default() -> Self {
+        Self { enabled: false, lo_hz: 20.0, hi_hz: 400.0 }
+    }
+}
+
+impl AudioBand {
+    /// Named presets: (label, lo, hi).
+    pub const PRESETS: [(&'static str, f32, f32); 6] = [("sub", 20.0, 60.0), ("bass", 60.0, 250.0), ("low mid", 250.0, 500.0), ("mid", 500.0, 2000.0), ("presence", 2000.0, 4000.0), ("air", 4000.0, 16000.0)];
+    pub fn label(&self) -> String {
+        if !self.enabled {
+            return "full mix".into();
+        }
+        for (name, lo, hi) in Self::PRESETS {
+            if (self.lo_hz - lo).abs() < 1.0 && (self.hi_hz - hi).abs() < 1.0 {
+                return name.into();
+            }
+        }
+        format!("{:.0}-{:.0} Hz", self.lo_hz, self.hi_hz)
+    }
+}
+
+/// One instance of a visual in the scene. All three parameter sets are kept
+/// so switching the visual back and forth loses nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Layer {
+    pub visual: VisualKind,
+    pub enabled: bool,
+    /// 0 = off, 1 = as rendered, up to 2 = boosted.
+    pub opacity: f32,
+    pub band: AudioBand,
+    pub scope: ScopeParams,
+    pub ribbons: RibbonsParams,
+    pub starfield: StarfieldParams,
+}
+
+impl Default for Layer {
+    fn default() -> Self {
+        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, band: AudioBand::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default() }
+    }
+}
+
+impl Layer {
+    pub fn new(visual: VisualKind, enabled: bool, opacity: f32) -> Self {
+        Self { visual, enabled, opacity, ..Self::default() }
+    }
+}
+
+/// Post-stack settings for the whole picture.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PostSettings {
@@ -24,62 +169,27 @@ impl Default for PostSettings {
     }
 }
 
-impl PostSettings {
-    pub fn default_for(scene: usize) -> Self {
-        match scene {
-            2 => Self { bloom: 0.12, ..Self::default() },
-            _ => Self::default(),
-        }
-    }
-
-    pub fn lerp(self, other: Self, t: f32) -> Self {
-        let t = t.clamp(0.0, 1.0);
-        let l = |a: f32, b: f32| a + (b - a) * t;
-        Self {
-            exposure: l(self.exposure, other.exposure),
-            auto_exposure: if t < 0.5 { self.auto_exposure } else { other.auto_exposure },
-            bloom: l(self.bloom, other.bloom),
-            grain: l(self.grain, other.grain),
-        }
-    }
-}
-
-/// One scene as a layer of the composite (layer mode).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct LayerSettings {
-    pub enabled: bool,
-    /// 0 = off, 1 = as rendered, up to 2 = boosted.
-    pub opacity: f32,
-}
-
-impl Default for LayerSettings {
-    fn default() -> Self {
-        Self { enabled: true, opacity: 1.0 }
-    }
-}
-
 /// Panel sections, in rail order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Section {
-    Scene,
+    Scenes,
+    Layers,
     Post,
     Sync,
     Display,
-    Looks,
     Meters,
     About,
 }
 
 impl Section {
-    pub const ALL: [Section; 7] = [Section::Scene, Section::Post, Section::Sync, Section::Display, Section::Looks, Section::Meters, Section::About];
+    pub const ALL: [Section; 7] = [Section::Scenes, Section::Layers, Section::Post, Section::Sync, Section::Display, Section::Meters, Section::About];
     pub fn name(self) -> &'static str {
         match self {
-            Section::Scene => "Scene",
+            Section::Scenes => "Scenes",
+            Section::Layers => "Layers",
             Section::Post => "Post",
             Section::Sync => "Sync",
             Section::Display => "Display",
-            Section::Looks => "Looks",
             Section::Meters => "Meters",
             Section::About => "About",
         }
@@ -89,190 +199,85 @@ impl Section {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
-    // Scope scene
-    pub gain: f32,
-    pub auto_gain: bool,
-    pub rotation_deg: f32,
-    pub beam_width: f32,
-    pub beam_intensity: f32,
-    /// Fraction of brightness remaining after one second.
-    pub persistence: f32,
+    // ---- the scene (saved by scene_store) ----
+    pub layers: Vec<Layer>,
+    /// Which layer the panel and keys 1-3 edit.
+    pub editing: usize,
+    /// Name of the active scene ("" = unsaved).
+    pub scene_name: String,
+    pub post: PostSettings,
+    /// Base colour for every visual.
     pub tint: [f32; 3],
-    /// How much the beat clock pulses the beam (0 = off).
-    pub beat_pulse: f32,
-    // Ribbons scene
-    pub ribbons_speed: f32,
-    pub ribbons_scale: f32,
-    pub ribbons_curl: f32,
-    pub ribbons_vortex: f32,
-    pub ribbons_width: f32,
-    pub ribbons_intensity: f32,
-    pub ribbons_persistence: f32,
-    pub ribbons_saturation: f32,
-    pub ribbons_count: u32,
-    // Starfield scene
-    pub star_mass: f32,
-    pub star_density: f32,
-    pub star_grid: f32,
-    pub star_twinkle: f32,
-    pub star_drift: f32,
+    /// Scene accent follows the album art's dominant colour.
+    pub tint_from_art: bool,
+    // ---- title overlay ----
     pub type_overlay: bool,
     pub type_scale: f32,
     /// Show what is playing: title overlay, toast, track identity on the strip.
     pub show_now_playing: bool,
-    // Scenes
-    pub scene: usize,
+    // ---- director ----
     pub auto_scenes: bool,
-    /// Blend several scenes at once instead of showing one.
-    pub layer_mode: bool,
-    /// Per scene, indexed like `post`.
-    pub layers: Vec<LayerSettings>,
-    // Post, indexed by scene.
-    pub post: Vec<PostSettings>,
-    /// Scene accent follows the album art's dominant colour.
-    pub tint_from_art: bool,
-    /// Accessibility: cap frame-to-frame brightness rises (photosensitivity).
+    // ---- accessibility ----
     pub reduce_flashing: bool,
-    /// Allowed fractional brightness rise per second when reducing flashing.
     pub flash_rise: f32,
-    // Audio
+    // ---- audio ----
     pub audio_delay_ms: f32,
     pub target_process: String,
-    // Display
-    /// 0 = uncapped (VSync only). Ambient use: 60.
+    // ---- display ----
     pub fps_cap: u32,
-    /// Index into the monitor list for fullscreen.
     pub monitor: usize,
     pub start_fullscreen: bool,
-    /// Drop to 30 fps when the window is hidden or the machine is on battery.
     pub low_power: bool,
-    /// Bottom-left track-change toast in scenes without a title overlay.
     pub toast: bool,
-    /// Hide the chrome bar and strip after a few seconds without mouse movement.
     pub chrome_autohide: bool,
-    // Panel
+    // ---- panel ----
     pub show_ui: bool,
     pub section: Section,
-    /// Show the analysis meters section.
     pub developer: bool,
-    /// Name of the active look, if any ("" = custom).
-    pub look: String,
-    /// The first-run sheet has been completed or skipped.
     pub onboarded: bool,
 }
 
 impl Settings {
-    pub fn post_for(&self, scene: usize) -> PostSettings {
-        self.post.get(scene).copied().unwrap_or_else(|| PostSettings::default_for(scene))
-    }
-    pub fn post_mut(&mut self, scene: usize) -> &mut PostSettings {
-        while self.post.len() <= scene {
-            let i = self.post.len();
-            self.post.push(PostSettings::default_for(i));
-        }
-        &mut self.post[scene]
-    }
-    pub fn layer(&self, i: usize) -> LayerSettings {
+    pub fn layer(&self, i: usize) -> Layer {
         self.layers.get(i).copied().unwrap_or_default()
     }
-    pub fn layer_mut(&mut self, i: usize) -> &mut LayerSettings {
+    pub fn layer_mut(&mut self, i: usize) -> &mut Layer {
         while self.layers.len() <= i {
-            self.layers.push(LayerSettings::default());
+            self.layers.push(Layer::default());
         }
         &mut self.layers[i]
     }
-    pub fn reset_post(&mut self, scene: usize) {
-        *self.post_mut(scene) = PostSettings::default_for(scene);
-    }
-    pub fn reset_scope(&mut self) {
-        let d = Settings::default();
-        self.gain = d.gain;
-        self.auto_gain = d.auto_gain;
-        self.rotation_deg = d.rotation_deg;
-        self.beam_width = d.beam_width;
-        self.beam_intensity = d.beam_intensity;
-        self.persistence = d.persistence;
-        self.beat_pulse = d.beat_pulse;
-    }
-    pub fn reset_ribbons(&mut self) {
-        let d = Settings::default();
-        self.ribbons_speed = d.ribbons_speed;
-        self.ribbons_scale = d.ribbons_scale;
-        self.ribbons_curl = d.ribbons_curl;
-        self.ribbons_vortex = d.ribbons_vortex;
-        self.ribbons_width = d.ribbons_width;
-        self.ribbons_intensity = d.ribbons_intensity;
-        self.ribbons_persistence = d.ribbons_persistence;
-        self.ribbons_saturation = d.ribbons_saturation;
-        self.ribbons_count = d.ribbons_count;
-    }
-    pub fn reset_starfield(&mut self) {
-        let d = Settings::default();
-        self.star_mass = d.star_mass;
-        self.star_density = d.star_density;
-        self.star_grid = d.star_grid;
-        self.star_twinkle = d.star_twinkle;
-        self.star_drift = d.star_drift;
-        self.type_scale = d.type_scale;
+    pub fn reset_post(&mut self) {
+        self.post = PostSettings::default();
     }
 
-    /// The fields a "look" captures: everything visual, nothing about this
-    /// machine (monitor, capture target, delay, window state).
-    pub fn apply_look(&mut self, look: &Settings) {
-        let keep = self.clone();
-        *self = look.clone();
-        self.audio_delay_ms = keep.audio_delay_ms;
-        self.target_process = keep.target_process;
-        self.fps_cap = keep.fps_cap;
-        self.monitor = keep.monitor;
-        self.start_fullscreen = keep.start_fullscreen;
-        self.low_power = keep.low_power;
-        self.toast = keep.toast;
-        self.chrome_autohide = keep.chrome_autohide;
-        self.show_ui = keep.show_ui;
-        self.section = keep.section;
-        self.developer = keep.developer;
-        self.onboarded = keep.onboarded;
-        self.show_now_playing = keep.show_now_playing;
-        self.reduce_flashing = keep.reduce_flashing;
-        self.flash_rise = keep.flash_rise;
+    /// Take the scene part of `other` (layers, post, tint, overlay) and keep
+    /// everything about this machine and window.
+    pub fn apply_scene(&mut self, other: &Settings) {
+        self.layers = other.layers.clone();
+        self.editing = other.editing.min(MAX_LAYERS - 1);
+        self.post = other.post;
+        self.tint = other.tint;
+        self.tint_from_art = other.tint_from_art;
+        self.type_overlay = other.type_overlay;
+        self.type_scale = other.type_scale;
+        self.scene_name = other.scene_name.clone();
     }
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            gain: 0.85,
-            auto_gain: true,
-            rotation_deg: 45.0,
-            beam_width: 1.2,
-            beam_intensity: 1.0,
-            persistence: 0.05,
+            layers: vec![Layer::new(VisualKind::Scope, true, 1.0), Layer::new(VisualKind::Ribbons, false, 0.5), Layer::new(VisualKind::Starfield, false, 0.5)],
+            editing: 0,
+            scene_name: String::new(),
+            post: PostSettings::default(),
             tint: [0.40, 1.0, 0.55],
-            beat_pulse: 0.3,
-            ribbons_speed: 0.3,
-            ribbons_scale: 1.5,
-            ribbons_curl: 1.0,
-            ribbons_vortex: 1.0,
-            ribbons_width: 1.0,
-            ribbons_intensity: 1.0,
-            ribbons_persistence: 0.3,
-            ribbons_saturation: 0.45,
-            ribbons_count: 12_000,
-            star_mass: 1.0,
-            star_density: 1.0,
-            star_grid: 1.0,
-            star_twinkle: 0.6,
-            star_drift: 1.0,
+            tint_from_art: false,
             type_overlay: true,
             type_scale: 1.0,
             show_now_playing: false,
-            scene: 0,
             auto_scenes: false,
-            layer_mode: false,
-            layers: vec![LayerSettings { enabled: true, opacity: 1.0 }, LayerSettings { enabled: true, opacity: 0.5 }, LayerSettings { enabled: true, opacity: 0.5 }],
-            post: (0..SCENE_COUNT).map(PostSettings::default_for).collect(),
-            tint_from_art: false,
             reduce_flashing: true,
             flash_rise: 2.0,
             audio_delay_ms: 0.0,
@@ -284,9 +289,8 @@ impl Default for Settings {
             toast: true,
             chrome_autohide: true,
             show_ui: false,
-            section: Section::Scene,
+            section: Section::Scenes,
             developer: false,
-            look: String::new(),
             onboarded: false,
         }
     }

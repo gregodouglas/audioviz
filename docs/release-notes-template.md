@@ -8,7 +8,6 @@
 
 ### Install
 
-- **winget:** `winget install {{PACKAGE_ID}}` (after the manifest is merged into winget-pkgs; until then use the installer below).
 - **Installer:** `audioviz-{{VERSION}}-setup.exe` — per-user, no admin prompt, Start Menu shortcut, optional "start when I sign in".
 - **Portable:** `audioviz-{{VERSION}}-portable-win64.zip` — unzip and run `audioviz.exe`.
 

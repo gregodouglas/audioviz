@@ -10,7 +10,6 @@ Three scenes with cross-fades: a phosphor XY oscilloscope of the real stereo sig
 
 ## Install (Windows 10 2004+ / 11, DirectX 12 or Vulkan GPU)
 
-- **winget:** `winget install GregoryDouglas.audioviz` (once the manifest is accepted into winget-pkgs; until then use the installer).
 - **Installer:** download `audioviz-<version>-setup.exe` from the [latest release](https://github.com/gregodouglas/audioviz/releases/latest). Installs per-user (no admin prompt) into `%LOCALAPPDATA%\Programs\audioviz`, adds a Start Menu shortcut, and optionally starts when you sign in.
 - **Portable:** download `audioviz-<version>-portable-win64.zip`, unzip anywhere, run `audioviz.exe`.
 
@@ -54,7 +53,7 @@ scripts/release.ps1                      # installer + portable zip + checksums 
 
 Dev overrides: `AUDIOVIZ_SCENE=n`, `AUDIOVIZ_SIZE=WxH`, `AUDIOVIZ_DEFAULTS=1` (ignore the settings file), `RUST_LOG=audioviz=debug` for a per-second stats line. `scripts/snapshot.ps1` runs the app for N seconds and captures the window to `target/snapshot.png`.
 
-Releases: bump `version` in `Cargo.toml`, commit, `git tag vX.Y.Z && git push --tags`. The release workflow builds and tests on Windows and macOS, packages everything with `scripts/release.ps1`, and opens a draft GitHub release with the notes from `docs/release-notes-template.md`. Submit the rendered winget manifests (attached to the release) with `wingetcreate`.
+Releases: bump `version` in `Cargo.toml`, commit, `git tag vX.Y.Z && git push --tags`. The release workflow builds and tests on Windows and macOS, packages everything with `scripts/release.ps1`, and opens a draft GitHub release with the notes from `docs/release-notes-template.md`.
 
 ## Status and docs
 
@@ -67,7 +66,7 @@ Releases: bump `version` in `Cargo.toml`, commit, `git tag vX.Y.Z && git push --
 - `crates/metadata` — `MetadataSource` trait + Windows SMTC backend (now playing + art)
 - `crates/app` — winit + wgpu app: `scene.rs` / `director.rs` / `post.rs`, `scenes/` (scope, ribbons, starfield), `overlay.rs`, egui panel in `ui.rs`, WGSL in `shaders/`, `build.rs` embeds the icon and version resource
 - `xtask` — `cargo xtask icon`
-- `installer/audioviz.iss` — Inno Setup script; `winget/` — manifest templates; `scripts/release.ps1` — packaging
+- `installer/audioviz.iss` — Inno Setup script; `scripts/release.ps1` — packaging; `winget/` — manifest templates for a future winget submission (not submitted)
 - `.github/workflows/` — `ci.yml` (build + test on Windows and macOS, `cargo deny`), `release.yml` (tag → draft release)
 - `docs/research/` — research briefs (`00-synthesis.md` first)
 

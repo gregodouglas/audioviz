@@ -24,6 +24,8 @@ pub struct ChromeInput<'a> {
     pub fps: f32,
     pub maximized: bool,
     pub accent: Color32,
+    /// Layer mode: which scenes are on (a dot marks each enabled layer).
+    pub layers: Option<Vec<bool>>,
 }
 
 #[derive(Default)]
@@ -134,6 +136,9 @@ impl Chrome {
                 painter.text(r.center(), Align2::CENTER_CENTER, label, font, color);
                 if active {
                     painter.rect_filled(Rect::from_min_size(pos2(r.min.x + 6.0, r.max.y - 2.0), vec2(pw - 12.0, 2.0)), 0.0, input.accent);
+                }
+                if let Some(on) = input.layers.as_ref().and_then(|l| l.get(i)) {
+                    painter.circle_filled(pos2(r.min.x + 9.0, bar.center().y), 2.0, if *on { input.accent } else { TEXT_3 });
                 }
                 self.regions.interactive.push(r);
                 x += pw;

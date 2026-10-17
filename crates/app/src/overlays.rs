@@ -187,7 +187,7 @@ pub fn calibration(ctx: &egui::Context, view: &CalibrationView, current_delay: f
 pub const SHORTCUTS: &[(&str, &str)] = &[
     ("Tab", "settings panel"),
     ("H", "hide everything; H or Tab shows it again"),
-    ("1 2 3", "scene"),
+    ("1 2 3", "scene (in layer mode: the layer to edit)"),
     ("Space", "next scene (tap while calibrating)"),
     ("A", "auto scene director"),
     ("N", "show what is playing"),

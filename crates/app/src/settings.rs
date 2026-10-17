@@ -44,6 +44,21 @@ impl PostSettings {
     }
 }
 
+/// One scene as a layer of the composite (layer mode).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LayerSettings {
+    pub enabled: bool,
+    /// 0 = off, 1 = as rendered, up to 2 = boosted.
+    pub opacity: f32,
+}
+
+impl Default for LayerSettings {
+    fn default() -> Self {
+        Self { enabled: true, opacity: 1.0 }
+    }
+}
+
 /// Panel sections, in rail order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Section {
@@ -108,6 +123,10 @@ pub struct Settings {
     // Scenes
     pub scene: usize,
     pub auto_scenes: bool,
+    /// Blend several scenes at once instead of showing one.
+    pub layer_mode: bool,
+    /// Per scene, indexed like `post`.
+    pub layers: Vec<LayerSettings>,
     // Post, indexed by scene.
     pub post: Vec<PostSettings>,
     /// Scene accent follows the album art's dominant colour.
@@ -152,6 +171,15 @@ impl Settings {
             self.post.push(PostSettings::default_for(i));
         }
         &mut self.post[scene]
+    }
+    pub fn layer(&self, i: usize) -> LayerSettings {
+        self.layers.get(i).copied().unwrap_or_default()
+    }
+    pub fn layer_mut(&mut self, i: usize) -> &mut LayerSettings {
+        while self.layers.len() <= i {
+            self.layers.push(LayerSettings::default());
+        }
+        &mut self.layers[i]
     }
     pub fn reset_post(&mut self, scene: usize) {
         *self.post_mut(scene) = PostSettings::default_for(scene);
@@ -241,6 +269,8 @@ impl Default for Settings {
             show_now_playing: false,
             scene: 0,
             auto_scenes: false,
+            layer_mode: false,
+            layers: vec![LayerSettings { enabled: true, opacity: 1.0 }, LayerSettings { enabled: true, opacity: 0.5 }, LayerSettings { enabled: true, opacity: 0.5 }],
             post: (0..SCENE_COUNT).map(PostSettings::default_for).collect(),
             tint_from_art: false,
             reduce_flashing: true,

@@ -193,6 +193,19 @@ impl Running {
                 settings.section = *s;
             }
         }
+        // AUDIOVIZ_SETTINGS='{"layer_mode":true}' merges JSON fields (dev, never saved).
+        if let Ok(json) = std::env::var("AUDIOVIZ_SETTINGS") {
+            if let (Ok(mut base), Ok(serde_json::Value::Object(patch))) = (serde_json::to_value(&settings), serde_json::from_str::<serde_json::Value>(&json)) {
+                if let Some(obj) = base.as_object_mut() {
+                    for (k, v) in patch {
+                        obj.insert(k, v);
+                    }
+                }
+                if let Ok(s) = serde_json::from_value::<Settings>(base) {
+                    settings = s;
+                }
+            }
+        }
         if std::env::var_os("AUDIOVIZ_CHROME").is_some() {
             settings.chrome_autohide = false;
             settings.onboarded = true;
@@ -403,7 +416,8 @@ impl Running {
 
     fn apply_look(&mut self, look: &Settings) {
         self.settings.apply_look(look);
-        self.director.switch_to(self.settings.scene);
+        let scene = self.settings.scene;
+        self.select_scene(scene);
         self.director.auto = self.settings.auto_scenes;
     }
 
@@ -691,6 +705,7 @@ impl Running {
                 fps: stats.fps,
                 maximized,
                 accent,
+                layers: settings.layer_mode.then(|| (0..stats.scene_names.len()).map(|i| settings.layer(i).enabled && settings.layer(i).opacity > 0.0).collect()),
             };
             chrome_actions = chrome.draw(ctx, &input, t_chrome);
             if let Some(view) = &calibration_view {
@@ -769,7 +784,7 @@ impl Running {
             self.settings.show_ui = true;
         }
         if let Some(i) = chrome_actions.switch_scene.or(panel_actions.switch_scene) {
-            self.director.switch_to(i);
+            self.select_scene(i);
         }
         if panel_actions.toggle_fullscreen {
             self.toggle_fullscreen();
@@ -848,7 +863,7 @@ impl Running {
             self.settings.start_fullscreen = sf;
         }
         if let Some(i) = fr_actions.scene {
-            self.director.switch_to(i);
+            self.select_scene(i);
         }
         if fr_actions.calibrate {
             self.first_run = None;
@@ -887,6 +902,15 @@ impl Running {
             self.settings.show_ui = false;
             self.show_shortcuts = false;
             self.calibration_result = Some(("UI hidden · H or Tab shows it again".into(), Instant::now() - Duration::from_secs_f32(NOTICE_SECONDS - 2.5)));
+        }
+    }
+
+    /// Keys / pips / panel: switch scene, or in layer mode just focus it for editing.
+    fn select_scene(&mut self, i: usize) {
+        if self.settings.layer_mode {
+            self.director.focus(i);
+        } else {
+            self.director.switch_to(i);
         }
     }
 
@@ -943,7 +967,11 @@ impl Running {
             }
             KeyCode::Space => match &mut self.calibration {
                 Some(c) => c.tap(),
-                None => self.director.next(),
+                None => {
+                    let n = self.director.scenes.len();
+                    let next = (self.director.target() + 1) % n.max(1);
+                    self.select_scene(next);
+                }
             },
             KeyCode::Enter | KeyCode::NumpadEnter => self.apply_calibration(),
             KeyCode::KeyC => self.toggle_calibration(),
@@ -952,10 +980,10 @@ impl Running {
             KeyCode::KeyN => self.settings.show_now_playing = !self.settings.show_now_playing,
             KeyCode::KeyL => self.next_look(),
             KeyCode::Slash | KeyCode::F1 => self.show_shortcuts = !self.show_shortcuts,
-            KeyCode::Digit1 => self.director.switch_to(0),
-            KeyCode::Digit2 => self.director.switch_to(1),
-            KeyCode::Digit3 => self.director.switch_to(2),
-            KeyCode::Digit4 => self.director.switch_to(3),
+            KeyCode::Digit1 => self.select_scene(0),
+            KeyCode::Digit2 => self.select_scene(1),
+            KeyCode::Digit3 => self.select_scene(2),
+            KeyCode::Digit4 => self.select_scene(3),
             _ => {}
         }
     }

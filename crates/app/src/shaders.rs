@@ -24,6 +24,7 @@ shader_table!(
     "expo.wgsl",
     "present.wgsl",
     "mix.wgsl",
+    "layer.wgsl",
     "ribbons_params.wgsl",
     "ribbons_update.wgsl",
     "ribbons_draw.wgsl",

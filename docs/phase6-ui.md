@@ -20,6 +20,8 @@ Status: **built 2026-10-17, local only (not pushed), awaiting Greg's hands-on ch
 
 Later the same day, from Greg's first hands-on: **H** hides everything (bar button and panel link too), Esc steps outward (sheet → panel → fullscreen → quit), cursor hides in fullscreen; scene switches are snappy (manual fade 0.5 s, retarget during a fade, pips highlight the target at once; the auto director keeps 4 s); **"Show what's playing" (N) is off by default** and gates the title overlay, toast and the strip's track identity; **Inter + JetBrains Mono are bundled** (OFL, `assets/fonts/`) instead of system fonts; scene controls restyled as panel rows. Installer stays Inno for this release (Greg: "that's fine"); the bespoke installer remains issue #3.
 
+Also from Greg: **Layers** (Scene section switch): every enabled scene renders and is added to the composite with its own opacity (0-2), each keeping its own controls; 1-3 picks the layer being edited; dots on the bar pips mark enabled layers. The auto director stays single-scene for now. `AUDIOVIZ_SETTINGS='{"layer_mode":true}'` merges JSON into the settings for screenshots without touching the file.
+
 Not done / to verify by hand: drag, double-click, Win+arrow, Snap Layouts hover on the portrait monitor; tray menu; strip controls against Spotify; the installer wizard interactively; README screenshots for 0.2.0 (`docs/img/scene-*.png` are still 0.1.0's). The old `ui.rs` is gone; `Settings` moved to `settings.rs`.
 
 ## Why

@@ -144,9 +144,9 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState
         // Footer.
         let fy = rect.max.y - 44.0;
         p.hline((rect.min.x + RAIL_W + 20.0)..=(rect.max.x - 20.0), fy, egui::Stroke::new(1.0, HAIRLINE));
-        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 14.0), Align2::LEFT_CENTER, "H hide all   Tab panel   N now playing", theme::mono(10.5), TEXT_3);
-        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 30.0), Align2::LEFT_CENTER, "C calibrate   F11 fullscreen   ?  more", theme::mono(10.5), TEXT_3);
-        p.text(pos2(rect.max.x - 20.0, fy + 14.0), Align2::RIGHT_CENTER, crate::VERSION, theme::mono(10.0), TEXT_3);
+        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 14.0), Align2::LEFT_CENTER, "H hide all   N now playing   ? keys", theme::mono(10.5), TEXT_3);
+        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 30.0), Align2::LEFT_CENTER, "C calibrate   F11 fullscreen", theme::mono(10.5), TEXT_3);
+        p.text(pos2(rect.max.x - 20.0, fy + 30.0), Align2::RIGHT_CENTER, crate::VERSION, theme::mono(10.0), TEXT_3);
         let sc = ui.interact(Rect::from_min_size(pos2(rect.min.x + RAIL_W + 20.0, fy + 22.0), vec2(220.0, 16.0)), egui::Id::unique("footer-shortcuts"), Sense::click());
         if sc.clicked() {
             a.show_shortcuts = true;
@@ -159,21 +159,51 @@ fn scene_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, scen
     if section_header(ui, "Scene", None, Some("Hide UI (H)")) {
         a.hide_ui = true;
     }
-    ui.horizontal_wrapped(|ui| {
+    toggle_row(ui, "Layers: blend several scenes", &mut settings.layer_mode);
+    if settings.layer_mode {
+        hint(ui, "Every layer that is on is added to the picture with its opacity. 1-3 picks the layer to edit.");
+        ui.add_space(4.0);
         for (i, name) in stats.scene_names.iter().enumerate() {
-            let active = i == stats.scene_current;
-            let b = egui::Button::new(egui::RichText::new(format!("{}  {}", i + 1, name)).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE }));
-            if ui.add(b).clicked() && !active {
-                a.switch_scene = Some(i);
+            let focused = i == stats.scene_current;
+            ui.horizontal(|ui| {
+                let l = settings.layer_mut(i);
+                let (sw, resp) = ui.allocate_exact_size(vec2(28.0, 16.0), Sense::click());
+                if resp.clicked() {
+                    l.enabled = !l.enabled;
+                }
+                let t = ui.ctx().animate_bool_with_time(resp.id, l.enabled, theme::ANIM_S);
+                ui.painter().rect_filled(sw, 8.0, widgets::lerp_color(HAIRLINE, ACCENT, t));
+                ui.painter().circle_filled(pos2(sw.min.x + 8.0 + 12.0 * t, sw.center().y), 6.0, widgets::lerp_color(TEXT_2, theme::BG, t));
+                let label = egui::RichText::new(format!("{}  {}", i + 1, name)).color(if focused { ACCENT } else { TEXT });
+                if ui.add(egui::Button::new(label).frame(false)).clicked() {
+                    a.switch_scene = Some(i);
+                }
+                if focused {
+                    ui.label(egui::RichText::new("editing").size(11.0).color(TEXT_3));
+                }
+            });
+            if settings.layer(i).enabled {
+                let l = settings.layer_mut(i);
+                slider_row(ui, "    opacity", &mut l.opacity, 0.0..=2.0, |v| format!("{v:.2}"), false);
             }
         }
-        if stats.scene_fading {
-            ui.label(egui::RichText::new("fading…").color(TEXT_3));
-        }
-    });
-    ui.add_space(4.0);
-    toggle_row(ui, "Auto director (A)", &mut settings.auto_scenes);
-    hint(ui, &format!("Changes scene on track change, drops, quiet, dwell. Last cue: {}", stats.last_cue));
+    } else {
+        ui.horizontal_wrapped(|ui| {
+            for (i, name) in stats.scene_names.iter().enumerate() {
+                let active = i == stats.scene_current;
+                let b = egui::Button::new(egui::RichText::new(format!("{}  {}", i + 1, name)).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE }));
+                if ui.add(b).clicked() && !active {
+                    a.switch_scene = Some(i);
+                }
+            }
+            if stats.scene_fading {
+                ui.label(egui::RichText::new("fading…").color(TEXT_3));
+            }
+        });
+        ui.add_space(4.0);
+        toggle_row(ui, "Auto director (A)", &mut settings.auto_scenes);
+        hint(ui, &format!("Changes scene on track change, drops, quiet, dwell. Last cue: {}", stats.last_cue));
+    }
     if let Some(np) = &stats.now_playing {
         hint(ui, np);
     }

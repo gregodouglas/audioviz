@@ -117,6 +117,11 @@ pub fn begin_pass<'a>(encoder: &'a mut wgpu::CommandEncoder, label: &str, view: 
     })
 }
 
+/// A pass that only clears `view` to black.
+pub fn clear_pass(encoder: &mut wgpu::CommandEncoder, label: &str, view: &wgpu::TextureView) {
+    let _ = begin_pass(encoder, label, view, wgpu::LoadOp::Clear(wgpu::Color::BLACK));
+}
+
 pub fn fullscreen_pass(encoder: &mut wgpu::CommandEncoder, label: &str, view: &wgpu::TextureView, load: wgpu::LoadOp<wgpu::Color>, pipeline: &wgpu::RenderPipeline, group: &wgpu::BindGroup) {
     let mut pass = begin_pass(encoder, label, view, load);
     pass.set_pipeline(pipeline);

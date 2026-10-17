@@ -13,6 +13,13 @@ use crate::shaders::ShaderSet;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Default)]
+struct LayerParams {
+    opacity: f32,
+    _pad: [f32; 3],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Default)]
 struct MixParams {
     t: f32,
     _pad: [f32; 3],
@@ -44,6 +51,10 @@ pub struct Director {
     params_buf: wgpu::Buffer,
     layout: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
+    layer_layout: wgpu::BindGroupLayout,
+    layer_pipeline: wgpu::RenderPipeline,
+    /// One uniform buffer per scene (each written once per frame).
+    layer_bufs: Vec<wgpu::Buffer>,
     pub last_error: Option<String>,
 }
 
@@ -53,6 +64,9 @@ impl Director {
         let params_buf = scene::uniform_buffer(device, "mix params", std::mem::size_of::<MixParams>() as u64);
         let layout = scene::tex_layout(device, "mix", 1);
         let pipeline = build(device, shaders, &layout)?;
+        let layer_layout = scene::tex_layout(device, "layer", 0);
+        let layer_pipeline = build_layer(device, shaders, &layer_layout)?;
+        let layer_bufs = (0..scenes.len()).map(|i| scene::uniform_buffer(device, &format!("layer {i}"), std::mem::size_of::<LayerParams>() as u64)).collect();
         Ok(Self {
             scenes,
             current: 0,
@@ -70,6 +84,9 @@ impl Director {
             params_buf,
             layout,
             pipeline,
+            layer_layout,
+            layer_pipeline,
+            layer_bufs,
             last_error: None,
         })
     }
@@ -101,16 +118,18 @@ impl Director {
         self.last_switch = Instant::now();
     }
 
+    /// Layer mode: make `index` the focused scene with no fade.
+    pub fn focus(&mut self, index: usize) {
+        if index < self.scenes.len() {
+            self.fade = None;
+            self.previous = Some(self.current);
+            self.current = index;
+        }
+    }
+
     /// The scene the user asked for: the fade target while fading, else current.
     pub fn target(&self) -> usize {
         self.fade.map(|(to, _)| to).unwrap_or(self.current)
-    }
-
-    pub fn next(&mut self) {
-        let n = self.scenes.len();
-        if n > 1 {
-            self.switch_to((self.current + 1) % n);
-        }
     }
 
     pub fn is_fading(&self) -> bool {
@@ -195,6 +214,9 @@ impl Director {
         if let Err(e) = build(device, shaders, &self.layout).map(|p| self.pipeline = p) {
             errors.push(format!("mix: {e}"));
         }
+        if let Err(e) = build_layer(device, shaders, &self.layer_layout).map(|p| self.layer_pipeline = p) {
+            errors.push(format!("layer: {e}"));
+        }
         for s in &mut self.scenes {
             if let Err(e) = s.reload_shaders(device, shaders) {
                 errors.push(format!("{}: {e}", s.name()));
@@ -205,6 +227,11 @@ impl Director {
 
     /// Render the active scene(s) and composite into `target`.
     pub fn render(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, target: &wgpu::TextureView) {
+        if ctx.settings.layer_mode {
+            self.fade = None;
+            self.render_layers(device, queue, encoder, ctx, target);
+            return;
+        }
         let mut t = 0.0;
         let mut other = None;
         if let Some((to, progress)) = &mut self.fade {
@@ -230,6 +257,36 @@ impl Director {
         let group = scene::tex_group(device, &self.layout, &[a, b], &self.sampler, &self.params_buf);
         fullscreen_pass(encoder, "mix", target, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.pipeline, &group);
     }
+}
+
+impl Director {
+    /// Layer mode: every enabled scene renders and is added onto the
+    /// composite scaled by its opacity. Nothing enabled: black.
+    fn render_layers(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, target: &wgpu::TextureView) {
+        let mut first = true;
+        for i in 0..self.scenes.len() {
+            let layer = ctx.settings.layer(i);
+            if !layer.enabled || layer.opacity <= 0.0 {
+                continue;
+            }
+            self.scenes[i].render(queue, encoder, ctx);
+            queue.write_buffer(&self.layer_bufs[i], 0, bytemuck::bytes_of(&LayerParams { opacity: layer.opacity, _pad: [0.0; 3] }));
+            let group = scene::tex_group(device, &self.layer_layout, &[self.scenes[i].output()], &self.sampler, &self.layer_bufs[i]);
+            let load = if first { wgpu::LoadOp::Clear(wgpu::Color::BLACK) } else { wgpu::LoadOp::Load };
+            fullscreen_pass(encoder, "layer", target, load, &self.layer_pipeline, &group);
+            first = false;
+        }
+        if first {
+            scene::clear_pass(encoder, "layers (none)", target);
+        }
+    }
+}
+
+fn build_layer(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Result<wgpu::RenderPipeline, String> {
+    scene::guarded(device, || {
+        let m = scene::shader(device, shaders, "layer.wgsl");
+        scene::pipeline(device, "layer", layout, &m, HDR_FORMAT, Some(scene::ADDITIVE))
+    })
 }
 
 fn smoothstep(x: f32) -> f32 {

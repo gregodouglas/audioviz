@@ -6,9 +6,12 @@ Aesthetic direction: spacey, line-based, post-modern / minimal generative art. N
 
 ## Status
 
-**Phase 0, research complete (2026-10-16).** Awaiting direction decision in `docs/decisions/ADR-0001-stack-and-direction.md`.
+**Phase 1 spike running (2026-10-16).** Rust + wgpu, Windows per-process loopback on Spotify, first scene is a phosphor XY oscilloscope. See `docs/phase1-spike.md` to build and run; direction is recorded in `docs/decisions/ADR-0001-stack-and-direction.md`; research in `docs/research/00-synthesis.md`.
 
-Start with `docs/research/00-synthesis.md`.
+```
+cargo run --release -p audioviz
+```
+Tab panel · F11 fullscreen · F5 reload shaders · Esc quit.
 
 ## Layout
 
@@ -19,3 +22,7 @@ Start with `docs/research/00-synthesis.md`.
   - `03-audio-analysis.md` — real-time DSP, beat tracking, descriptors, libraries, mapping principles
   - `04-prior-art-and-aesthetics.md` — existing visualizers, the gap, reference board, concepts, trust/distribution
 - `docs/decisions/` — architecture decision records, numbered
+- `crates/audio` — `AudioSource` trait + WASAPI backend
+- `crates/analysis` — `Analyzer` → `FeatureFrame`
+- `crates/app` — winit + wgpu app, scenes, egui overlay, WGSL shaders in `shaders/`
+- `scripts/snapshot.ps1` — dev tool: run for N seconds and capture the window to PNG

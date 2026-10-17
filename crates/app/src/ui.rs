@@ -23,10 +23,10 @@ impl Default for Settings {
         Self {
             gain: 0.85,
             auto_gain: true,
-            rotation_deg: -45.0,
-            beam_width: 1.4,
+            rotation_deg: 45.0,
+            beam_width: 1.2,
             beam_intensity: 1.0,
-            persistence: 0.03,
+            persistence: 0.05,
             exposure: 1.0,
             tint: [0.40, 1.0, 0.55],
             audio_delay_ms: 0.0,
@@ -37,7 +37,7 @@ impl Default for Settings {
 
 pub struct Stats {
     pub fps: f32,
-    pub points_per_frame: usize,
+    pub points_per_sec: f32,
     pub capture: CaptureMode,
     pub shader_error: Option<String>,
     pub sample_rate: u32,
@@ -48,7 +48,7 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, features: &FeatureFram
         .default_width(300.0)
         .resizable(false)
         .show(ctx, |ui| {
-            ui.label(format!("{:.0} fps · {} pts/frame · {} Hz", stats.fps, stats.points_per_frame, stats.sample_rate));
+            ui.label(format!("{:.0} fps · {:.0}k pts/s · {} Hz", stats.fps, stats.points_per_sec / 1000.0, stats.sample_rate));
             let cap = match &stats.capture {
                 CaptureMode::Starting => "capture: starting".to_string(),
                 CaptureMode::Process { name, pid } => format!("capture: {name} (pid {pid})"),

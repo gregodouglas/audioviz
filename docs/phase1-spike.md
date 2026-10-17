@@ -1,6 +1,10 @@
 # Phase 1 spike — loopback → features → phosphor XY scope
 
-Status: code written 2026-10-16; first build pending C++ build tools install (see "Prerequisites").
+Status: **running 2026-10-16.** Per-process loopback attaches to Spotify, the analyzer meters are live, the phosphor scope renders at the monitor's 240 Hz, shader hot reload works. Latency not yet measured (see protocol below).
+
+Backend: DX12 by default on Windows (the HDR path we want later); `WGPU_BACKEND=vulkan` also works. Debug builds open a console window beside the app for logs; release builds don't.
+
+Dev tool: `powershell -ExecutionPolicy Bypass -File scripts/snapshot.ps1` launches the debug build for 8 s and saves `target/snapshot.png` plus the log. It captures via PrintWindow because plain screen grabs of a flip-model swapchain can come back black.
 
 ## What it does
 

@@ -290,7 +290,7 @@ fn build_pipelines(
     hdr_format: wgpu::TextureFormat,
     out_format: wgpu::TextureFormat,
 ) -> anyhow::Result<Pipelines> {
-    device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let error_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
 
     let module = |name: &str| {
         device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(name), source: wgpu::ShaderSource::Wgsl(shaders.source(name).into()) })
@@ -299,8 +299,8 @@ fn build_pipelines(
     let beam_mod = module("beam.wgsl");
     let present_mod = module("present.wgsl");
 
-    let tex_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("scope tex pl"), bind_group_layouts: &[tex_layout], immediate_size: 0 });
-    let beam_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("scope beam pl"), bind_group_layouts: &[beam_layout], immediate_size: 0 });
+    let tex_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("scope tex pl"), bind_group_layouts: &[Some(tex_layout)], immediate_size: 0 });
+    let beam_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("scope beam pl"), bind_group_layouts: &[Some(beam_layout)], immediate_size: 0 });
 
     let fullscreen = |label: &str, layout: &wgpu::PipelineLayout, module: &wgpu::ShaderModule, format: wgpu::TextureFormat| {
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -345,7 +345,7 @@ fn build_pipelines(
         cache: None,
     });
 
-    if let Some(err) = pollster::block_on(device.pop_error_scope()) {
+    if let Some(err) = pollster::block_on(error_scope.pop()) {
         return Err(anyhow!("{err}"));
     }
     Ok(Pipelines { decay, beam, present })

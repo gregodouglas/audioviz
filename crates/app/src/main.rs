@@ -1,3 +1,6 @@
+// No console window in release builds; debug keeps it for logs.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod app;
 mod gpu;
 mod scope;

@@ -40,7 +40,7 @@ struct Running {
     settings: Settings,
     last_frame: Instant,
     fps: f32,
-    points_last_frame: usize,
+    points_per_sec: f32,
     auto_gain_value: f32,
 }
 
@@ -96,7 +96,7 @@ impl Running {
             settings,
             last_frame: Instant::now(),
             fps: 0.0,
-            points_last_frame: 0,
+            points_per_sec: 0.0,
             auto_gain_value: 1.0,
         })
     }
@@ -173,7 +173,7 @@ impl Running {
             beam_width: self.settings.beam_width,
             // Per-frame multiplier from the per-second persistence fraction.
             decay: self.settings.persistence.max(1e-6).powf(dt),
-            beam_intensity: self.settings.beam_intensity * 40.0,
+            beam_intensity: self.settings.beam_intensity * 6.0,
             exposure: self.settings.exposure,
             tint: [self.settings.tint[0], self.settings.tint[1], self.settings.tint[2], 1.0],
             point_count: 0,
@@ -186,7 +186,7 @@ impl Running {
         if let Some(p) = self.pending_points.last() {
             self.last_point = *p;
         }
-        self.points_last_frame = self.pending_points.len();
+        self.points_per_sec = self.points_per_sec * 0.98 + (self.pending_points.len() as f32 / dt) * 0.02;
         self.pending_points.clear();
         self.scope.render(&self.gpu.queue, &mut encoder, &view, params, &points);
 
@@ -195,18 +195,21 @@ impl Running {
             let raw_input = self.egui_state.take_egui_input(&self.gpu.window);
             let stats = Stats {
                 fps: self.fps,
-                points_per_frame: self.points_last_frame,
+                points_per_sec: self.points_per_sec,
                 capture: self.capture_mode.clone(),
                 shader_error: self.scope.last_shader_error.clone(),
                 sample_rate: self.sample_rate,
             };
             let settings = &mut self.settings;
-            let output = self.egui_ctx.run(raw_input, |ctx| crate::ui::draw(ctx, settings, &features, &stats));
-            self.egui_state.handle_platform_output(&self.gpu.window, output.platform_output);
-            let primitives = self.egui_ctx.tessellate(output.shapes, output.pixels_per_point);
-            let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: [self.gpu.config.width, self.gpu.config.height], pixels_per_point: output.pixels_per_point };
-            for (id, delta) in &output.textures_delta.set {
-                self.egui_renderer.update_texture(&self.gpu.device, &self.gpu.queue, *id, delta);
+            let egui::FullOutput { platform_output, mut textures_delta, shapes, pixels_per_point, .. } =
+                self.egui_ctx.run_pass(raw_input, |ctx| crate::ui::draw(ctx, settings, &features, &stats));
+            self.egui_state.handle_platform_output(&self.gpu.window, platform_output);
+            let primitives = self.egui_ctx.tessellate(shapes, pixels_per_point);
+            let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: [self.gpu.config.width, self.gpu.config.height], pixels_per_point };
+            for (id, deltas) in textures_delta.set.drain() {
+                for delta in deltas.iter() {
+                    self.egui_renderer.update_texture(&self.gpu.device, &self.gpu.queue, id, delta);
+                }
             }
             let extra = self.egui_renderer.update_buffers(&self.gpu.device, &self.gpu.queue, &mut encoder, &primitives, &screen);
             {
@@ -226,8 +229,8 @@ impl Running {
                 let mut pass = pass.forget_lifetime();
                 self.egui_renderer.render(&mut pass, &primitives, &screen);
             }
-            for id in &output.textures_delta.free {
-                self.egui_renderer.free_texture(id);
+            for id in textures_delta.free.drain() {
+                self.egui_renderer.free_texture(&id);
             }
             self.gpu.queue.submit(extra.into_iter().chain(std::iter::once(encoder.finish())));
         } else {

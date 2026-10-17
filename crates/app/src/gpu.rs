@@ -22,7 +22,14 @@ impl Gpu {
         size.width = size.width.max(1);
         size.height = size.height.max(1);
 
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::from_env_or_default());
+        let mut desc = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
+        // DX12 by default on Windows: it is the path we want for HDR output
+        // later and avoids third-party Vulkan overlay layers. Both backends
+        // work; WGPU_BACKEND=vulkan overrides.
+        if cfg!(windows) && std::env::var_os("WGPU_BACKEND").is_none() {
+            desc.backends = wgpu::Backends::DX12;
+        }
+        let instance = wgpu::Instance::new(desc);
         let surface = instance.create_surface(window.clone()).context("create surface")?;
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {

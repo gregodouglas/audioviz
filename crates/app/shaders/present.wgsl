@@ -1,48 +1,75 @@
-// Tonemap the HDR accumulation buffer to the display and apply the phosphor
-// tint. Bright spots bleach toward white like a real phosphor.
-
-struct Params {
-    resolution: vec2<f32>,
-    gain: f32,
-    rotation: f32,
-    beam_width: f32,
-    beam_intensity: f32,
-    decay: f32,
-    exposure: f32,
-    tint: vec4<f32>,
-    point_count: u32,
-    _pad0: u32,
-    _pad1: u32,
-    _pad2: u32,
-};
+// Final composite: tint the HDR phosphor buffer, add bloom, AgX tonemap,
+// grain, dither, vignette. Output is linear; the sRGB swapchain encodes it.
 
 @group(0) @binding(0) var hdr_tex: texture_2d<f32>;
-@group(0) @binding(1) var hdr_samp: sampler;
+@group(0) @binding(1) var samp: sampler;
 @group(0) @binding(2) var<uniform> P: Params;
-
-struct VsOut {
-    @builtin(position) pos: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-};
+@group(0) @binding(3) var bloom_tex: texture_2d<f32>;
+@group(0) @binding(4) var expo_tex: texture_2d<f32>;
 
 @vertex
-fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
-    var out: VsOut;
-    let x = f32(i32(vi & 1u) * 4 - 1);
-    let y = f32(i32(vi >> 1u) * 4 - 1);
-    out.pos = vec4<f32>(x, y, 0.0, 1.0);
-    out.uv = vec2<f32>(x, -y) * 0.5 + 0.5;
-    return out;
+fn vs_main(@builtin(vertex_index) vi: u32) -> FsIn {
+    return fullscreen_vertex(vi);
+}
+
+// --- AgX (Troy Sobotka), minimal fit as used in Blender ---------------------
+fn agx_contrast(x: vec3<f32>) -> vec3<f32> {
+    let x2 = x * x;
+    let x4 = x2 * x2;
+    return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232;
+}
+
+fn agx(c: vec3<f32>) -> vec3<f32> {
+    let m = mat3x3<f32>(
+        vec3<f32>(0.842479062253094, 0.0423282422610123, 0.0423756549057051),
+        vec3<f32>(0.0784335999999992, 0.878468636469772, 0.0784336),
+        vec3<f32>(0.0792237451477643, 0.0791661274605434, 0.879142973793104),
+    );
+    let min_ev = -12.47393;
+    let max_ev = 4.026069;
+    var v = m * max(c, vec3<f32>(1e-10));
+    v = clamp(log2(v), vec3<f32>(min_ev), vec3<f32>(max_ev));
+    v = (v - min_ev) / (max_ev - min_ev);
+    return agx_contrast(v);
+}
+
+fn agx_eotf(c: vec3<f32>) -> vec3<f32> {
+    let inv = mat3x3<f32>(
+        vec3<f32>(1.19687900512017, -0.0528968517574562, -0.0529716355144438),
+        vec3<f32>(-0.0980208811401368, 1.15190312990417, -0.0980434501171241),
+        vec3<f32>(-0.0990297440797205, -0.0989611768448433, 1.15107367264116),
+    );
+    let v = max(inv * c, vec3<f32>(0.0));
+    // Back to linear for the sRGB-encoding swapchain.
+    return pow(v, vec3<f32>(2.2));
+}
+
+// Interleaved gradient noise (Jimenez 2014): cheap, well distributed.
+fn ign(p: vec2<f32>) -> f32 {
+    return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
 }
 
 @fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let v = textureSample(hdr_tex, hdr_samp, in.uv).r * P.exposure;
-    let body = 1.0 - exp(-v);          // soft shoulder
-    let bleach = 1.0 - exp(-v * 0.12); // slow approach to white
-    let col = mix(P.tint.rgb * body, vec3<f32>(1.0), bleach);
-    // Faint vignette so the edges read as a tube, not a flat rectangle.
+fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
+    let hdr = textureSample(hdr_tex, samp, in.uv).r;
+    // The up-chain sums six levels; normalize so `bloom` is a fraction of the base.
+    let bloom = textureSample(bloom_tex, samp, in.uv).r / 6.0;
+    let auto_e = textureSampleLevel(expo_tex, samp, vec2<f32>(0.5), 0.0).r;
+    let v = (hdr + bloom * P.bloom) * P.exposure * auto_e;
+
+    // Phosphor color at low intensity, bleaching to white as it saturates;
+    // AgX handles the shoulder and the desaturation of hot spots.
+    var col = P.tint.rgb * v;
+    col = agx_eotf(agx(col));
+
+    // Vignette: edges read as a tube, not a flat rectangle.
     let d = in.uv - 0.5;
-    let vig = 1.0 - 0.35 * dot(d, d) * 2.0;
-    return vec4<f32>(col * vig, 1.0);
+    col *= 1.0 - 0.35 * dot(d, d) * 2.0;
+
+    // Grain (animated) and dither (static per pixel) before 8-bit quantization.
+    let n_grain = ign(in.pos.xy + vec2<f32>(fract(P.time * 7.31) * 1000.0, fract(P.time * 3.17) * 1000.0)) - 0.5;
+    col += n_grain * P.grain * 0.08 * (0.2 + col);
+    col += (ign(in.pos.xy) - 0.5) * (1.0 / 255.0);
+
+    return vec4<f32>(max(col, vec3<f32>(0.0)), 1.0);
 }

@@ -2,21 +2,6 @@
 // additively. Brightness per segment ~ 1 / length (time spent per pixel), with
 // a Gaussian cross-section.
 
-struct Params {
-    resolution: vec2<f32>,
-    gain: f32,
-    rotation: f32,
-    beam_width: f32,
-    beam_intensity: f32,
-    decay: f32,
-    exposure: f32,
-    tint: vec4<f32>,
-    point_count: u32,
-    _pad0: u32,
-    _pad1: u32,
-    _pad2: u32,
-};
-
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var<storage, read> points: array<vec2<f32>>;
 
@@ -47,10 +32,8 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
         d = d / len;
     }
     let n = vec2<f32>(-d.y, d.x);
-    // Half-width plus feather, plus round caps extending past both ends.
     let w = P.beam_width * 2.5 + 1.0;
 
-    // 6 vertices -> 2 triangles covering [-w, len+w] x [-w, w].
     var along: f32;
     var across: f32;
     switch (vi) {
@@ -73,13 +56,11 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    // Distance from the fragment to the segment [0, seg_len] on the along axis.
     let along = clamp(in.local.x, 0.0, in.seg_len);
     let dx = in.local.x - along;
     let dist = length(vec2<f32>(dx, in.local.y));
     let sigma = max(P.beam_width, 0.3);
     let falloff = exp(-(dist * dist) / (2.0 * sigma * sigma));
-    // Energy per pixel: one sample interval spread over the segment's length.
     let energy = P.beam_intensity / (in.seg_len + 1.0);
     let v = falloff * energy;
     return vec4<f32>(v, v, v, 1.0);

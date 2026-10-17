@@ -2,10 +2,12 @@
 
 use audioviz_analysis::FeatureFrame;
 use audioviz_audio::CaptureMode;
+use serde::{Deserialize, Serialize};
 
 const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Settings {
     pub gain: f32,
     pub auto_gain: bool,
@@ -16,10 +18,19 @@ pub struct Settings {
     pub persistence: f32,
     pub exposure: f32,
     pub tint: [f32; 3],
+    pub bloom: f32,
+    pub grain: f32,
+    pub auto_exposure: bool,
     /// How much the beat clock pulses the exposure (0 = off).
     pub beat_pulse: f32,
     pub audio_delay_ms: f32,
     pub target_process: String,
+    /// 0 = uncapped (VSync only). Ambient use: 60.
+    pub fps_cap: u32,
+    /// Index into the monitor list for fullscreen.
+    pub monitor: usize,
+    pub start_fullscreen: bool,
+    pub show_ui: bool,
 }
 
 impl Default for Settings {
@@ -33,9 +44,16 @@ impl Default for Settings {
             persistence: 0.05,
             exposure: 1.0,
             tint: [0.40, 1.0, 0.55],
+            bloom: 0.3,
+            grain: 0.15,
+            auto_exposure: true,
             beat_pulse: 0.3,
             audio_delay_ms: 0.0,
             target_process: "Spotify.exe".into(),
+            fps_cap: 60,
+            monitor: 0,
+            start_fullscreen: false,
+            show_ui: true,
         }
     }
 }
@@ -46,9 +64,18 @@ pub struct Stats {
     pub capture: CaptureMode,
     pub shader_error: Option<String>,
     pub sample_rate: u32,
+    pub monitors: Vec<String>,
+    pub fullscreen: bool,
+    pub settings_path: String,
 }
 
-pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stats: &Stats) {
+#[derive(Default)]
+pub struct Actions {
+    pub toggle_fullscreen: bool,
+}
+
+pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stats: &Stats) -> Actions {
+    let mut actions = Actions::default();
     egui::Window::new("audioviz")
         .default_width(320.0)
         .resizable(false)
@@ -65,14 +92,19 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stat
                 ui.colored_label(egui::Color32::from_rgb(255, 120, 120), format!("shader error:\n{err}"));
             }
 
-            ui.collapsing("Scope", |ui| {
+            egui::CollapsingHeader::new("Scope").default_open(true).show(ui, |ui| {
                 ui.add(egui::Slider::new(&mut settings.gain, 0.05..=3.0).logarithmic(true).text("gain"));
                 ui.checkbox(&mut settings.auto_gain, "auto gain");
                 ui.add(egui::Slider::new(&mut settings.rotation_deg, -180.0..=180.0).text("rotation °"));
                 ui.add(egui::Slider::new(&mut settings.beam_width, 0.3..=6.0).text("beam width px"));
                 ui.add(egui::Slider::new(&mut settings.beam_intensity, 0.05..=20.0).logarithmic(true).text("beam intensity"));
                 ui.add(egui::Slider::new(&mut settings.persistence, 0.0001..=0.9).logarithmic(true).text("persistence /s"));
-                ui.add(egui::Slider::new(&mut settings.exposure, 0.1..=10.0).logarithmic(true).text("exposure"));
+                ui.horizontal(|ui| {
+                    ui.add(egui::Slider::new(&mut settings.exposure, 0.1..=10.0).logarithmic(true).text("exposure"));
+                    ui.checkbox(&mut settings.auto_exposure, "auto");
+                });
+                ui.add(egui::Slider::new(&mut settings.bloom, 0.0..=3.0).text("bloom"));
+                ui.add(egui::Slider::new(&mut settings.grain, 0.0..=1.0).text("grain"));
                 ui.add(egui::Slider::new(&mut settings.beat_pulse, 0.0..=1.0).text("beat pulse"));
                 ui.horizontal(|ui| {
                     ui.label("tint");
@@ -86,7 +118,27 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stat
                     if ui.button("amber").clicked() {
                         settings.tint = [1.0, 0.65, 0.2];
                     }
+                    if ui.button("ice").clicked() {
+                        settings.tint = [0.55, 0.8, 1.0];
+                    }
                 });
+            });
+
+            ui.collapsing("Display", |ui| {
+                ui.add(egui::Slider::new(&mut settings.fps_cap, 0..=240).text("fps cap (0 = vsync)"));
+                let current = stats.monitors.get(settings.monitor).cloned().unwrap_or_else(|| "(none)".into());
+                egui::ComboBox::from_label("monitor").selected_text(current).show_ui(ui, |ui| {
+                    for (i, name) in stats.monitors.iter().enumerate() {
+                        ui.selectable_value(&mut settings.monitor, i, name);
+                    }
+                });
+                ui.horizontal(|ui| {
+                    if ui.button(if stats.fullscreen { "Exit fullscreen (F11)" } else { "Fullscreen (F11)" }).clicked() {
+                        actions.toggle_fullscreen = true;
+                    }
+                    ui.checkbox(&mut settings.start_fullscreen, "start fullscreen");
+                });
+                ui.small(format!("settings: {}", stats.settings_path));
             });
 
             ui.collapsing("Sync", |ui| {
@@ -110,7 +162,7 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stat
                 });
             });
 
-            egui::CollapsingHeader::new("Level").default_open(true).show(ui, |ui| {
+            ui.collapsing("Level", |ui| {
                 ui.label(format!("{:.1} LUFS-M · {:.1} LUFS-S{}{}", f.lufs_m, f.lufs_s, if f.quiet { " · quiet" } else { "" }, if f.silent { " · silent" } else { "" }));
                 meter(ui, "rms", f.rms * 4.0);
                 meter(ui, "bass", f.bass * 0.5);
@@ -122,7 +174,7 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stat
                 bars(ui, &f.bands, 40.0, egui::Color32::from_rgb(110, 220, 150), None);
             });
 
-            egui::CollapsingHeader::new("Chroma").default_open(true).show(ui, |ui| {
+            ui.collapsing("Chroma", |ui| {
                 ui.label(format!("dominant {}", NOTE_NAMES[f.key_class as usize % 12]));
                 bars(ui, &f.chroma, 40.0, egui::Color32::from_rgb(230, 150, 255), Some(&NOTE_NAMES));
             });
@@ -130,6 +182,7 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stat
             ui.separator();
             ui.small("Tab: toggle panel · F11: fullscreen · F5: reload shaders · Esc: quit");
         });
+    actions
 }
 
 fn meter(ui: &mut egui::Ui, label: &str, v: f32) {

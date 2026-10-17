@@ -1,5 +1,6 @@
 //! WASAPI backend: per-process loopback (Windows 10 20348+ / Windows 11) with
-//! fallback to default-endpoint loopback.
+//! fallback to default-endpoint loopback, and automatic reconnection when the
+//! target process restarts (new PID) or appears after we fell back.
 
 use std::collections::VecDeque;
 use std::ffi::OsStr;
@@ -16,22 +17,26 @@ const SAMPLE_RATE: u32 = 48_000;
 /// If no audio arrives for this long, emit synthetic silence so the
 /// visualizer keeps ticking (loopback delivers nothing while the app is idle).
 const SILENCE_AFTER: Duration = Duration::from_millis(60);
+/// How often to check whether the target process died or (re)appeared.
+const PROCESS_CHECK: Duration = Duration::from_secs(2);
+/// Back-off after a failed open.
+const RETRY_AFTER: Duration = Duration::from_secs(3);
 
 pub struct WasapiSource;
 
 impl AudioSource for WasapiSource {
     fn start(&self, target: CaptureTarget, chunk_frames: usize) -> anyhow::Result<CaptureHandle> {
         let (tx, rx) = crossbeam_channel::bounded::<AudioChunk>(16);
-        let (mode_tx, mode_rx) = crossbeam_channel::bounded::<CaptureMode>(4);
+        let (mode_tx, mode_rx) = crossbeam_channel::bounded::<CaptureMode>(8);
         let (stop_tx, stop_rx) = crossbeam_channel::bounded::<()>(1);
 
         std::thread::Builder::new()
             .name("audio-wasapi".into())
             .spawn(move || {
-                let _ = mode_tx.send(CaptureMode::Starting);
+                let _ = mode_tx.try_send(CaptureMode::Starting);
                 if let Err(e) = capture_thread(target, chunk_frames, tx, &mode_tx, stop_rx) {
                     warn!("capture thread ended: {e:#}");
-                    let _ = mode_tx.send(CaptureMode::Failed(format!("{e:#}")));
+                    let _ = mode_tx.try_send(CaptureMode::Failed(format!("{e:#}")));
                 }
             })
             .context("spawn capture thread")?;
@@ -52,11 +57,7 @@ fn find_process(name: &str) -> Option<u32> {
         return None;
     }
     let is_ours = |pid: sysinfo::Pid| procs.iter().any(|p| p.pid() == pid);
-    procs
-        .iter()
-        .find(|p| !p.parent().is_some_and(is_ours))
-        .or(procs.first())
-        .map(|p| p.pid().as_u32())
+    procs.iter().find(|p| !p.parent().is_some_and(is_ours)).or(procs.first()).map(|p| p.pid().as_u32())
 }
 
 /// Builds an initialized audio client for the target, falling back to the
@@ -68,11 +69,8 @@ fn open_client(target: &CaptureTarget, format: &WaveFormat) -> anyhow::Result<(A
         match find_process(name) {
             Some(pid) => {
                 let attempt = (|| -> anyhow::Result<AudioClient> {
-                    let mut client = AudioClient::new_application_loopback_client(pid, true)
-                        .map_err(|e| anyhow!("{e}"))?;
-                    client
-                        .initialize_client(format, &Direction::Capture, &mode)
-                        .map_err(|e| anyhow!("{e}"))?;
+                    let mut client = AudioClient::new_application_loopback_client(pid, true).map_err(|e| anyhow!("{e}"))?;
+                    client.initialize_client(format, &Direction::Capture, &mode).map_err(|e| anyhow!("{e}"))?;
                     Ok(client)
                 })();
                 match attempt {
@@ -88,34 +86,58 @@ fn open_client(target: &CaptureTarget, format: &WaveFormat) -> anyhow::Result<(A
     }
 
     let enumerator = wasapi::DeviceEnumerator::new().map_err(|e| anyhow!("{e}"))?;
-    let device = enumerator
-        .get_default_device(&Direction::Render)
-        .map_err(|e| anyhow!("{e}"))?;
+    let device = enumerator.get_default_device(&Direction::Render).map_err(|e| anyhow!("{e}"))?;
     let device_name = device.get_friendlyname().unwrap_or_else(|_| "default output".into());
     let mut client = device.get_iaudioclient().map_err(|e| anyhow!("{e}"))?;
     // Capture direction on a render device = endpoint loopback.
-    client
-        .initialize_client(format, &Direction::Capture, &mode)
-        .map_err(|e| anyhow!("{e}"))?;
+    client.initialize_client(format, &Direction::Capture, &mode).map_err(|e| anyhow!("{e}"))?;
     info!("endpoint loopback on '{device_name}'");
     Ok((client, CaptureMode::Endpoint { device: device_name }))
 }
 
-fn capture_thread(
-    target: CaptureTarget,
-    chunk_frames: usize,
-    tx: Sender<AudioChunk>,
-    mode_tx: &Sender<CaptureMode>,
-    stop_rx: Receiver<()>,
-) -> anyhow::Result<()> {
+enum Outcome {
+    Stop,
+    Reopen,
+}
+
+fn capture_thread(target: CaptureTarget, chunk_frames: usize, tx: Sender<AudioChunk>, mode_tx: &Sender<CaptureMode>, stop_rx: Receiver<()>) -> anyhow::Result<()> {
     wasapi::initialize_mta().ok().map_err(|e| anyhow!("COM init: {e}"))?;
-
     let format = WaveFormat::new(32, 32, &SampleType::Float, SAMPLE_RATE as usize, 2, None);
-    let block_align = format.get_blockalign() as usize; // bytes per frame
 
-    let (client, mode) = open_client(&target, &format)?;
-    let _ = mode_tx.send(mode);
+    loop {
+        let (client, mode) = match open_client(&target, &format) {
+            Ok(x) => x,
+            Err(e) => {
+                warn!("could not open capture ({e:#}); retrying in {RETRY_AFTER:?}");
+                let _ = mode_tx.try_send(CaptureMode::Failed(format!("{e:#}")));
+                if stop_rx.recv_timeout(RETRY_AFTER).is_ok() {
+                    return Ok(());
+                }
+                continue;
+            }
+        };
+        let _ = mode_tx.try_send(mode.clone());
+        let outcome = run_stream(&client, &format, &target, &mode, chunk_frames, &tx, &stop_rx)?;
+        let _ = client.stop_stream();
+        match outcome {
+            Outcome::Stop => return Ok(()),
+            Outcome::Reopen => {
+                let _ = mode_tx.try_send(CaptureMode::Starting);
+            }
+        }
+    }
+}
 
+fn run_stream(
+    client: &AudioClient,
+    format: &WaveFormat,
+    target: &CaptureTarget,
+    mode: &CaptureMode,
+    chunk_frames: usize,
+    tx: &Sender<AudioChunk>,
+    stop_rx: &Receiver<()>,
+) -> anyhow::Result<Outcome> {
+    let block_align = format.get_blockalign() as usize;
     let event = client.set_get_eventhandle().map_err(|e| anyhow!("{e}"))?;
     let capture = client.get_audiocaptureclient().map_err(|e| anyhow!("{e}"))?;
     client.start_stream().map_err(|e| anyhow!("{e}"))?;
@@ -123,22 +145,38 @@ fn capture_thread(
     let chunk_bytes = chunk_frames * block_align;
     let mut queue: VecDeque<u8> = VecDeque::with_capacity(chunk_bytes * 8);
     let mut last_audio = Instant::now();
+    let mut last_check = Instant::now();
 
     loop {
         if stop_rx.try_recv().is_ok() {
-            break;
+            return Ok(Outcome::Stop);
         }
 
-        // Flush full chunks.
+        // Watch the target process: died (new PID or gone) or appeared.
+        if last_check.elapsed() >= PROCESS_CHECK {
+            last_check = Instant::now();
+            if let CaptureTarget::Process(name) = target {
+                let now_pid = find_process(name);
+                match mode {
+                    CaptureMode::Process { pid, .. } if now_pid != Some(*pid) => {
+                        info!("{name} pid changed/exited ({pid} -> {now_pid:?}); reopening capture");
+                        return Ok(Outcome::Reopen);
+                    }
+                    CaptureMode::Endpoint { .. } if now_pid.is_some() => {
+                        info!("{name} appeared; switching to per-process loopback");
+                        return Ok(Outcome::Reopen);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         while queue.len() >= chunk_bytes {
             let bytes: Vec<u8> = queue.drain(..chunk_bytes).collect();
-            let samples: Vec<f32> = bytes
-                .chunks_exact(4)
-                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-                .collect();
+            let samples: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
             let chunk = AudioChunk { samples, sample_rate: SAMPLE_RATE, captured_at: Instant::now(), synthetic: false };
             if tx.send(chunk).is_err() {
-                return Ok(());
+                return Ok(Outcome::Stop);
             }
         }
 
@@ -148,23 +186,12 @@ fn capture_thread(
             last_audio = Instant::now();
         }
 
-        // Wait for the next buffer event; on a quiet source, synthesize silence.
-        if event.wait_for_event(SILENCE_AFTER.as_millis() as u32).is_err() {
-            if last_audio.elapsed() >= SILENCE_AFTER {
-                let chunk = AudioChunk {
-                    samples: vec![0.0; chunk_frames * 2],
-                    sample_rate: SAMPLE_RATE,
-                    captured_at: Instant::now(),
-                    synthetic: true,
-                };
-                if tx.send(chunk).is_err() {
-                    return Ok(());
-                }
-                last_audio = Instant::now();
+        if event.wait_for_event(SILENCE_AFTER.as_millis() as u32).is_err() && last_audio.elapsed() >= SILENCE_AFTER {
+            let chunk = AudioChunk { samples: vec![0.0; chunk_frames * 2], sample_rate: SAMPLE_RATE, captured_at: Instant::now(), synthetic: true };
+            if tx.send(chunk).is_err() {
+                return Ok(Outcome::Stop);
             }
+            last_audio = Instant::now();
         }
     }
-
-    client.stop_stream().map_err(|e| anyhow!("{e}"))?;
-    Ok(())
 }

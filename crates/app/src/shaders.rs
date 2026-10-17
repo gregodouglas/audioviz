@@ -1,19 +1,24 @@
 //! WGSL sources with dev-time hot reload. In a dev build the files under
 //! `crates/app/shaders/` are read from disk and polled for changes; the
 //! embedded copies are the fallback (and the only source in release).
+//! `params.wgsl` is a prelude prepended to every other shader.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
 
-pub const NAMES: [&str; 3] = ["decay.wgsl", "beam.wgsl", "present.wgsl"];
-const EMBEDDED: [&str; 3] = [
+pub const NAMES: [&str; 7] = ["params.wgsl", "decay.wgsl", "beam.wgsl", "bloom_down.wgsl", "bloom_up.wgsl", "expo.wgsl", "present.wgsl"];
+const EMBEDDED: [&str; 7] = [
+    include_str!("../shaders/params.wgsl"),
     include_str!("../shaders/decay.wgsl"),
     include_str!("../shaders/beam.wgsl"),
+    include_str!("../shaders/bloom_down.wgsl"),
+    include_str!("../shaders/bloom_up.wgsl"),
+    include_str!("../shaders/expo.wgsl"),
     include_str!("../shaders/present.wgsl"),
 ];
 
 pub struct ShaderSet {
-    pub sources: Vec<String>,
+    sources: Vec<String>,
     dir: Option<PathBuf>,
     mtimes: Vec<Option<SystemTime>>,
     last_poll: Instant,
@@ -32,9 +37,10 @@ impl ShaderSet {
         set
     }
 
-    pub fn source(&self, name: &str) -> &str {
+    /// Full source for a shader: the shared prelude plus the file.
+    pub fn source(&self, name: &str) -> String {
         let i = NAMES.iter().position(|n| *n == name).expect("unknown shader");
-        &self.sources[i]
+        format!("{}\n{}", self.sources[0], self.sources[i])
     }
 
     fn read_all(&mut self) {

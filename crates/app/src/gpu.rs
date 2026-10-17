@@ -9,6 +9,9 @@ pub struct Gpu {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
+    /// Non-sRGB view format of the swapchain, for egui (which writes
+    /// already-encoded colors).
+    pub ui_format: wgpu::TextureFormat,
     pub window: Arc<Window>,
 }
 
@@ -55,22 +58,21 @@ impl Gpu {
             .context("request device")?;
 
         let caps = surface.get_capabilities(&adapter);
-        let format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(caps.formats[0]);
+        let format = caps.formats.iter().copied().find(|f| f.is_srgb()).unwrap_or(caps.formats[0]);
+        let ui_format = format.remove_srgb_suffix();
         let mut config = surface
             .get_default_config(&adapter, size.width, size.height)
             .ok_or_else(|| anyhow!("surface not supported by adapter"))?;
         config.format = format;
         config.present_mode = wgpu::PresentMode::Fifo;
         config.alpha_mode = caps.alpha_modes[0];
+        if ui_format != format {
+            config.view_formats = vec![ui_format];
+        }
         surface.configure(&device, &config);
         tracing::info!("surface: {:?} {}x{} {:?}", format, size.width, size.height, config.present_mode);
 
-        Ok(Self { instance, surface, device, queue, config, window })
+        Ok(Self { instance, surface, device, queue, config, ui_format, window })
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {

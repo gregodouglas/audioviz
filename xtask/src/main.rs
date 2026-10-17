@@ -7,14 +7,31 @@ use std::path::PathBuf;
 
 use anyhow::{Context, bail};
 
+mod mockup;
+
 const ICO_SIZES: [u32; 7] = [16, 24, 32, 48, 64, 128, 256];
 
 fn main() -> anyhow::Result<()> {
     let task = std::env::args().nth(1).unwrap_or_default();
     match task.as_str() {
         "icon" => icon(),
-        _ => bail!("usage: cargo xtask icon"),
+        "mockup" => mockups(),
+        _ => bail!("usage: cargo xtask <icon|mockup>"),
     }
+}
+
+/// Phase 6 UI direction as pictures (docs/phase6-ui.md).
+fn mockups() -> anyhow::Result<()> {
+    let img = repo_root().join("docs").join("img");
+    std::fs::create_dir_all(&img)?;
+    let win = mockup::window_svg(1280.0, 800.0);
+    std::fs::write(img.join("ui-mockup.svg"), &win)?;
+    mockup::render_png(&win, 1.0, &img.join("ui-mockup.png"))?;
+    let inst = mockup::installer_svg();
+    std::fs::write(img.join("installer-mockup.svg"), &inst)?;
+    mockup::render_png(&inst, 1.5, &img.join("installer-mockup.png"))?;
+    println!("wrote {}", img.display());
+    Ok(())
 }
 
 fn repo_root() -> PathBuf {

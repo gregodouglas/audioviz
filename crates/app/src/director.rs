@@ -14,7 +14,7 @@ use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, fullscreen_pass, hdr_textu
 use crate::scenes::ribbons::Ribbons;
 use crate::scenes::scope::Scope;
 use crate::scenes::starfield::Starfield;
-use crate::settings::{MAX_LAYERS, Settings, VisualKind};
+use crate::settings::{TintMode, MAX_LAYERS, Settings, VisualKind};
 use crate::shaders::ShaderSet;
 
 #[repr(C)]
@@ -65,6 +65,8 @@ pub struct Director {
     pub layers: Vec<Box<dyn Scene>>,
     filters: Vec<BandPass>,
     meters: Vec<Meter>,
+    /// Smoothed effective tint per layer.
+    tints: Vec<[f32; 3]>,
     layer_bufs: Vec<wgpu::Buffer>,
     sampler: wgpu::Sampler,
     layer_layout: wgpu::BindGroupLayout,
@@ -112,11 +114,13 @@ impl Director {
         }
         let filters = (0..MAX_LAYERS).map(|_| BandPass::new(20.0, 400.0, 48_000.0)).collect();
         let meters = (0..MAX_LAYERS).map(|i| Meter::new(device, i, width, height)).collect();
+        let tints = (0..MAX_LAYERS).map(|i| settings.layer(i).tint.color).collect();
         let layer_bufs = (0..MAX_LAYERS).map(|i| scene::uniform_buffer(device, &format!("layer {i}"), std::mem::size_of::<LayerParams>() as u64)).collect();
         Ok(Self {
             layers,
             filters,
             meters,
+            tints,
             layer_bufs,
             sampler,
             layer_layout,
@@ -166,6 +170,8 @@ impl Director {
         self.filters.insert(to, f);
         let m = self.meters.remove(from);
         self.meters.insert(to, m);
+        let t = self.tints.remove(from);
+        self.tints.insert(to, t);
     }
 
     pub fn seconds_since_switch(&self) -> f32 {
@@ -248,7 +254,7 @@ impl Director {
 
     /// Render every enabled layer and composite into `target`.
     #[allow(clippy::too_many_arguments)]
-    pub fn render(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, settings: &Settings, features: &FeatureFrame, points: &[[f32; 2]], sample_rate: u32, tint: [f32; 3], dt: f32, time: f32, auto_gain: f32, target: &wgpu::TextureView) {
+    pub fn render(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, settings: &Settings, features: &FeatureFrame, points: &[[f32; 2]], sample_rate: u32, tint: [f32; 3], art: Option<[f32; 3]>, dt: f32, time: f32, auto_gain: f32, target: &wgpu::TextureView) {
         queue.write_buffer(&self.one_buf, 0, bytemuck::bytes_of(&LayerParams { opacity: 1.0, dt, flags: 0, _pad: 0.0 }));
         // Levelling: with auto exposure on, each layer is brought to its own
         // dark-field mean before mixing, so opacity is the mix ratio and a dim
@@ -283,7 +289,17 @@ impl Director {
             } else {
                 points
             };
-            let ctx = FrameCtx { features: feats, tint, dt, time, width: self.width, height: self.height, points: pts, auto_gain };
+            // Per-layer tint: the scene's, the art's, or its own, slewed like the scene tint.
+            let want = match layer.tint.mode {
+                TintMode::Scene => tint,
+                TintMode::Art => art.unwrap_or(tint),
+                TintMode::Custom => layer.tint.color,
+            };
+            let k = 1.0 - (-dt / 0.8).exp();
+            for c in 0..3 {
+                self.tints[i][c] += (want[c] - self.tints[i][c]) * k;
+            }
+            let ctx = FrameCtx { features: feats, tint: self.tints[i], dt, time, width: self.width, height: self.height, points: pts, auto_gain };
             self.layers[i].render(queue, encoder, &ctx, &layer);
             queue.write_buffer(&self.layer_bufs[i], 0, bytemuck::bytes_of(&LayerParams { opacity: layer.opacity, dt, flags: level as u32, _pad: 0.0 }));
             let out = self.layers[i].output();

@@ -9,7 +9,7 @@ use egui::{Align2, Color32, Rect, Sense, pos2, vec2};
 use crate::overlays::CalibrationView;
 use crate::scene::Scene;
 use crate::scene_store::SceneDef;
-use crate::settings::{AudioBand, MAX_LAYERS, Section, Settings, VisualKind};
+use crate::settings::{AudioBand, MAX_LAYERS, Section, Settings, TintMode, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3};
 use crate::widgets::{self, ghost_button, hint, section_header, slider_row, small_caps, toggle_row};
 
@@ -324,6 +324,28 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, lay
             hint(ui, "The scope draws only this band of the waveform; other visuals take their energy, onsets and spectrum from it.");
         }
     }
+    // Tint source.
+    ui.add_space(4.0);
+    {
+        let l = settings.layer_mut(editing);
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Tint");
+            for (name, mode) in [("scene", TintMode::Scene), ("album art", TintMode::Art), ("own colour", TintMode::Custom)] {
+                let active = l.tint.mode == mode;
+                if ui.add(egui::Button::new(egui::RichText::new(name).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE }))).clicked() {
+                    l.tint.mode = mode;
+                }
+            }
+            if l.tint.mode == TintMode::Custom {
+                ui.color_edit_button_rgb(&mut l.tint.color);
+                for (name, tint) in [("green", [0.40, 1.0, 0.55]), ("white", [0.85, 0.9, 1.0]), ("amber", [1.0, 0.65, 0.2]), ("ice", [0.55, 0.8, 1.0])] {
+                    if ui.add(egui::Button::new(egui::RichText::new(name).size(11.0)).frame(false)).clicked() {
+                        l.tint.color = tint;
+                    }
+                }
+            }
+        });
+    }
     ui.add_space(8.0);
     widgets::hairline(ui);
     ui.add_space(8.0);
@@ -339,7 +361,7 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, lay
         }
     }
     ui.add_space(8.0);
-    small_caps(ui, "Tint (all layers)");
+    small_caps(ui, "Scene tint");
     ui.horizontal(|ui| {
         ui.color_edit_button_rgb(&mut settings.tint);
         for (name, tint) in [("green", [0.40, 1.0, 0.55]), ("white", [0.85, 0.9, 1.0]), ("amber", [1.0, 0.65, 0.2]), ("ice", [0.55, 0.8, 1.0])] {
@@ -349,6 +371,7 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, lay
         }
     });
     toggle_row(ui, "Tint from album art", &mut settings.tint_from_art);
+    hint(ui, "Layers follow the scene tint unless they pick the album art or their own colour above.");
     let _ = stats;
 }
 

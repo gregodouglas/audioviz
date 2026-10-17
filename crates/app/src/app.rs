@@ -599,7 +599,7 @@ impl Running {
 
         // --- scenes → composite → post ---
         let time = self.start.elapsed().as_secs_f32();
-        self.director.render(&self.gpu.device, &self.gpu.queue, &mut encoder, &self.settings, &features, &self.pending_points, self.engine.sample_rate, self.tint_current, dt, time, self.auto_gain_value, self.post.input());
+        self.director.render(&self.gpu.device, &self.gpu.queue, &mut encoder, &self.settings, &features, &self.pending_points, self.engine.sample_rate, self.tint_current, self.art_tint, dt, time, self.auto_gain_value, self.post.input());
         self.points_per_sec = self.points_per_sec * 0.98 + (self.pending_points.len() as f32 / dt) * 0.02;
         self.pending_points.clear();
         let post = self.settings.post;

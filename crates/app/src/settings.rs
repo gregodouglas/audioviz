@@ -100,6 +100,31 @@ impl Default for StarfieldParams {
     }
 }
 
+/// Where a layer takes its colour from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TintMode {
+    /// The scene tint (which itself may follow the album art).
+    Scene,
+    /// The album art's dominant colour, whatever the scene tint does.
+    Art,
+    /// This layer's own colour.
+    Custom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LayerTint {
+    pub mode: TintMode,
+    pub color: [f32; 3],
+}
+
+impl Default for LayerTint {
+    fn default() -> Self {
+        Self { mode: TintMode::Scene, color: [0.40, 1.0, 0.55] }
+    }
+}
+
 /// Which part of the spectrum a layer reacts to.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -142,6 +167,7 @@ pub struct Layer {
     /// 0 = off, 1 = as rendered, up to 2 = boosted.
     pub opacity: f32,
     pub band: AudioBand,
+    pub tint: LayerTint,
     pub scope: ScopeParams,
     pub ribbons: RibbonsParams,
     pub starfield: StarfieldParams,
@@ -149,7 +175,7 @@ pub struct Layer {
 
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, band: AudioBand::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default() }
+        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, band: AudioBand::default(), tint: LayerTint::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default() }
     }
 }
 

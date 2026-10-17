@@ -14,6 +14,7 @@ use crate::engine::Engine;
 use crate::gpu::Gpu;
 use crate::post::{Post, PostParams};
 use crate::scene::FrameCtx;
+use crate::scenes::ribbons::Ribbons;
 use crate::scenes::scope::{MAX_POINTS, Scope};
 use crate::shaders::ShaderSet;
 use crate::ui::{Settings, Stats};
@@ -61,7 +62,11 @@ impl Running {
         let shaders = ShaderSet::load();
         let (w, h) = (gpu.config.width, gpu.config.height);
         let scope = Scope::new(&gpu.device, w, h, &shaders).map_err(|e| anyhow::anyhow!("scope: {e}"))?;
-        let director = Director::new(&gpu.device, &shaders, vec![Box::new(scope)]).map_err(|e| anyhow::anyhow!("director: {e}"))?;
+        let ribbons = Ribbons::new(&gpu.device, w, h, &shaders).map_err(|e| anyhow::anyhow!("ribbons: {e}"))?;
+        let mut director = Director::new(&gpu.device, &shaders, vec![Box::new(scope), Box::new(ribbons)]).map_err(|e| anyhow::anyhow!("director: {e}"))?;
+        // Start on the remembered scene; AUDIOVIZ_SCENE=n overrides (dev).
+        let start_scene = std::env::var("AUDIOVIZ_SCENE").ok().and_then(|v| v.parse().ok()).unwrap_or(settings.scene);
+        director.current = start_scene.min(director.scenes.len() - 1);
         let post = Post::new(&gpu.device, gpu.config.format, w, h, &shaders).map_err(|e| anyhow::anyhow!("post: {e}"))?;
 
         let egui_ctx = egui::Context::default();
@@ -317,6 +322,9 @@ impl Running {
         }
         if let Some(i) = actions.switch_scene {
             self.director.switch_to(i);
+        }
+        if !self.director.is_fading() {
+            self.settings.scene = self.director.current;
         }
     }
 }

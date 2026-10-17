@@ -21,14 +21,16 @@ Start Spotify, play something, start audioviz. If Spotify is not running the app
 
 The window is frameless. Move the mouse and a thin bar appears at the top (scene pips, status chips, window controls) with a transport strip at the bottom (album art, previous / play-pause / next, progress, tint from album art). Both hide after three seconds of mouse rest and in fullscreen. On first run a short welcome sheet asks for the monitor, offers the tap calibration and lets you pick a scene.
 
-Press **Tab** for the settings panel: a docked sheet with an icon rail. Scene, Post (per scene), Sync (delay, calibration, which app to listen to), Display (monitor diagram, frame cap, low power, reduce flashing, chrome options), Looks (presets: Night, Party, Studio, plus your own as JSON files), Meters (developer) and About (manual update check, diagnostics to paste into a bug report).
+**Scenes, layers, visuals.** The three *visuals* (phosphor scope, flow-field ribbons, lensed starfield) are the raw material. A *layer* is one instance of a visual with its own controls, opacity and audio band, and the same visual can be used more than once. A *scene* is a mix of up to three layers plus post settings and tint, saved by name; Scope, Ribbons, Starfield, Deep field, Night, Party and Studio come built in, and your own are JSON files in `%APPDATA%\audioviz\scenes\`. Each layer can react to the full mix or to one band (sub, bass, low mid, mid, presence, air, or a custom range): a scope layer set to bass draws only the bass waveform.
+
+Press **Tab** for the settings panel: a docked sheet with an icon rail. Scenes, Layers (the three slots, the visual being edited, its band and controls, tint), Post, Sync (delay, calibration, which app to listen to), Display (monitor diagram, frame cap, low power, reduce flashing, chrome options), Meters (developer) and About (manual update check, diagnostics to paste into a bug report).
 
 | Key | Action |
 |---|---|
 | Tab | settings panel |
-| 1 / 2 / 3, Space | choose scene / next scene |
+| 1 / 2 / 3 | layer to edit |
+| Space | next scene |
 | A | auto scene director |
-| L | next look |
 | T | title overlay (starfield) |
 | C | audio-delay calibration: tap Space on the beat, Enter to apply |
 | ? | all shortcuts |

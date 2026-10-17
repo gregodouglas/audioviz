@@ -1,5 +1,8 @@
 //! Small drawing helpers shared by the chrome, panel, strip and overlays.
 
+use std::collections::BTreeMap;
+use std::sync::Mutex;
+
 use egui::{Color32, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2, pos2, vec2};
 
 use crate::settings::Section;
@@ -21,13 +24,34 @@ pub fn mark(painter: &egui::Painter, c: Pos2, r: f32, color: Color32, glow: bool
     painter.add(egui::Shape::line(pts, Stroke::new(w, color)));
 }
 
-/// Label left, monospace value right, full-width slider underneath.
+/// Label left, editable monospace value right (drag for fine steps, click
+/// to type), full-width slider underneath.
 pub fn slider_row<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &mut Num, range: std::ops::RangeInclusive<Num>, fmt: impl Fn(f64) -> String, log: bool) -> Response {
-    let text = fmt(value.to_f64());
+    slider_def(ui, label, value, None, range, fmt, log)
+}
+
+/// `slider_row` that knows the control's default: the label is dimmed while
+/// the value sits at it, and a double-click on the slider puts it back.
+pub fn slider_def<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &mut Num, default: Option<Num>, range: std::ops::RangeInclusive<Num>, fmt: impl Fn(f64) -> String, log: bool) -> Response {
+    let at_default = default.is_some_and(|d| (value.to_f64() - d.to_f64()).abs() <= 1e-6 * (1.0 + d.to_f64().abs()));
+    let span = (range.end().to_f64() - range.start().to_f64()).abs().max(1e-9);
     ui.horizontal(|ui| {
-        ui.label(label);
+        ui.label(egui::RichText::new(label).color(if at_default { TEXT_2 } else { TEXT }));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(egui::RichText::new(text).font(theme::mono(12.0)).color(TEXT_2));
+            let v = ui.visuals_mut();
+            v.widgets.inactive.bg_fill = Color32::TRANSPARENT;
+            v.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+            v.widgets.inactive.bg_stroke = Stroke::NONE;
+            v.widgets.hovered.bg_fill = theme::RAISED;
+            v.widgets.hovered.weak_bg_fill = theme::RAISED;
+            v.widgets.hovered.bg_stroke = Stroke::new(1.0, HAIRLINE);
+            v.widgets.active.bg_fill = theme::RAISED;
+            v.widgets.inactive.fg_stroke = Stroke::new(1.0, TEXT_2);
+            ui.style_mut().drag_value_text_style = egui::TextStyle::Monospace;
+            ui.spacing_mut().button_padding = vec2(4.0, 1.0);
+            let speed = if log { value.to_f64().abs().max(span * 1e-3) * 0.01 } else { span / 400.0 };
+            let dv = egui::DragValue::new(value).range(range.clone()).speed(speed).custom_formatter(|n, _| fmt(n)).update_while_editing(false);
+            ui.add(dv).on_hover_text("drag for fine steps, click to type");
         });
     });
     let w = ui.available_width();
@@ -37,8 +61,162 @@ pub fn slider_row<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &m
         s = s.logarithmic(true);
     }
     let r = ui.add(s);
+    if let Some(d) = default {
+        if r.double_clicked() {
+            *value = d;
+        }
+    }
     ui.add_space(4.0);
     r
+}
+
+/// A segmented control: one cell per label, the selected one filled. Returns
+/// the newly chosen index when it changes.
+pub fn segmented(ui: &mut Ui, labels: &[&str], selected: usize) -> Option<usize> {
+    let n = labels.len().max(1) as f32;
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
+    let p = ui.painter();
+    p.rect_filled(rect, 5.0, theme::RAISED);
+    p.rect_stroke(rect, 5.0, Stroke::new(1.0, HAIRLINE), egui::StrokeKind::Inside);
+    let cw = rect.width() / n;
+    let mut picked = None;
+    for (i, label) in labels.iter().enumerate() {
+        let cell = Rect::from_min_size(pos2(rect.min.x + cw * i as f32, rect.min.y), vec2(cw, rect.height()));
+        let resp = ui.interact(cell, ui.scope_id().with(("seg", label, i)), Sense::click());
+        let on = i == selected;
+        let t = ui.ctx().animate_bool_with_time(resp.id, on, theme::ANIM_S);
+        if t > 0.01 {
+            ui.painter().rect_filled(cell.shrink(2.0), 4.0, theme::with_alpha(ACCENT, (40.0 * t) as u8));
+        }
+        let color = if on { ACCENT } else if resp.hovered() { TEXT } else { TEXT_2 };
+        ui.painter().text(cell.center(), egui::Align2::CENTER_CENTER, *label, theme::sans(12.0), color);
+        if i > 0 && !on && i != selected + 1 {
+            ui.painter().vline(cell.min.x, (cell.min.y + 6.0)..=(cell.max.y - 6.0), Stroke::new(1.0, HAIRLINE));
+        }
+        if resp.clicked() && !on {
+            picked = Some(i);
+        }
+    }
+    ui.add_space(2.0);
+    picked
+}
+
+/// A labelled dropdown filling the row: "Visual   [ Sigil ▾ ]". Returns the
+/// newly chosen index when it changes.
+pub fn dropdown(ui: &mut Ui, label: &str, items: &[&str], selected: Option<usize>) -> Option<usize> {
+    let mut picked = None;
+    ui.horizontal(|ui| {
+        ui.add_sized(vec2(78.0, 22.0), egui::Label::new(egui::RichText::new(label).color(TEXT_2)).halign(egui::Align::LEFT));
+        let text = selected.and_then(|i| items.get(i)).copied().unwrap_or("—");
+        let w = ui.available_width();
+        egui::ComboBox::from_id_salt(ui.scope_id().with(("dropdown", label))).selected_text(egui::RichText::new(text).color(TEXT)).width(w).show_ui(ui, |ui| {
+            ui.set_min_width(w - 16.0);
+            for (i, item) in items.iter().enumerate() {
+                let on = Some(i) == selected;
+                if ui.add(egui::Button::selectable(on, egui::RichText::new(*item).color(if on { ACCENT } else { TEXT }))).clicked() && !on {
+                    picked = Some(i);
+                }
+            }
+        });
+    });
+    picked
+}
+
+/// Collapsible control group with a remembered open state (see
+/// `groups_load` / `groups_store`). The header shows the control count while
+/// the group is closed.
+pub fn group(ui: &mut Ui, key: &str, title: &str, default_open: bool, count: usize, body: impl FnOnce(&mut Ui)) {
+    let open = groups().get(key).copied().unwrap_or(default_open);
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
+    let p = ui.painter();
+    let c = if resp.hovered() { TEXT } else { TEXT_2 };
+    let cx = rect.min.x + 6.0;
+    let cy = rect.center().y;
+    let tri = if open { vec![pos2(cx - 4.0, cy - 2.0), pos2(cx + 4.0, cy - 2.0), pos2(cx, cy + 3.0)] } else { vec![pos2(cx - 2.0, cy - 4.0), pos2(cx - 2.0, cy + 4.0), pos2(cx + 3.0, cy)] };
+    p.add(egui::Shape::convex_polygon(tri, c, Stroke::NONE));
+    p.text(pos2(rect.min.x + 18.0, cy), egui::Align2::LEFT_CENTER, title.to_uppercase(), theme::bold(10.5), c);
+    if !open && count > 0 {
+        p.text(pos2(rect.max.x - 2.0, cy), egui::Align2::RIGHT_CENTER, count.to_string(), theme::mono(10.5), TEXT_3);
+    }
+    if resp.clicked() {
+        groups().insert(key.to_string(), !open);
+    }
+    if open {
+        ui.add_space(2.0);
+        ui.indent(("group", key), body);
+        ui.add_space(4.0);
+    }
+}
+
+static GROUPS: Mutex<BTreeMap<String, bool>> = Mutex::new(BTreeMap::new());
+
+fn groups() -> std::sync::MutexGuard<'static, BTreeMap<String, bool>> {
+    GROUPS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Seed the group states from the saved settings (once, at startup).
+pub fn groups_load(saved: &BTreeMap<String, bool>) {
+    let mut g = groups();
+    if g.is_empty() {
+        *g = saved.clone();
+    }
+}
+
+/// Copy the group states back into the settings; true when they changed.
+pub fn groups_store(saved: &mut BTreeMap<String, bool>) -> bool {
+    let g = groups();
+    if *g != *saved {
+        *saved = g.clone();
+        true
+    } else {
+        false
+    }
+}
+
+/// A small rounded tag in a colour; returns the response (clickable).
+pub fn chip(ui: &mut Ui, text: &str, color: Color32, clickable: bool) -> Response {
+    let galley = ui.painter().layout_no_wrap(text.to_string(), theme::mono(10.5), color);
+    let size = vec2(galley.size().x + 10.0, 16.0);
+    let (rect, resp) = ui.allocate_exact_size(size, if clickable { Sense::click() } else { Sense::hover() });
+    let fill = if clickable && resp.hovered() { theme::with_alpha(color, 50) } else { theme::with_alpha(color, 22) };
+    ui.painter().rect_filled(rect, 8.0, fill);
+    ui.painter().galley(pos2(rect.min.x + 5.0, rect.center().y - galley.size().y * 0.5), galley, color);
+    if clickable {
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        resp
+    }
+}
+
+/// The inspector header: a hue bar, a breadcrumb ("LAYER 1 · SIGIL › LUMINESCENCE")
+/// and an optional right-aligned action. Returns true when the action is clicked.
+pub fn inspector_header(ui: &mut Ui, hue: Color32, crumbs: &[&str], action: Option<&str>) -> bool {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
+    let p = ui.painter();
+    p.rect_filled(Rect::from_min_size(rect.min, vec2(3.0, rect.height())), 1.5, hue);
+    let mut x = rect.min.x + 12.0;
+    for (i, c) in crumbs.iter().enumerate() {
+        if i > 0 {
+            let g = p.layout_no_wrap("›".into(), theme::sans(13.0), TEXT_3);
+            p.galley(pos2(x, rect.center().y - g.size().y * 0.5), g.clone(), TEXT_3);
+            x += g.size().x + 6.0;
+        }
+        let last = i + 1 == crumbs.len();
+        let g = p.layout_no_wrap(c.to_uppercase(), theme::bold(11.0), if last { TEXT } else { TEXT_2 });
+        p.galley(pos2(x, rect.center().y - g.size().y * 0.5), g.clone(), if last { TEXT } else { TEXT_2 });
+        x += g.size().x + 6.0;
+    }
+    let mut clicked = false;
+    if let Some(a) = action {
+        let g = ui.painter().layout_no_wrap(a.to_string(), theme::sans(12.0), TEXT_2);
+        let r = Rect::from_min_size(pos2(rect.max.x - g.size().x - 8.0, rect.min.y), vec2(g.size().x + 8.0, rect.height()));
+        let resp = ui.interact(r, ui.scope_id().with(("inspector-action", a)), Sense::click());
+        ui.painter().galley(pos2(r.min.x + 4.0, rect.center().y - g.size().y * 0.5), g, if resp.hovered() { TEXT } else { TEXT_2 });
+        clicked = resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
+    }
+    ui.painter().hline(rect.x_range(), rect.max.y + 0.5, Stroke::new(1.0, HAIRLINE));
+    ui.add_space(6.0);
+    clicked
 }
 
 /// A switch with a label, mockup style.
@@ -113,7 +291,7 @@ pub fn rail_icon(painter: &egui::Painter, c: Pos2, section: Section, color: Colo
             painter.circle_stroke(c, 6.5, st);
             painter.circle_filled(c, 2.0, color);
         }
-        Section::Post => {
+        Section::Picture => {
             painter.circle_stroke(c, 7.0, st);
             painter.circle_stroke(c, 3.5, st);
         }

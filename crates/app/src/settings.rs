@@ -710,7 +710,9 @@ impl Default for PostSettings {
 pub enum Section {
     Scenes,
     Layers,
-    Post,
+    /// The whole picture: post stack and scene tint (was "Post").
+    #[serde(alias = "Post")]
+    Picture,
     Sync,
     Display,
     Meters,
@@ -718,12 +720,12 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 7] = [Section::Scenes, Section::Layers, Section::Post, Section::Sync, Section::Display, Section::Meters, Section::About];
+    pub const ALL: [Section; 7] = [Section::Scenes, Section::Layers, Section::Picture, Section::Sync, Section::Display, Section::Meters, Section::About];
     pub fn name(self) -> &'static str {
         match self {
             Section::Scenes => "Scenes",
             Section::Layers => "Layers",
-            Section::Post => "Post",
+            Section::Picture => "Picture",
             Section::Sync => "Sync",
             Section::Display => "Display",
             Section::Meters => "Meters",
@@ -768,8 +770,33 @@ pub struct Settings {
     // ---- panel ----
     pub show_ui: bool,
     pub section: Section,
+    /// Which tab of the layer inspector is open.
+    pub layer_tab: LayerTab,
+    /// Open state of collapsible control groups, by key ("sigil.look").
+    pub ui_open: std::collections::BTreeMap<String, bool>,
     pub developer: bool,
     pub onboarded: bool,
+}
+
+/// Tabs of the layer inspector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum LayerTab {
+    #[default]
+    Visual,
+    Colour,
+    Effects,
+}
+
+impl LayerTab {
+    pub const ALL: [LayerTab; 3] = [LayerTab::Visual, LayerTab::Colour, LayerTab::Effects];
+    pub fn name(self) -> &'static str {
+        match self {
+            LayerTab::Visual => "Visual",
+            LayerTab::Colour => "Colour",
+            LayerTab::Effects => "Effects",
+        }
+    }
 }
 
 impl Settings {
@@ -828,6 +855,8 @@ impl Default for Settings {
             chrome_autohide: true,
             show_ui: false,
             section: Section::Scenes,
+            layer_tab: LayerTab::default(),
+            ui_open: Default::default(),
             developer: false,
             onboarded: false,
         }

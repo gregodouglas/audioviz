@@ -144,10 +144,10 @@ impl Chrome {
                 }
                 let color = if active || resp.hovered() { TEXT } else { TEXT_2 };
                 let font = if active { theme::bold(12.0) } else { theme::sans(12.0) };
-                painter.circle_filled(pos2(r.min.x + 10.0, bar.center().y), 2.0, if *on { input.accent } else { TEXT_3 });
+                painter.circle_filled(pos2(r.min.x + 10.0, bar.center().y), 2.5, if *on { theme::layer_hue(i) } else { TEXT_3 });
                 painter.text(pos2(r.min.x + 18.0, bar.center().y), Align2::LEFT_CENTER, label, font, color);
                 if active {
-                    painter.rect_filled(Rect::from_min_size(pos2(r.min.x + 6.0, r.max.y - 2.0), vec2(pw - 12.0, 2.0)), 0.0, input.accent);
+                    painter.rect_filled(Rect::from_min_size(pos2(r.min.x + 6.0, r.max.y - 2.0), vec2(pw - 12.0, 2.0)), 0.0, theme::layer_hue(i));
                 }
                 self.regions.interactive.push(r);
                 x += pw;

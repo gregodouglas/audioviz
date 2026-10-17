@@ -188,6 +188,8 @@ impl Running {
                 settings.section = *s;
             }
         }
+        // AUDIOVIZ_MOD=n opens modifier n of the edited layer in the panel (dev).
+        let dev_mod = std::env::var("AUDIOVIZ_MOD").ok().and_then(|v| v.parse::<usize>().ok());
         // AUDIOVIZ_SETTINGS='{"layer_mode":true}' merges JSON fields (dev, never saved).
         if let Ok(json) = std::env::var("AUDIOVIZ_SETTINGS") {
             if let (Ok(mut base), Ok(serde_json::Value::Object(patch))) = (serde_json::to_value(&settings), serde_json::from_str::<serde_json::Value>(&json)) {
@@ -243,7 +245,7 @@ impl Running {
             egui_renderer,
             chrome: Chrome::new(),
             strip: Strip::new(),
-            panel_state: PanelState::default(),
+            panel_state: PanelState { mod_open: dev_mod.is_some(), editing_mod: dev_mod.unwrap_or(0), mod_layer: settings.editing, ..PanelState::default() },
             engine,
             metadata,
             pending_points: Vec::with_capacity(MAX_POINTS),
@@ -967,6 +969,8 @@ impl Running {
                 } else if self.first_run.is_some() {
                     self.first_run = None;
                     self.settings.onboarded = true;
+                } else if self.settings.show_ui && self.panel_state.mod_open {
+                    self.panel_state.mod_open = false;
                 } else if self.settings.show_ui {
                     self.settings.show_ui = false;
                 } else if self.gpu.window.fullscreen().is_some() {

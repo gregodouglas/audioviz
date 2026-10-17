@@ -162,15 +162,19 @@ impl Scene for Scope {
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         let s = &mut layer.scope;
-        use crate::widgets::{ghost_button, slider_row, toggle_row};
-        slider_row(ui, "Gain", &mut s.gain, 0.05..=3.0, |v| format!("{v:.2}"), true);
-        toggle_row(ui, "Auto gain", &mut s.auto_gain);
-        ui.add_space(4.0);
-        slider_row(ui, "Rotation", &mut s.rotation_deg, -180.0..=180.0, |v| format!("{v:.0}°"), false);
-        slider_row(ui, "Beam width", &mut s.beam_width, 0.3..=6.0, |v| format!("{v:.1} px"), false);
-        slider_row(ui, "Beam intensity", &mut s.beam_intensity, 0.05..=20.0, |v| format!("{v:.2}"), true);
-        slider_row(ui, "Persistence", &mut s.persistence, 0.0001..=0.9, |v| format!("{v:.3} /s"), true);
-        slider_row(ui, "Beat pulse", &mut s.beat_pulse, 0.0..=1.0, |v| format!("{v:.2}"), false);
+        let d = crate::settings::ScopeParams::default();
+        use crate::widgets::{ghost_button, group, slider_def, toggle_row};
+        group(ui, "scope.beam", "Beam", true, 4, |ui| {
+            slider_def(ui, "Gain", &mut s.gain, Some(d.gain), 0.05..=3.0, |v| format!("{v:.2}"), true);
+            toggle_row(ui, "Auto gain", &mut s.auto_gain);
+            slider_def(ui, "Beam width", &mut s.beam_width, Some(d.beam_width), 0.3..=6.0, |v| format!("{v:.1} px"), false);
+            slider_def(ui, "Beam intensity", &mut s.beam_intensity, Some(d.beam_intensity), 0.05..=20.0, |v| format!("{v:.2}"), true);
+        });
+        group(ui, "scope.trace", "Trace", true, 3, |ui| {
+            slider_def(ui, "Rotation", &mut s.rotation_deg, Some(d.rotation_deg), -180.0..=180.0, |v| format!("{v:.0}°"), false);
+            slider_def(ui, "Persistence", &mut s.persistence, Some(d.persistence), 0.0001..=0.9, |v| format!("{v:.3} /s"), true);
+            slider_def(ui, "Beat pulse", &mut s.beat_pulse, Some(d.beat_pulse), 0.0..=1.0, |v| format!("{v:.2}"), false);
+        });
         ui.add_space(6.0);
         if ghost_button(ui, "Reset scope", false).clicked() {
             *s = Default::default();

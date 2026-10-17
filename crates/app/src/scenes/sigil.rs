@@ -575,47 +575,53 @@ impl Scene for Sigil {
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         let s = &mut layer.sigil;
-        use crate::widgets::{ghost_button, hint, slider_row, small_caps, toggle_row};
+        let d = crate::settings::SigilParams::default();
+        use crate::widgets::{ghost_button, group, hint, slider_def, toggle_row};
         let by_track = |v: f64| if v < 0.5 { "by track".to_string() } else { format!("{v:.0}") };
-        small_caps(ui, "Look");
-        slider_row(ui, "Size", &mut s.scale, 0.3..=1.6, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Spread", &mut s.spread, 0.2..=2.2, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Line width", &mut s.line_width, 0.3..=3.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Hot core", &mut s.hot, 0.0..=1.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Glow", &mut s.glow, 0.0..=3.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Afterimage", &mut s.persistence, 0.05..=4.0, |v| format!("{v:.2} s"), true);
-        ui.add_space(6.0);
-        small_caps(ui, "Elements");
-        slider_row(ui, "Core", &mut s.core, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Rings", &mut s.rings, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Rays", &mut s.rays, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Orbs", &mut s.orbs, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Shapes", &mut s.shapes, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Trace", &mut s.trace, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Drips", &mut s.drips, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Ground", &mut s.ground, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        ui.add_space(6.0);
-        small_caps(ui, "Structure");
-        slider_row(ui, "Star sides", &mut s.sides, 0..=8, |v| if v < 0.5 { "by track".to_string() } else if v < 3.0 { "3".to_string() } else { format!("{v:.0}") }, false);
-        if s.sides != 0 {
-            s.sides = s.sides.max(3);
-        }
-        slider_row(ui, "Nesting", &mut s.nest, 0..=4, by_track, false);
-        slider_row(ui, "Ray symmetry", &mut s.symmetry, 0..=6, by_track, false);
-        toggle_row(ui, "Rebuild on track change", &mut s.rebuild);
-        if ghost_button(ui, "New arrangement", false).clicked() {
-            self.pending = Some(self.arrangement.seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407));
-            self.going_out = true;
-        }
-        ui.add_space(6.0);
-        small_caps(ui, "Motion");
-        slider_row(ui, "Spin", &mut s.spin, 0.0..=4.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Explode on drops", &mut s.explode, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Reacts", &mut s.react, 0.0..=2.0, |v| format!("{v:.2}"), false);
+        group(ui, "sigil.look", "Look", true, 6, |ui| {
+            slider_def(ui, "Size", &mut s.scale, Some(d.scale), 0.3..=1.6, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Spread", &mut s.spread, Some(d.spread), 0.2..=2.2, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Line width", &mut s.line_width, Some(d.line_width), 0.3..=3.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Hot core", &mut s.hot, Some(d.hot), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Glow", &mut s.glow, Some(d.glow), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Afterimage", &mut s.persistence, Some(d.persistence), 0.05..=4.0, |v| format!("{v:.2} s"), true);
+        });
+        group(ui, "sigil.elements", "Elements", false, 8, |ui| {
+            slider_def(ui, "Core", &mut s.core, Some(d.core), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Rings", &mut s.rings, Some(d.rings), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Rays", &mut s.rays, Some(d.rays), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Orbs", &mut s.orbs, Some(d.orbs), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Shapes", &mut s.shapes, Some(d.shapes), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Trace", &mut s.trace, Some(d.trace), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Drips", &mut s.drips, Some(d.drips), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Ground", &mut s.ground, Some(d.ground), 0.0..=2.0, |v| format!("{v:.2}"), false);
+        });
+        let mut new_arrangement = false;
+        group(ui, "sigil.structure", "Structure", false, 4, |ui| {
+            slider_def(ui, "Star sides", &mut s.sides, Some(d.sides), 0..=8, |v| if v < 0.5 { "by track".to_string() } else if v < 3.0 { "3".to_string() } else { format!("{v:.0}") }, false);
+            if s.sides != 0 {
+                s.sides = s.sides.max(3);
+            }
+            slider_def(ui, "Nesting", &mut s.nest, Some(d.nest), 0..=4, by_track, false);
+            slider_def(ui, "Ray symmetry", &mut s.symmetry, Some(d.symmetry), 0..=6, by_track, false);
+            toggle_row(ui, "Rebuild on track change", &mut s.rebuild);
+            if ghost_button(ui, "New arrangement", false).clicked() {
+                new_arrangement = true;
+            }
+        });
+        group(ui, "sigil.motion", "Motion", false, 3, |ui| {
+            slider_def(ui, "Spin", &mut s.spin, Some(d.spin), 0.0..=4.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Explode on drops", &mut s.explode, Some(d.explode), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Reacts", &mut s.react, Some(d.react), 0.0..=2.0, |v| format!("{v:.2}"), false);
+        });
         hint(ui, "Rings breathe with their band (sub to air, inside out), rays strike on onsets at the angle of the pitch class, the orbs light with the chord, the star and triangles turn with energy and step on bars, a pen writes the sigil trace in time with the beat, and paint runs from whatever is bright when it is loud. Every track draws a new glyph. Give the layer the neon or rave palette.");
         ui.add_space(6.0);
         if ghost_button(ui, "Reset sigil", false).clicked() {
             *s = Default::default();
+        }
+        if new_arrangement {
+            self.pending = Some(self.arrangement.seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407));
+            self.going_out = true;
         }
     }
 }

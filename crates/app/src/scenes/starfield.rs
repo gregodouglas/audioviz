@@ -141,17 +141,22 @@ impl Scene for Starfield {
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         let s = &mut layer.starfield;
-        use crate::widgets::{ghost_button, hint, slider_row};
-        slider_row(ui, "Mass", &mut s.mass, 0.3..=2.5, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Disk brightness", &mut s.disk, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Doppler", &mut s.doppler, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Tilt", &mut s.tilt, 0.0..=25.0, |v| format!("{v:.0}°"), false);
-        slider_row(ui, "Infall streams", &mut s.streams, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Breathe with bass", &mut s.breathe, 0.0..=1.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Nebula", &mut s.nebula, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Star density", &mut s.density, 0.1..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Onset twinkle", &mut s.twinkle, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Drift", &mut s.drift, 0.0..=4.0, |v| format!("{v:.2}"), false);
+        let d = crate::settings::StarfieldParams::default();
+        use crate::widgets::{ghost_button, group, hint, slider_def};
+        group(ui, "hole.lens", "Lens and disk", true, 6, |ui| {
+            slider_def(ui, "Mass", &mut s.mass, Some(d.mass), 0.3..=2.5, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Disk brightness", &mut s.disk, Some(d.disk), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Doppler", &mut s.doppler, Some(d.doppler), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Tilt", &mut s.tilt, Some(d.tilt), 0.0..=25.0, |v| format!("{v:.0}°"), false);
+            slider_def(ui, "Infall streams", &mut s.streams, Some(d.streams), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Breathe with bass", &mut s.breathe, Some(d.breathe), 0.0..=1.0, |v| format!("{v:.2}"), false);
+        });
+        group(ui, "hole.sky", "Sky", false, 4, |ui| {
+            slider_def(ui, "Nebula", &mut s.nebula, Some(d.nebula), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Star density", &mut s.density, Some(d.density), 0.1..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Onset twinkle", &mut s.twinkle, Some(d.twinkle), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Drift", &mut s.drift, Some(d.drift), 0.0..=4.0, |v| format!("{v:.2}"), false);
+        });
         hint(ui, "The disk's brightness, turbulence and infall follow energy and onsets; stars shimmer slowly and a few flash on transients.");
         ui.add_space(6.0);
         if ghost_button(ui, "Reset black hole", false).clicked() {

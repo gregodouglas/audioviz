@@ -19,7 +19,7 @@ pub const ERROR: Color32 = Color32::from_rgb(0xff, 0x78, 0x78);
 
 pub const BAR_H: f32 = 28.0;
 pub const STRIP_H: f32 = 72.0;
-pub const PANEL_W: f32 = 320.0;
+pub const PANEL_W: f32 = 352.0;
 pub const RAIL_W: f32 = 40.0;
 pub const RADIUS: u8 = 4;
 /// Seconds of mouse rest before the chrome hides.
@@ -30,6 +30,14 @@ pub const ANIM_S: f32 = 0.12;
 pub const FAMILY_BOLD: &str = "swiss-bold";
 pub const FAMILY_REGULAR: &str = "swiss";
 pub const FAMILY_MONO: &str = "mono";
+
+/// One fixed hue per layer slot, used on its stack row, its bar pip and the
+/// inspector header so the layer being edited is known without reading.
+pub const LAYER_HUES: [Color32; 3] = [ACCENT, Color32::from_rgb(0x6f, 0xb3, 0xff), Color32::from_rgb(0xff, 0xc4, 0x6b)];
+
+pub fn layer_hue(i: usize) -> Color32 {
+    LAYER_HUES[i % LAYER_HUES.len()]
+}
 
 pub fn panel_fill() -> Color32 {
     Color32::from_rgba_unmultiplied(PANEL.r(), PANEL.g(), PANEL.b(), 235)

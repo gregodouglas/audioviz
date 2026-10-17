@@ -341,25 +341,19 @@ impl Scene for Kaleido {
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         let k = &mut layer.kaleido;
-        use crate::widgets::{ghost_button, hint, slider_row};
-        use crate::theme::{self, ACCENT, HAIRLINE, TEXT};
-        ui.horizontal(|ui| {
-            ui.label("Picture");
-            for (name, src) in [("album art", ImageSource::Art), ("my photos", ImageSource::Photos)] {
-                let active = k.source == src;
-                if ui.add(egui::Button::new(egui::RichText::new(name).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { egui::Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE }))).clicked() {
-                    k.source = src;
-                }
-            }
-        });
-        if k.source == ImageSource::Photos {
-            slider_row(ui, "Seconds per photo", &mut k.dwell_s, 3.0..=120.0, |v| format!("{v:.0} s"), true);
+        let d = crate::settings::KaleidoParams::default();
+        use crate::widgets::{ghost_button, hint, segmented, slider_def};
+        if let Some(i) = segmented(ui, &["album art", "my photos"], (k.source == ImageSource::Photos) as usize) {
+            k.source = if i == 1 { ImageSource::Photos } else { ImageSource::Art };
         }
-        slider_row(ui, "Window", &mut k.zoom, 0.15..=1.0, |v| format!("{:.0}%", v * 100.0), false);
-        slider_row(ui, "Drift", &mut k.drift, 0.0..=4.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Tumble on onsets", &mut k.tumble, 0.0..=2.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Pull to tint", &mut k.tint_mix, 0.0..=1.0, |v| format!("{v:.2}"), false);
-        hint(ui, "A window into the picture drifts and turns with the music; the layer's fold makes the mirrors. Photos fall back to the album art when the folder is empty.");
+        if k.source == ImageSource::Photos {
+            slider_def(ui, "Seconds per photo", &mut k.dwell_s, Some(d.dwell_s), 3.0..=120.0, |v| format!("{v:.0} s"), true);
+        }
+        slider_def(ui, "Window", &mut k.zoom, Some(d.zoom), 0.15..=1.0, |v| format!("{:.0}%", v * 100.0), false);
+        slider_def(ui, "Drift", &mut k.drift, Some(d.drift), 0.0..=4.0, |v| format!("{v:.2}"), false);
+        slider_def(ui, "Tumble on onsets", &mut k.tumble, Some(d.tumble), 0.0..=2.0, |v| format!("{v:.2}"), false);
+        slider_def(ui, "Pull to tint", &mut k.tint_mix, Some(d.tint_mix), 0.0..=1.0, |v| format!("{v:.2}"), false);
+        hint(ui, "A window into the picture drifts and turns with the music; the layer's kaleidoscope modifier makes the mirrors. Photos fall back to the album art when the folder is empty.");
         ui.add_space(6.0);
         if ghost_button(ui, "Reset kaleidoscope", false).clicked() {
             *k = Default::default();

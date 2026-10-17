@@ -1,6 +1,6 @@
 # Phase 7 — Controls: information architecture for the panel
 
-Status: **proposal, 2026-10-17. Nothing built yet; waiting for Greg's read.**
+Status: **built 2026-10-17 (same day), all four steps, local only.** Greg chose tabs, modifiers opening in place, and the rename to Picture. What shipped differs from the plan in small ways, noted at the end.
 
 ## Why
 
@@ -112,3 +112,15 @@ Each step is one commit and one `AUDIOVIZ_PANEL=` screenshot set. Nothing in set
 - Tabs (Visual · Colour · Effects) or one page with collapsible groups for all three? Tabs are proposed because Effects alone can be a page.
 - Should a modifier open *in place* (pushing the layer page) as proposed, or in a side panel to the left of the inspector? In place keeps one column and works at 1280 px; a second column needs ~700 px of UI.
 - Picture for the renamed Post section, or keep Post?
+
+## What was built (2026-10-17)
+
+- `widgets.rs`: `slider_def` (default-aware slider row: dimmed label at the default, double-click on the slider resets, the value is an egui `DragValue` in mono so it drags for fine steps and takes typed numbers), `segmented`, `dropdown` (restyled `ComboBox` with a fixed label column), `group` (collapsible, open state in a process-wide map seeded from `Settings.ui_open` and stored back every frame), `chip`, `inspector_header` (hue bar + breadcrumb + action). `slider_row` still exists for controls without a meaningful default (band cuts, audio delay, segment counts).
+- `theme.rs`: `LAYER_HUES` (green, blue, amber) and `layer_hue(i)`; `PANEL_W` 320 → 352.
+- `settings.rs`: `Section::Picture` (serde alias "Post" so saved files still load), `LayerTab`, `Settings.layer_tab`, `Settings.ui_open`.
+- `panel.rs`: Layers is now **stack + inspector**. The stack rows carry the hue bar (also the drag handle), switch, name, band chip, an inline 64 px opacity slider in the hue, order buttons, and the modifier chain as chips (click one to open that modifier). The inspector header is a breadcrumb (`LAYER 1 · SIGIL`, or `LAYER 1 · SIGIL › KALEIDOSCOPE ‹ back`) that never scrolls; under it the tab bar and a scroll area for the body. Visual tab: Visual and Reacts-to dropdowns (custom range exposes the cut sliders), then the visual's grouped controls. Colour tab: tint as a segmented control, palette as a dropdown with the strip, Amount / Cycle / Reacts, wrap, custom stops in a group with a "Start from" dropdown. Effects tab: the chain rows with `›` to open, arrows, remove, and an Add dropdown that opens the new modifier at once. A modifier page replaces the tabs in place, with On, its controls, Remove and Back; Esc also goes back (`app.rs`, before the panel closes). Picture = post stack with defaults plus the scene tint. Scenes list rows are full width with a marker dot.
+- Visuals: every `ui()` uses `slider_def` with its params' defaults and `group`s (scope: Beam / Trace; ribbons: Field / Look; black hole: Lens and disk / Sky; sigil: Look / Elements / Structure / Motion; kaleidoscope stays flat with a segmented picture source). Modifier controls use defaults too; their pill rows are segmented controls.
+- `chrome.rs`: bar pips take the layer hue.
+- Dev: `AUDIOVIZ_MOD=n` opens modifier n's page for screenshots; `AUDIOVIZ_PANEL=Picture`.
+
+Differences from the plan: no shift-drag (the editable DragValue covers fine steps); the Scenes header has no Save affordance (the save block is one scroll away and the bar already says "unsaved scene"); the focused stack row is highlighted with its hue at low alpha rather than only the bar.

@@ -234,17 +234,22 @@ impl Scene for Ribbons {
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         let s = &mut layer.ribbons;
-        use crate::widgets::{ghost_button, hint, slider_row};
-        slider_row(ui, "Particles", &mut s.count, 256..=PARTICLES, |v| format!("{v:.0}"), true);
-        slider_row(ui, "Speed", &mut s.speed, 0.02..=2.0, |v| format!("{v:.2}"), true);
-        slider_row(ui, "Field scale", &mut s.scale, 0.3..=6.0, |v| format!("{v:.2}"), true);
-        slider_row(ui, "Curl", &mut s.curl, 0.0..=3.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Chroma vortices", &mut s.vortex, 0.0..=3.0, |v| format!("{v:.2}"), false);
-        slider_row(ui, "Line width", &mut s.width, 0.3..=4.0, |v| format!("{v:.1} px"), false);
-        slider_row(ui, "Intensity", &mut s.intensity, 0.05..=10.0, |v| format!("{v:.2}"), true);
-        slider_row(ui, "Persistence", &mut s.persistence, 0.0001..=0.95, |v| format!("{v:.3} /s"), true);
-        slider_row(ui, "Saturation", &mut s.saturation, 0.0..=1.0, |v| format!("{v:.2}"), false);
-        hint(ui, "Colours: pitch class on a circle of fifths, pulled toward the key. The scope tint is the base.");
+        let d = crate::settings::RibbonsParams::default();
+        use crate::widgets::{ghost_button, group, hint, slider_def};
+        group(ui, "ribbons.field", "Field", true, 5, |ui| {
+            slider_def(ui, "Particles", &mut s.count, Some(d.count), 256..=PARTICLES, |v| format!("{v:.0}"), true);
+            slider_def(ui, "Speed", &mut s.speed, Some(d.speed), 0.02..=2.0, |v| format!("{v:.2}"), true);
+            slider_def(ui, "Field scale", &mut s.scale, Some(d.scale), 0.3..=6.0, |v| format!("{v:.2}"), true);
+            slider_def(ui, "Curl", &mut s.curl, Some(d.curl), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Chroma vortices", &mut s.vortex, Some(d.vortex), 0.0..=3.0, |v| format!("{v:.2}"), false);
+        });
+        group(ui, "ribbons.look", "Look", true, 4, |ui| {
+            slider_def(ui, "Line width", &mut s.width, Some(d.width), 0.3..=4.0, |v| format!("{v:.1} px"), false);
+            slider_def(ui, "Intensity", &mut s.intensity, Some(d.intensity), 0.05..=10.0, |v| format!("{v:.2}"), true);
+            slider_def(ui, "Persistence", &mut s.persistence, Some(d.persistence), 0.0001..=0.95, |v| format!("{v:.3} /s"), true);
+            slider_def(ui, "Saturation", &mut s.saturation, Some(d.saturation), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Colours: pitch class on a circle of fifths, pulled toward the key, or the layer palette when one is set.");
+        });
         ui.add_space(6.0);
         if ghost_button(ui, "Reset ribbons", false).clicked() {
             *s = Default::default();

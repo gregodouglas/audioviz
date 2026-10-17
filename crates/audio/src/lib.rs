@@ -71,7 +71,7 @@ impl Drop for CaptureHandle {
 }
 
 /// A platform audio capture backend.
-pub trait AudioSource {
+pub trait AudioSource: Send + Sync {
     /// Start capturing on a background thread. The returned handle yields
     /// chunks of roughly `chunk_frames` stereo frames.
     fn start(&self, target: CaptureTarget, chunk_frames: usize) -> anyhow::Result<CaptureHandle>;

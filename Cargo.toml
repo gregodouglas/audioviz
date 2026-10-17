@@ -25,6 +25,7 @@ egui-winit = "0.37"
 pollster = "1"
 wasapi = "0.26"
 sysinfo = "0.39"
+hound = "3.5"
 
 [profile.dev]
 opt-level = 1

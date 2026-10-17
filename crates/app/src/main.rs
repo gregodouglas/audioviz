@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod engine;
 mod gpu;
 mod scope;
 mod shaders;

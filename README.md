@@ -6,7 +6,7 @@ Aesthetic direction: spacey, line-based, post-modern / minimal generative art. N
 
 ## Status
 
-**Phase 1 spike running (2026-10-16).** Rust + wgpu, Windows per-process loopback on Spotify, first scene is a phosphor XY oscilloscope. See `docs/phase1-spike.md` to build and run; direction is recorded in `docs/decisions/ADR-0001-stack-and-direction.md`; research in `docs/research/00-synthesis.md`.
+**Phase 2 landed (2026-10-17).** Rust + wgpu, Windows per-process loopback on Spotify, engine thread with the full v1 analysis (bands, loudness, onsets, predictive beat clock, chroma), first scene is a phosphor XY oscilloscope. See `docs/phase1-spike.md` to build and run and `docs/phase2-analysis.md` for the feature set and validation loop; direction is recorded in `docs/decisions/ADR-0001-stack-and-direction.md`; research in `docs/research/00-synthesis.md`.
 
 ```
 cargo run --release -p audioviz

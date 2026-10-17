@@ -1,21 +1,18 @@
-use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Instant;
 
-use audioviz_analysis::{Analyzer, AnalyzerConfig};
-use audioviz_audio::{AudioSource, CaptureHandle, CaptureMode, CaptureTarget};
+use audioviz_audio::CaptureTarget;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Fullscreen, Window, WindowId};
 
+use crate::engine::Engine;
 use crate::gpu::Gpu;
 use crate::scope::{MAX_POINTS, Params, Scope};
 use crate::shaders::ShaderSet;
 use crate::ui::{Settings, Stats};
-
-const CHUNK_FRAMES: usize = 256;
 
 struct Running {
     gpu: Gpu,
@@ -26,18 +23,13 @@ struct Running {
     egui_renderer: egui_wgpu::Renderer,
     show_ui: bool,
 
-    _source: Box<dyn AudioSource>,
-    capture: CaptureHandle,
-    capture_mode: CaptureMode,
-    analyzer: Analyzer,
-    /// Samples held back to implement the user-set audio delay (interleaved).
-    delay_line: VecDeque<f32>,
+    engine: Engine,
     /// (L, R) points waiting to be drawn, newest last.
     pending_points: Vec<[f32; 2]>,
     last_point: [f32; 2],
-    sample_rate: u32,
 
     settings: Settings,
+    sent_delay_ms: f32,
     last_frame: Instant,
     fps: f32,
     points_per_sec: f32,
@@ -72,10 +64,7 @@ impl Running {
         let egui_renderer = egui_wgpu::Renderer::new(&gpu.device, gpu.config.format, egui_wgpu::RendererOptions::default());
 
         let settings = Settings::default();
-        let source = audioviz_audio::default_source();
-        let capture = source.start(CaptureTarget::Process(settings.target_process.clone()), CHUNK_FRAMES)?;
-        let sample_rate = 48_000;
-        let analyzer = Analyzer::new(AnalyzerConfig { sample_rate, ..Default::default() });
+        let engine = Engine::start(CaptureTarget::Process(settings.target_process.clone()))?;
 
         Ok(Self {
             gpu,
@@ -85,14 +74,10 @@ impl Running {
             egui_state,
             egui_renderer,
             show_ui: true,
-            _source: source,
-            capture,
-            capture_mode: CaptureMode::Starting,
-            analyzer,
-            delay_line: VecDeque::with_capacity(48_000),
+            engine,
             pending_points: Vec::with_capacity(MAX_POINTS),
             last_point: [0.0, 0.0],
-            sample_rate,
+            sent_delay_ms: 0.0,
             settings,
             last_frame: Instant::now(),
             fps: 0.0,
@@ -101,46 +86,27 @@ impl Running {
         })
     }
 
-    /// Drain captured audio: apply the delay line, feed the analyzer, queue scope points.
-    fn ingest_audio(&mut self) {
-        while let Ok(mode) = self.capture.mode.try_recv() {
-            self.capture_mode = mode;
-        }
-        let delay_samples = ((self.settings.audio_delay_ms / 1000.0) * self.sample_rate as f32) as usize * 2;
-        while let Ok(chunk) = self.capture.chunks.try_recv() {
-            if chunk.sample_rate != self.sample_rate {
-                self.sample_rate = chunk.sample_rate;
-                self.analyzer = Analyzer::new(AnalyzerConfig { sample_rate: self.sample_rate, ..Default::default() });
-            }
-            self.delay_line.extend(chunk.samples.iter().copied());
-        }
-        // Release everything older than the delay.
-        let releasable = self.delay_line.len().saturating_sub(delay_samples) & !1usize;
-        if releasable == 0 {
-            return;
-        }
-        let released: Vec<f32> = self.delay_line.drain(..releasable).collect();
-        self.analyzer.push(&released);
-        for pair in released.chunks_exact(2) {
-            self.pending_points.push([pair[0], pair[1]]);
-        }
-        // Never let a stall pile up more than one buffer's worth of history.
-        if self.pending_points.len() > MAX_POINTS - 1 {
-            let drop = self.pending_points.len() - (MAX_POINTS - 1);
-            self.pending_points.drain(..drop);
-        }
-    }
-
     fn render(&mut self) {
-        self.ingest_audio();
         if self.shaders.poll() {
             self.scope.reload_shaders(&self.gpu.device, &self.shaders);
+        }
+        if (self.settings.audio_delay_ms - self.sent_delay_ms).abs() > 0.01 {
+            self.sent_delay_ms = self.settings.audio_delay_ms;
+            self.engine.set_delay_ms(self.sent_delay_ms);
         }
 
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f32().clamp(1e-4, 0.25);
         self.last_frame = now;
         self.fps = self.fps * 0.95 + (1.0 / dt) * 0.05;
+
+        // Pull audio.
+        self.engine.drain_points(&mut self.pending_points);
+        if self.pending_points.len() > MAX_POINTS - 1 {
+            let drop = self.pending_points.len() - (MAX_POINTS - 1);
+            self.pending_points.drain(..drop);
+        }
+        let features = self.engine.features();
 
         let frame = match self.gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) => f,
@@ -160,26 +126,24 @@ impl Running {
         let mut encoder = self.gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
 
         // --- scope ---
-        let features = self.analyzer.frame().clone();
-        // Auto gain: aim the decaying peak at ~0.9 of the square.
         let target = if features.peak > 0.02 { (0.9 / features.peak).clamp(0.3, 6.0) } else { self.auto_gain_value };
         self.auto_gain_value += (target - self.auto_gain_value) * (1.0 - (-dt / 1.5).exp());
         let gain = if self.settings.auto_gain { self.settings.gain * self.auto_gain_value } else { self.settings.gain };
+        // Beat pulse on exposure, gated by clock confidence so a lost lock stays calm.
+        let pulse = 1.0 + self.settings.beat_pulse * features.beat_pulse * features.beat_confidence;
 
         let params = Params {
             resolution: [self.gpu.config.width as f32, self.gpu.config.height as f32],
             gain,
             rotation: self.settings.rotation_deg.to_radians(),
             beam_width: self.settings.beam_width,
-            // Per-frame multiplier from the per-second persistence fraction.
             decay: self.settings.persistence.max(1e-6).powf(dt),
             beam_intensity: self.settings.beam_intensity * 6.0,
-            exposure: self.settings.exposure,
+            exposure: self.settings.exposure * pulse,
             tint: [self.settings.tint[0], self.settings.tint[1], self.settings.tint[2], 1.0],
             point_count: 0,
             _pad: [0; 3],
         };
-        // Prepend last frame's final point so the trace is continuous.
         let mut points = Vec::with_capacity(self.pending_points.len() + 1);
         points.push(self.last_point);
         points.extend_from_slice(&self.pending_points);
@@ -196,9 +160,9 @@ impl Running {
             let stats = Stats {
                 fps: self.fps,
                 points_per_sec: self.points_per_sec,
-                capture: self.capture_mode.clone(),
+                capture: self.engine.capture_mode(),
                 shader_error: self.scope.last_shader_error.clone(),
-                sample_rate: self.sample_rate,
+                sample_rate: self.engine.sample_rate,
             };
             let settings = &mut self.settings;
             let egui::FullOutput { platform_output, mut textures_delta, shapes, pixels_per_point, .. } =

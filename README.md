@@ -19,25 +19,33 @@ Start Spotify, play something, start audioviz. If Spotify is not running the app
 
 ## Use
 
-Press **Tab** for the settings panel. Everything is a live slider and every section has a reset button.
+The window is frameless. Move the mouse and a thin bar appears at the top (scene pips, status chips, window controls) with a transport strip at the bottom (album art, previous / play-pause / next, progress, tint from album art). Both hide after three seconds of mouse rest and in fullscreen. On first run a short welcome sheet asks for the monitor, offers the tap calibration and lets you pick a scene.
+
+Press **Tab** for the settings panel: a docked sheet with an icon rail. Scene, Post (per scene), Sync (delay, calibration, which app to listen to), Display (monitor diagram, frame cap, low power, reduce flashing, chrome options), Looks (presets: Night, Party, Studio, plus your own as JSON files), Meters (developer) and About (manual update check, diagnostics to paste into a bug report).
 
 | Key | Action |
 |---|---|
 | Tab | settings panel |
 | 1 / 2 / 3, Space | choose scene / next scene |
 | A | auto scene director |
+| L | next look |
 | T | title overlay (starfield) |
-| C | audio-delay calibration: tap Space on the beat, then apply |
+| C | audio-delay calibration: tap Space on the beat, Enter to apply |
+| ? | all shortcuts |
 | F11 | fullscreen on the current monitor |
-| Esc | quit |
+| Esc | close a sheet, else quit |
 
-Loopback captures audio before it reaches your ears, so the visuals lead the sound by your output latency (wired headphones ~10-40 ms, Bluetooth 100-250 ms). Set *Sync → audio delay* by ear or press **C** and tap along for ten beats; the app measures the offset and offers to apply it.
+The tray icon menu shows the window, switches scene, toggles the director, goes fullscreen on a chosen monitor, and quits. `audioviz --tray` starts hidden in the tray (what "start when I sign in" uses).
 
-Settings live in `%APPDATA%\audioviz\settings.json` (plain JSON; delete it to reset). `audioviz --version` prints the version.
+Loopback captures audio before it reaches your ears, so the visuals lead the sound by your output latency (wired headphones ~10-40 ms, Bluetooth 100-250 ms). Press **C** and tap along for ten beats; the app measures the offset and offers to apply it.
+
+**Reduce flashing** (Display) is on by default: it caps how fast the picture may brighten between frames, for photosensitive viewers. Turn it off or raise the allowed rise if you want harder strobes.
+
+Settings live in `%APPDATA%\audioviz\settings.json` (plain JSON; delete it to reset); looks in `%APPDATA%\audioviz\looks\`. `audioviz --version` prints the version; `audioviz --set key=value` changes a setting before starting.
 
 ## Privacy and trust
 
-No telemetry, no network code, no accounts. `PRIVACY.md` lists exactly what the app touches and how to verify the no-network claim yourself (`cargo deny` bans every HTTP/TLS/socket crate and CI enforces it). `SECURITY.md` says how to report a problem.
+No telemetry, no accounts, no network on its own. The one connection the app can make is the **Check for updates** button in About, when you press it: one request to GitHub's releases endpoint through the Windows HTTP stack, nothing sent but the request. `PRIVACY.md` lists exactly what the app touches and how to verify this yourself (`cargo deny` bans every Rust HTTP/TLS/socket crate and CI enforces it). `SECURITY.md` says how to report a problem.
 
 Direct dependencies (all MIT/Apache-2.0 or similar; `cargo deny check licenses` enforces the allow-list): `wgpu`, `winit`, `egui` + `egui-wgpu` + `egui-winit`, `wasapi`, `windows`, `sysinfo`, `realfft`, `image`, `glam`, `bytemuck`, `crossbeam-channel`, `serde` + `serde_json`, `dirs`, `tracing` + `tracing-subscriber`, `anyhow`, `pollster`. The icon generator (`xtask`) additionally uses `resvg` and `ico` and is not part of the shipped binary.
 

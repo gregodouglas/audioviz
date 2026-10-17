@@ -13,13 +13,19 @@ audioviz is a local music visualizer. It has no accounts, no telemetry, no crash
 | `C:\Windows\Fonts` (read only) | Loads Segoe UI / Arial for the title overlay if present. | `crates/app/src/overlay.rs` |
 | GPU (DirectX 12 or Vulkan) | Rendering. | `crates/app/src/gpu.rs` |
 
-Nothing leaves the machine. The app never opens a socket.
+Nothing leaves the machine on its own. The app opens exactly one kind of connection, and only when you ask for it:
+
+| Access | Why | Where |
+|---|---|---|
+| **Check for updates** button (About section) | When pressed, fetches `https://api.github.com/repos/gregodouglas/audioviz/releases/latest` once over the Windows HTTP stack (WinHTTP) and compares the tag with the running version. Sends the request GitHub needs and nothing else (no identifiers, no settings). Never runs on a timer or at startup. | `crates/app/src/platform/windows.rs` |
+
+Links in the About section (releases, privacy, issues) open in your browser; the app itself does not fetch them.
 
 ## How to verify that yourself
 
 The claim is checked mechanically rather than taken on trust:
 
-1. **No network crates in the dependency tree.** `deny.toml` bans every common Rust HTTP, TLS, DNS, WebSocket and socket crate (`reqwest`, `hyper`, `ureq`, `curl`, `rustls`, `native-tls`, `openssl`, `tungstenite`, `mio`, `socket2`, `sentry`, …). CI runs `cargo deny check` on every push and the build fails if one appears.
+1. **No network crates in the dependency tree.** `deny.toml` bans every common Rust HTTP, TLS, DNS, WebSocket and socket crate (`reqwest`, `hyper`, `ureq`, `curl`, `rustls`, `native-tls`, `openssl`, `tungstenite`, `mio`, `socket2`, `sentry`, …). CI runs `cargo deny check` on every push and the build fails if one appears. The manual update check goes through the operating system's WinHTTP API in one small, readable function, so the ban list still holds and there is exactly one place to audit.
    ```
    cargo deny check bans
    cargo tree -e normal -p audioviz | grep -iE "http|tls|socket|mio"   # prints nothing

@@ -1,6 +1,24 @@
 # Phase 6 — UI refresh ("look exceptional")
 
-Status: **brief, not started** (written 2026-10-17 right after v0.1.0 shipped). Target version 0.2.0. Tracked as issues #1-#5.
+Status: **built 2026-10-17, local only (not pushed), awaiting Greg's hands-on check.** Target version 0.2.0. Tracked as issues #1-#5.
+
+## Progress log
+
+**2026-10-17, same day as the brief.** Mockups signed off ("100% the right direction"), then built:
+
+- `theme.rs` tokens + egui style; `widgets.rs` shared drawing (mark, slider rows, toggles, rail icons, glyphs).
+- `chrome.rs` bar + `hittest.rs` (Windows `WM_NCHITTEST` subclass: caption drag, edge resize, Snap Layouts via `HTMAXBUTTON`, native maximize toggle from the non-client click). Window is `with_decorations(false)` + undecorated shadow + rounded corners. Auto-hide after 3 s; pinned while any sheet or the panel is open and for the first 5 s.
+- `panel.rs` docked sheet with rail; sections as in the second-pass spec, including the monitor diagram, reduce flashing, looks, manual update check, copy diagnostics.
+- `strip.rs` transport with SMTC control (metadata crate: `MediaCommand`), tint-from-art (metadata crate: `ArtImage::dominant_color`).
+- `overlays.rs` toast, empty state, calibration sheet, shortcuts (`?`), first-run sheet (monitor, calibrate, scene).
+- `looks.rs` Night / Party / Studio + user JSON files; `L` cycles.
+- `tray.rs` (tray-icon crate): show, scene, auto, fullscreen on monitor N, quit; `--tray` starts hidden.
+- Post stack: reduce-flashing limiter in `expo.wgsl`/`present.wgsl` (`flags` bit 1, `flash_rise`); on by default.
+- `platform/`: open_url, launch_spotify, spotify_installed, on_battery, WinHTTP `latest_release` (manual only), is_newer, diagnostics_header.
+- `--set key=value`, `AUDIOVIZ_PANEL=<section>` and `AUDIOVIZ_CHROME=1` dev overrides for screenshots.
+- Installer: modern Inno wizard with image strip, checks page, finish-page options (see `installer/`).
+
+Not done / to verify by hand: drag, double-click, Win+arrow, Snap Layouts hover on the portrait monitor; tray menu; strip controls against Spotify; the installer wizard interactively; README screenshots for 0.2.0 (`docs/img/scene-*.png` are still 0.1.0's). The old `ui.rs` is gone; `Settings` moved to `settings.rs`.
 
 ## Why
 

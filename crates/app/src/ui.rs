@@ -305,7 +305,8 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stat
                 ui.small(format!("settings: {}", stats.settings_path));
             });
 
-            egui::CollapsingHeader::new("Sync").default_open(stats.calibration.is_some()).show(ui, |ui| {
+            // Forced open while calibrating so the tap readout is visible; otherwise the user's choice.
+            egui::CollapsingHeader::new("Sync").open(stats.calibration.is_some().then_some(true)).show(ui, |ui| {
                 ui.add(egui::Slider::new(&mut settings.audio_delay_ms, 0.0..=300.0).text("audio delay ms"));
                 ui.small("Loopback sees audio before you hear it. Raise this until the beam lands on the beat, or calibrate by tapping.");
                 match &stats.calibration {

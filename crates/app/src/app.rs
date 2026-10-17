@@ -510,9 +510,7 @@ impl Running {
             }
         }
         if let Some(c) = &self.calibration {
-            if !self.settings.show_ui {
-                out.push(format!("Calibrating: tap Space on the beat · {} · Enter to apply, C to cancel", crate::ui::calibration_status(&c.view())));
-            }
+            out.push(format!("Calibrating: tap Space on the beat · {} · Enter to apply, C to cancel", crate::ui::calibration_status(&c.view())));
         }
         if let Some((msg, since)) = &self.calibration_result {
             if since.elapsed().as_secs_f32() < NOTICE_SECONDS {

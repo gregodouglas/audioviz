@@ -225,19 +225,21 @@ impl Scene for Ribbons {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, s: &mut Settings) {
-        if ui.button("Reset ribbons to defaults").clicked() {
+        use crate::widgets::{ghost_button, hint, slider_row};
+        slider_row(ui, "Particles", &mut s.ribbons_count, 256..=PARTICLES, |v| format!("{v:.0}"), true);
+        slider_row(ui, "Speed", &mut s.ribbons_speed, 0.02..=2.0, |v| format!("{v:.2}"), true);
+        slider_row(ui, "Field scale", &mut s.ribbons_scale, 0.3..=6.0, |v| format!("{v:.2}"), true);
+        slider_row(ui, "Curl", &mut s.ribbons_curl, 0.0..=3.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Chroma vortices", &mut s.ribbons_vortex, 0.0..=3.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Line width", &mut s.ribbons_width, 0.3..=4.0, |v| format!("{v:.1} px"), false);
+        slider_row(ui, "Intensity", &mut s.ribbons_intensity, 0.05..=10.0, |v| format!("{v:.2}"), true);
+        slider_row(ui, "Persistence", &mut s.ribbons_persistence, 0.0001..=0.95, |v| format!("{v:.3} /s"), true);
+        slider_row(ui, "Saturation", &mut s.ribbons_saturation, 0.0..=1.0, |v| format!("{v:.2}"), false);
+        hint(ui, "Colours: pitch class on a circle of fifths, pulled toward the key. The scope tint is the base.");
+        ui.add_space(6.0);
+        if ghost_button(ui, "Reset ribbons", false).clicked() {
             s.reset_ribbons();
         }
-        ui.add(egui::Slider::new(&mut s.ribbons_count, 256..=PARTICLES).logarithmic(true).text("particles"));
-        ui.add(egui::Slider::new(&mut s.ribbons_speed, 0.02..=2.0).logarithmic(true).text("speed"));
-        ui.add(egui::Slider::new(&mut s.ribbons_scale, 0.3..=6.0).logarithmic(true).text("field scale"));
-        ui.add(egui::Slider::new(&mut s.ribbons_curl, 0.0..=3.0).text("curl"));
-        ui.add(egui::Slider::new(&mut s.ribbons_vortex, 0.0..=3.0).text("chroma vortices"));
-        ui.add(egui::Slider::new(&mut s.ribbons_width, 0.3..=4.0).text("line width px"));
-        ui.add(egui::Slider::new(&mut s.ribbons_intensity, 0.05..=10.0).logarithmic(true).text("intensity"));
-        ui.add(egui::Slider::new(&mut s.ribbons_persistence, 0.0001..=0.95).logarithmic(true).text("persistence /s"));
-        ui.add(egui::Slider::new(&mut s.ribbons_saturation, 0.0..=1.0).text("saturation"));
-        ui.small("Colors: pitch class on a circle of fifths, pulled toward the key. Tint (scope section) is the base.");
     }
 }
 

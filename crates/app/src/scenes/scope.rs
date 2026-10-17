@@ -161,32 +161,29 @@ impl Scene for Scope {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, s: &mut Settings) {
-        if ui.button("Reset scope to defaults").clicked() {
-            s.reset_scope();
-        }
-        ui.add(egui::Slider::new(&mut s.gain, 0.05..=3.0).logarithmic(true).text("gain"));
-        ui.checkbox(&mut s.auto_gain, "auto gain");
-        ui.add(egui::Slider::new(&mut s.rotation_deg, -180.0..=180.0).text("rotation °"));
-        ui.add(egui::Slider::new(&mut s.beam_width, 0.3..=6.0).text("beam width px"));
-        ui.add(egui::Slider::new(&mut s.beam_intensity, 0.05..=20.0).logarithmic(true).text("beam intensity"));
-        ui.add(egui::Slider::new(&mut s.persistence, 0.0001..=0.9).logarithmic(true).text("persistence /s"));
-        ui.add(egui::Slider::new(&mut s.beat_pulse, 0.0..=1.0).text("beat pulse"));
+        use crate::widgets::{ghost_button, hint, slider_row, toggle_row};
+        slider_row(ui, "Gain", &mut s.gain, 0.05..=3.0, |v| format!("{v:.2}"), true);
+        toggle_row(ui, "Auto gain", &mut s.auto_gain);
+        ui.add_space(4.0);
+        slider_row(ui, "Rotation", &mut s.rotation_deg, -180.0..=180.0, |v| format!("{v:.0}°"), false);
+        slider_row(ui, "Beam width", &mut s.beam_width, 0.3..=6.0, |v| format!("{v:.1} px"), false);
+        slider_row(ui, "Beam intensity", &mut s.beam_intensity, 0.05..=20.0, |v| format!("{v:.2}"), true);
+        slider_row(ui, "Persistence", &mut s.persistence, 0.0001..=0.9, |v| format!("{v:.3} /s"), true);
+        slider_row(ui, "Beat pulse", &mut s.beat_pulse, 0.0..=1.0, |v| format!("{v:.2}"), false);
         ui.horizontal(|ui| {
-            ui.label("tint");
+            ui.label("Tint");
             ui.color_edit_button_rgb(&mut s.tint);
-            if ui.button("P1 green").clicked() {
-                s.tint = [0.40, 1.0, 0.55];
-            }
-            if ui.button("P4 white").clicked() {
-                s.tint = [0.85, 0.9, 1.0];
-            }
-            if ui.button("amber").clicked() {
-                s.tint = [1.0, 0.65, 0.2];
-            }
-            if ui.button("ice").clicked() {
-                s.tint = [0.55, 0.8, 1.0];
+            for (name, tint) in [("green", [0.40, 1.0, 0.55]), ("white", [0.85, 0.9, 1.0]), ("amber", [1.0, 0.65, 0.2]), ("ice", [0.55, 0.8, 1.0])] {
+                if ui.add(egui::Button::new(egui::RichText::new(name).size(11.0)).frame(false)).clicked() {
+                    s.tint = tint;
+                }
             }
         });
+        hint(ui, "The tint is the base colour for every scene.");
+        ui.add_space(6.0);
+        if ghost_button(ui, "Reset scope", false).clicked() {
+            s.reset_scope();
+        }
     }
 }
 

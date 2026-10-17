@@ -152,6 +152,9 @@ struct Running {
     spotify_installed: bool,
     quit: bool,
     tray: Option<Tray>,
+    /// "Let the visuals work": every UI element hidden until H / Tab.
+    zen: bool,
+    cursor_hidden: bool,
 }
 
 fn time_floor(t: f32) -> i32 {
@@ -264,6 +267,8 @@ impl Running {
             spotify_installed: platform::spotify_installed(),
             quit: false,
             tray: None,
+            zen: false,
+            cursor_hidden: false,
         };
         let scene_names: Vec<&str> = running.director.scenes.iter().map(|s| s.name()).collect();
         let monitors = running.monitors();
@@ -606,7 +611,7 @@ impl Running {
             scene_current: self.director.current,
             scene_fading: self.director.is_fading(),
             last_cue: self.director.last_cue,
-            now_playing: now_playing.as_ref().map(|n| format!("♪ {} — {}{}", n.artist, n.title, if n.playing { "" } else { " (paused)" })),
+            now_playing: now_playing.as_ref().map(|n| format!("{} — {}{}", n.artist, n.title, if n.playing { "" } else { " (paused)" })),
             calibration: self.calibration.as_ref().map(|c| c.view()),
             looks: self.looks.clone(),
             update: self.update.lock().map(|u| u.clone()).unwrap_or_default(),
@@ -615,8 +620,14 @@ impl Running {
         };
         let notices = self.notices();
         let pinned = self.settings.show_ui || calibrating || self.first_run.is_some() || self.show_shortcuts || self.start.elapsed().as_secs_f32() < 5.0;
-        let chrome_wanted = self.chrome.wants_visible(&self.egui_ctx, fullscreen, self.settings.chrome_autohide, pinned);
-        let toast_on = self.settings.toast && !(overlay_on) && self.toast.as_ref().is_some_and(|(_, _, t)| t.elapsed().as_secs_f32() < TOAST_SECONDS);
+        let chrome_wanted = !self.zen && self.chrome.wants_visible(&self.egui_ctx, fullscreen, self.settings.chrome_autohide, pinned);
+        // Cursor: gone in fullscreen once everything is hidden and the mouse rests.
+        let want_cursor_hidden = fullscreen && !chrome_wanted && !self.settings.show_ui && self.first_run.is_none() && !calibrating && self.chrome.last_mouse.elapsed().as_secs_f32() > theme::AUTOHIDE_S;
+        if want_cursor_hidden != self.cursor_hidden {
+            self.cursor_hidden = want_cursor_hidden;
+            self.gpu.window.set_cursor_visible(!want_cursor_hidden);
+        }
+        let toast_on = !self.zen && self.settings.toast && !(overlay_on) && self.toast.as_ref().is_some_and(|(_, _, t)| t.elapsed().as_secs_f32() < TOAST_SECONDS);
         let accent = crate::chrome::accent(self.tint_current);
         let target_short = self.settings.target_process.trim_end_matches(".exe").to_lowercase();
 
@@ -748,6 +759,9 @@ impl Running {
         if chrome_actions.toggle_auto {
             self.settings.auto_scenes = !self.settings.auto_scenes;
         }
+        if chrome_actions.hide_ui || panel_actions.hide_ui {
+            self.set_zen(true);
+        }
         if let Some(s) = chrome_actions.open_section {
             self.settings.section = s;
             self.settings.show_ui = true;
@@ -866,6 +880,16 @@ impl Running {
         out
     }
 
+    /// Hide (or show) every UI element. Hiding also closes the panel.
+    fn set_zen(&mut self, on: bool) {
+        self.zen = on;
+        if on {
+            self.settings.show_ui = false;
+            self.show_shortcuts = false;
+            self.calibration_result = Some(("UI hidden · H or Tab shows it again".into(), Instant::now() - Duration::from_secs_f32(NOTICE_SECONDS - 2.5)));
+        }
+    }
+
     fn toggle_calibration(&mut self) {
         self.calibration = match self.calibration {
             Some(_) => None,
@@ -886,6 +910,7 @@ impl Running {
 
     fn key(&mut self, code: KeyCode, event_loop: &ActiveEventLoop) {
         match code {
+            // Esc steps outward: sheet → panel → fullscreen → quit.
             KeyCode::Escape => {
                 if self.show_shortcuts {
                     self.show_shortcuts = false;
@@ -894,12 +919,24 @@ impl Running {
                 } else if self.first_run.is_some() {
                     self.first_run = None;
                     self.settings.onboarded = true;
+                } else if self.settings.show_ui {
+                    self.settings.show_ui = false;
+                } else if self.gpu.window.fullscreen().is_some() {
+                    self.set_fullscreen(false);
                 } else {
                     event_loop.exit();
                 }
             }
             KeyCode::F11 => self.toggle_fullscreen(),
-            KeyCode::Tab => self.settings.show_ui = !self.settings.show_ui,
+            KeyCode::Tab => {
+                if self.zen {
+                    self.zen = false;
+                    self.settings.show_ui = true;
+                } else {
+                    self.settings.show_ui = !self.settings.show_ui;
+                }
+            }
+            KeyCode::KeyH => self.set_zen(!self.zen),
             KeyCode::F5 => {
                 self.shaders = ShaderSet::load();
                 self.reload_shaders();

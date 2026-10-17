@@ -75,6 +75,7 @@ pub struct Actions {
     pub set_target: Option<String>,
     pub show_shortcuts: bool,
     pub rerun_first_run: bool,
+    pub hide_ui: bool,
 }
 
 /// Scratch UI state that is not a setting.
@@ -143,9 +144,9 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState
         // Footer.
         let fy = rect.max.y - 44.0;
         p.hline((rect.min.x + RAIL_W + 20.0)..=(rect.max.x - 20.0), fy, egui::Stroke::new(1.0, HAIRLINE));
-        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 14.0), Align2::LEFT_CENTER, "Tab panel   1-3 scene   C calibrate", theme::mono(10.5), TEXT_3);
-        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 30.0), Align2::LEFT_CENTER, "F11 fullscreen   ?  all shortcuts", theme::mono(10.5), TEXT_3);
-        p.text(pos2(rect.max.x - 20.0, fy + 30.0), Align2::RIGHT_CENTER, crate::VERSION, theme::mono(10.0), TEXT_3);
+        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 14.0), Align2::LEFT_CENTER, "H hide everything   Tab panel   1-3 scene", theme::mono(10.5), TEXT_3);
+        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 30.0), Align2::LEFT_CENTER, "C calibrate   F11 fullscreen   ?  more", theme::mono(10.5), TEXT_3);
+        p.text(pos2(rect.max.x - 20.0, fy + 14.0), Align2::RIGHT_CENTER, crate::VERSION, theme::mono(10.0), TEXT_3);
         let sc = ui.interact(Rect::from_min_size(pos2(rect.min.x + RAIL_W + 20.0, fy + 22.0), vec2(220.0, 16.0)), egui::Id::unique("footer-shortcuts"), Sense::click());
         if sc.clicked() {
             a.show_shortcuts = true;
@@ -155,7 +156,9 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState
 }
 
 fn scene_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, scene: &mut dyn Scene, a: &mut Actions) {
-    section_header(ui, "Scene", None, None);
+    if section_header(ui, "Scene", None, Some("Hide UI (H)")) {
+        a.hide_ui = true;
+    }
     ui.horizontal_wrapped(|ui| {
         for (i, name) in stats.scene_names.iter().enumerate() {
             let active = i == stats.scene_current;
@@ -169,8 +172,8 @@ fn scene_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, scen
         }
     });
     ui.add_space(4.0);
-    toggle_row(ui, "Auto director (track change, drops, quiet, dwell)", &mut settings.auto_scenes);
-    hint(ui, &format!("last cue: {}", stats.last_cue));
+    toggle_row(ui, "Auto director (A)", &mut settings.auto_scenes);
+    hint(ui, &format!("Changes scene on track change, drops, quiet, dwell. Last cue: {}", stats.last_cue));
     if let Some(np) = &stats.now_playing {
         hint(ui, np);
     }

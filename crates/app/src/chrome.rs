@@ -35,6 +35,7 @@ pub struct ChromeActions {
     pub toggle_maximize: bool,
     pub close: bool,
     pub start_drag: bool,
+    pub hide_ui: bool,
 }
 
 /// Regions the native hit test needs, in logical points.
@@ -198,6 +199,19 @@ impl Chrome {
                 self.regions.interactive.push(r);
                 x -= w + 8.0;
             }
+            // Hide-everything button (H), left of the chips.
+            let hr = Rect::from_min_size(pos2(x - 28.0, bar.min.y), vec2(28.0, BAR_H));
+            let hresp = ui.interact(hr, egui::Id::unique("chrome-hide"), Sense::click()).on_hover_text("Hide the interface (H). H or Tab brings it back.");
+            let hc = if hresp.hovered() { TEXT } else { TEXT_3 };
+            let c = hr.center();
+            // eye-with-slash glyph
+            painter.add(egui::Shape::line(vec![pos2(c.x - 6.0, c.y), pos2(c.x - 3.0, c.y - 3.5), pos2(c.x + 3.0, c.y - 3.5), pos2(c.x + 6.0, c.y), pos2(c.x + 3.0, c.y + 3.5), pos2(c.x - 3.0, c.y + 3.5), pos2(c.x - 6.0, c.y)], egui::Stroke::new(1.0, hc)));
+            painter.circle_filled(c, 1.6, hc);
+            painter.line_segment([pos2(c.x - 6.0, c.y + 6.0), pos2(c.x + 6.0, c.y - 6.0)], egui::Stroke::new(1.0, hc));
+            if hresp.clicked() {
+                actions.hide_ui = true;
+            }
+            self.regions.interactive.push(hr);
         });
         actions
     }

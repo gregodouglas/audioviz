@@ -186,6 +186,7 @@ pub fn calibration(ctx: &egui::Context, view: &CalibrationView, current_delay: f
 
 pub const SHORTCUTS: &[(&str, &str)] = &[
     ("Tab", "settings panel"),
+    ("H", "hide everything; H or Tab shows it again"),
     ("1 2 3", "scene"),
     ("Space", "next scene (tap while calibrating)"),
     ("A", "auto scene director"),
@@ -196,7 +197,7 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("F11", "fullscreen on this monitor"),
     ("F5", "reload shaders (dev)"),
     ("?", "this sheet"),
-    ("Esc", "close sheet · quit"),
+    ("Esc", "close sheet · close panel · leave fullscreen · quit"),
 ];
 
 /// Returns true when the sheet should close.

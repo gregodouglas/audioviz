@@ -100,17 +100,18 @@ impl Scene for Starfield {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, s: &mut Settings) {
-        if ui.button("Reset starfield to defaults").clicked() {
+        use crate::widgets::{ghost_button, hint, slider_row};
+        slider_row(ui, "Lens mass", &mut s.star_mass, 0.2..=3.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Star density", &mut s.star_density, 0.1..=2.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Grid lines", &mut s.star_grid, 0.0..=3.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Onset twinkle", &mut s.star_twinkle, 0.0..=2.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Drift", &mut s.star_drift, 0.0..=4.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Type scale", &mut s.type_scale, 0.5..=2.0, |v| format!("{v:.2}"), false);
+        hint(ui, "Lens mass follows the bass; the spectrum wobbles the ring; onsets twinkle.");
+        ui.add_space(6.0);
+        if ghost_button(ui, "Reset starfield", false).clicked() {
             s.reset_starfield();
         }
-        ui.add(egui::Slider::new(&mut s.star_mass, 0.2..=3.0).text("lens mass"));
-        ui.add(egui::Slider::new(&mut s.star_density, 0.1..=2.0).text("star density"));
-        ui.add(egui::Slider::new(&mut s.star_grid, 0.0..=3.0).text("grid lines"));
-        ui.add(egui::Slider::new(&mut s.star_twinkle, 0.0..=2.0).text("onset twinkle"));
-        ui.add(egui::Slider::new(&mut s.star_drift, 0.0..=4.0).text("drift"));
-        ui.checkbox(&mut s.type_overlay, "track title overlay (Swiss grid)");
-        ui.add(egui::Slider::new(&mut s.type_scale, 0.5..=2.0).text("type scale"));
-        ui.small("Lens mass follows the bass; the spectrum wobbles the ring; onsets twinkle.");
     }
 }
 

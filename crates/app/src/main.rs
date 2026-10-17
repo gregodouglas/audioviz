@@ -37,8 +37,9 @@ usage: audioviz [--version] [--help] [--tray] [--set key=value]...
   --set key=value   change a setting in settings.json before starting,
                     e.g. --set start_fullscreen=true --set monitor=1
 
-keys: Tab panel · 1-3/Space scenes · A auto scenes · T title overlay · L next look
-      C calibrate audio delay · ? shortcuts · F11 fullscreen · F5 reload shaders · Esc quit
+keys: Tab panel · H hide everything · 1-3/Space scenes · A auto scenes · T title overlay
+      L next look · C calibrate audio delay · ? shortcuts · F11 fullscreen · F5 reload shaders
+      Esc closes sheet / panel / fullscreen, then quits
 settings: %APPDATA%\\audioviz\\settings.json (Windows)
 env: RUST_LOG=audioviz=debug for a per-second stats line
      AUDIOVIZ_SCENE=n AUDIOVIZ_SIZE=WxH AUDIOVIZ_DEFAULTS=1 (dev overrides)

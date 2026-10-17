@@ -520,7 +520,11 @@ pub struct SigilParams {
     pub rings: f32,
     pub rays: f32,
     pub orbs: f32,
-    /// The painterly ground and its splatter.
+    /// The centre star polygon, cardinal triangles and diamonds.
+    pub shapes: f32,
+    /// The sigil trace and its pen.
+    pub trace: f32,
+    /// The painterly ground and its splatter (0 = none; the glyph stands alone).
     pub ground: f32,
     /// Ray afterimage life, seconds.
     pub persistence: f32,
@@ -534,7 +538,7 @@ pub struct SigilParams {
 
 impl Default for SigilParams {
     fn default() -> Self {
-        Self { scale: 0.8, glow: 1.0, rings: 1.0, rays: 1.0, orbs: 1.0, ground: 1.0, persistence: 0.7, spin: 1.0, react: 1.0, rebuild: true }
+        Self { scale: 0.8, glow: 1.0, rings: 1.0, rays: 1.0, orbs: 1.0, shapes: 1.0, trace: 1.0, ground: 0.0, persistence: 0.7, spin: 1.0, react: 1.0, rebuild: true }
     }
 }
 

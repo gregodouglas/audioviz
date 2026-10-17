@@ -75,8 +75,8 @@ fn col_at(pos: f32) -> vec3<f32> {
 // coloured halo with a long tail.
 fn tube(d: f32, w: f32, c: vec3<f32>) -> vec3<f32> {
     let core = exp(-(d * d) / (w * w));
-    let halo = exp(-d / (w * 5.0)) * 0.5 + 0.1 * w / (d + w * 0.5);
-    return mix(c, vec3<f32>(1.0), 0.7) * core * 2.6 + c * halo * P.style.x;
+    let halo = exp(-d / (w * 4.0)) * 0.45 + 0.07 * w / (d + w * 0.5);
+    return mix(c, vec3<f32>(1.0), 0.5) * core * 2.4 + c * halo * P.style.x;
 }
 
 // Visibility of an element with light-up order `order` (0 = first) and a
@@ -105,6 +105,26 @@ fn segment(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> vec2<f32> {
     let ba = b - a;
     let h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
     return vec2<f32>(length(pa - ba * h), h);
+}
+
+// Outline distance to the star polygon {n/k} of circumradius `r`: every
+// vertex joined to the k-th next one (k = 1 is the plain polygon).
+fn polygram(p: vec2<f32>, n: u32, k: u32, r: f32, rot: f32) -> f32 {
+    var d = 1e3;
+    for (var i = 0u; i < n; i++) {
+        let a0 = rot + f32(i) * TAU / f32(n);
+        let a1 = rot + f32((i + k) % n) * TAU / f32(n);
+        d = min(d, segment(p, r * vec2<f32>(cos(a0), sin(a0)), r * vec2<f32>(cos(a1), sin(a1))).x);
+    }
+    return d;
+}
+
+fn trace_point(i: u32) -> vec2<f32> {
+    let v = P.trace[(i / 2u) & 3u];
+    if ((i & 1u) == 0u) {
+        return v.xy;
+    }
+    return v.zw;
 }
 
 // ---------------------------------------------------------------- ground
@@ -170,7 +190,10 @@ fn fs_main(in: FsIn) -> Out {
     let r = length(p);
     let ang = atan2(p.y, p.x);
 
-    var acc = ground(p, energy);
+    var acc = vec3<f32>(0.0);
+    if (P.style.y > 0.001) {
+        acc = ground(p, energy);
+    }
     var fresh = vec3<f32>(0.0);
 
     // Centre rings, one per band.
@@ -189,7 +212,7 @@ fn fs_main(in: FsIn) -> Out {
             // Double: two thin lines either side.
             d = abs(d - 0.018);
         }
-        var bright = (0.35 + 0.9 * b * react) * P.misc.y;
+        var bright = (0.3 + 0.6 * b * react) * P.misc.y;
         if (i == 0u) {
             bright += 0.8 * beat * react;
         }
@@ -231,6 +254,83 @@ fn fs_main(in: FsIn) -> Out {
         let dot_r = P.orbit.z * (0.22 + 0.25 * ch * react + 0.2 * beat * react);
         let dotl = tube(max(dc - dot_r, 0.0), w * 1.3, col) * 1.2;
         acc += (ring + dotl) * bright * lit(0.62 + 0.02 * f32(kk % 3u), 100.0 + f32(kk));
+    }
+
+    // Centre polygram, nested, breathing with the bass and flashing on the beat.
+    if (P.tri.w > 0.001) {
+        let n = u32(P.shape.x);
+        let k = u32(P.shape.y);
+        let nest = u32(P.trace_meta.w);
+        let bass = band6(1u);
+        let pcol = col_at(0.9);
+        let w = max(0.005, px * 1.1);
+        for (var lv = 0u; lv < nest; lv++) {
+            let shrink = pow(0.72, f32(lv));
+            let rr = P.shape.z * shrink * (1.0 + 0.05 * bass * react);
+            // Alternate levels turn against each other by half a step.
+            let rot = P.shape.w * select(1.0, -1.3, (lv & 1u) == 1u) + f32(lv) * PI / f32(n);
+            let d = polygram(p, n, k, rr, rot);
+            let bright = (0.45 + 0.35 * bass * react + 0.5 * beat * react) * P.tri.w;
+            acc += tube(d, w, pcol) * bright * lit(0.15 + 0.08 * f32(lv), 200.0 + f32(lv));
+        }
+    }
+
+    // Cardinal triangles (nested, pointing outward) and diagonal diamonds.
+    if (P.tri.w > 0.001) {
+        let nest = u32(P.trace_meta.w);
+        let step_a = TAU / 8.0;
+        let kq = floor(0.5 + ang / step_a);
+        let kq8 = u32((i32(kq) % 8 + 8) % 8);
+        let ca = kq * step_a;
+        let dir = vec2<f32>(cos(ca), sin(ca));
+        let cm = P.tri.x * dir;
+        let q = p - cm;
+        let w = max(0.005, px * 1.1);
+        if ((kq8 & 1u) == 0u) {
+            // Cardinal: triangles, apex outward, own-axis turn on bars.
+            let mid = band6(3u);
+            let tcol = col_at(0.65);
+            for (var lv = 0u; lv < nest; lv++) {
+                let size = P.tri.y * pow(0.62, f32(lv));
+                let d = abs(polygon(q, 3.0, size, -ca + P.tri.z * select(1.0, -1.0, (lv & 1u) == 1u)));
+                let bright = (0.4 + 0.5 * mid * react) * P.tri.w;
+                acc += tube(d, w, tcol) * bright * lit(0.4 + 0.07 * f32(lv), 300.0 + f32(lv) + f32(kq8));
+            }
+        } else {
+            // Diagonal: a diamond lit by the treble, with a dot.
+            let treb = band6(4u);
+            let dcol = col_at(0.3);
+            let d = abs(polygon(q, 4.0, P.tri.y * 0.7 * (1.0 + 0.15 * treb * react), -ca));
+            let bright = (0.3 + 0.7 * treb * react) * P.tri.w;
+            acc += (tube(d, w, dcol) + tube(length(q), w * 1.2, dcol) * 0.8) * bright * lit(0.52, 320.0 + f32(kq8));
+        }
+    }
+
+    // Sigil trace: a polyline through orbit points, a dim steady line with a
+    // beat-driven pen whose glow stays in the trail.
+    let tn = u32(P.trace_meta.x);
+    if (tn >= 2u && P.trace_meta.z > 0.001) {
+        let w = max(0.004, px * 1.1);
+        let tcol = col_at(0.5 + P.style.w * 0.0);
+        var d = 1e3;
+        for (var i = 0u; i + 1u < tn; i++) {
+            d = min(d, segment(p, trace_point(i), trace_point(i + 1u)).x);
+        }
+        let p0 = trace_point(0u);
+        let pe = trace_point(tn - 1u);
+        let pprev = trace_point(tn - 2u);
+        // Terminals: a small circle at the start, a cross-bar at the end.
+        d = min(d, abs(length(p - p0) - 0.03));
+        let tdir = normalize(pe - pprev);
+        let perp = vec2<f32>(-tdir.y, tdir.x);
+        d = min(d, segment(p, pe - perp * 0.035, pe + perp * 0.035).x);
+        let on = lit(0.75, 400.0);
+        acc += tube(d, w, tcol) * 0.3 * P.trace_meta.z * on;
+        // Pen.
+        let pen = P.trace_meta.y;
+        let si = u32(clamp(floor(pen), 0.0, f32(tn - 2u)));
+        let pp = mix(trace_point(si), trace_point(si + 1u), fract(pen));
+        fresh += tube(length(p - pp), w * 2.2, tcol) * (0.8 + 0.6 * beat * react) * P.trace_meta.z * on;
     }
 
     // Drops: a soft flare from the centre, left in the trail.

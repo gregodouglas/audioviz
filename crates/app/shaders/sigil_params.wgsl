@@ -1,4 +1,4 @@
-// Sigil visual uniform (scenes/sigil.rs::GlyphParams, 704 + 512 bytes).
+// Sigil visual uniform (scenes/sigil.rs::GlyphParams, 816 + 512 bytes).
 struct GlyphParams {
     resolution: vec2<f32>,
     time: f32,
@@ -13,5 +13,9 @@ struct GlyphParams {
     music: vec4<f32>,             // energy (~1 average), onset, beat, flare (low onsets: drops)
     style: vec4<f32>,             // glow, ground, ray gain, palette shift
     misc: vec4<f32>,              // trail keep (per frame), ring gain, spin angle, react
+    shape: vec4<f32>,             // polygram: sides, skip (1 = plain polygon), radius, rotation
+    tri: vec4<f32>,               // cardinal triangles / diamonds: radius, size, rotation, gain
+    trace: array<vec4<f32>, 4>,   // sigil trace: up to eight points (xy pairs), glyph units
+    trace_meta: vec4<f32>,        // point count, pen position (segments), trace gain, nesting depth
     palette: array<vec4<f32>, 32>,
 };

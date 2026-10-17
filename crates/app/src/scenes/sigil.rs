@@ -30,6 +30,10 @@ pub struct GlyphParams {
     pub music: [f32; 4],
     pub style: [f32; 4],
     pub misc: [f32; 4],
+    pub shape: [f32; 4],
+    pub tri: [f32; 4],
+    pub trace: [[f32; 4]; 4],
+    pub trace_meta: [f32; 4],
     pub palette: crate::color::Table,
 }
 
@@ -56,8 +60,18 @@ struct Arrangement {
     ray_len: f32,
     /// Direction of the glyph's slow spin.
     spin_dir: f32,
-    /// Nesting depth for the triangle structure (second pass).
+    /// Nesting depth of the polygram and the cardinal triangles.
     nest: u32,
+    /// Centre star polygon {n/k} and its circumradius.
+    poly_n: u32,
+    poly_k: u32,
+    poly_r: f32,
+    /// Cardinal triangles / diagonal diamonds: centre radius and size.
+    tri_r: f32,
+    tri_size: f32,
+    /// Sigil trace: orbit positions (pitch classes) it passes through.
+    trace: [u8; 8],
+    trace_n: usize,
     seed: u64,
 }
 
@@ -113,15 +127,42 @@ impl Arrangement {
             ring.speed = dir * (0.03 + 0.08 * rnd(&mut s));
             ring.rot = rnd(&mut s) * std::f32::consts::TAU;
         }
-        let symmetry = [1u32, 2, 2, 3, 4, 6][(rnd(&mut s) * 5.99) as usize];
+        let symmetry = [1u32, 1, 2, 2, 3, 4][(rnd(&mut s) * 5.99) as usize];
+        let orb_radius = 0.035 + 0.03 * rnd(&mut s);
+        // Centre star polygon: {3/1} {4/1} {5/2} {6/2} {7/3} {8/3}; sits between
+        // the inner rings and the orbit.
+        let (poly_n, poly_k) = [(3u32, 1u32), (4, 1), (5, 2), (6, 2), (7, 3), (8, 3), (6, 2), (5, 2)][(rnd(&mut s) * 7.99) as usize];
+        let poly_r = orbit_radius * (0.5 + 0.3 * rnd(&mut s));
+        // Triangles inside the orbit or beyond it.
+        let outside = rnd(&mut s) < 0.5;
+        let tri_r = if outside { orbit_radius + orb_radius + 0.12 } else { (poly_r + orbit_radius) * 0.5 };
+        let tri_size = if outside { 0.075 } else { ((orbit_radius - poly_r) * 0.32).clamp(0.035, 0.08) };
+        // Trace: four to seven distinct orbit points.
+        let trace_n = 4 + (rnd(&mut s) * 3.99) as usize;
+        let mut trace = [0u8; 8];
+        let mut n = 0;
+        while n < trace_n {
+            let c = (rnd(&mut s) * 11.99) as u8;
+            if n == 0 || (trace[n - 1] != c && (n < 2 || trace[n - 2] != c)) {
+                trace[n] = c;
+                n += 1;
+            }
+        }
         Self {
             rings,
             symmetry,
             orbit_radius,
-            orb_radius: 0.035 + 0.03 * rnd(&mut s),
+            orb_radius,
             ray_len: 0.3 + 0.35 * rnd(&mut s),
             spin_dir: if rnd(&mut s) < 0.5 { -1.0 } else { 1.0 },
-            nest: 2 + (rnd(&mut s) * 2.99) as u32,
+            nest: 1 + (rnd(&mut s) * 2.99) as u32,
+            poly_n,
+            poly_k,
+            poly_r,
+            tri_r,
+            tri_size,
+            trace,
+            trace_n,
             seed,
         }
     }
@@ -140,6 +181,8 @@ const OUT_S: f32 = 1.6;
 const IN_S: f32 = 3.2;
 /// Ray life (strength e-fold), seconds.
 const RAY_LIFE: f32 = 0.9;
+/// Least time between ray strikes, seconds.
+const RAY_GAP: f32 = 0.12;
 
 pub struct Sigil {
     out: wgpu::TextureView,
@@ -164,6 +207,14 @@ pub struct Sigil {
     spin: f32,
     orbit_angle: f32,
     last_onset: bool,
+    since_ray: f32,
+    poly_rot: f32,
+    /// Cardinal triangles: current and bar-stepped target rotation.
+    tri_rot: f32,
+    tri_target: f32,
+    last_bar: u32,
+    /// Pen position along the trace, in segments.
+    pen: f32,
 }
 
 impl Sigil {
@@ -196,6 +247,12 @@ impl Sigil {
             spin: 0.0,
             orbit_angle: 0.0,
             last_onset: false,
+            since_ray: 1.0,
+            poly_rot: 0.0,
+            tri_rot: 0.0,
+            tri_target: 0.0,
+            last_bar: 0,
+            pen: 0.0,
         })
     }
 
@@ -298,8 +355,10 @@ impl Scene for Sigil {
         let beat = f.beat_pulse * f.beat_confidence;
 
         // Rays: one strike per onset, at the loudest pitch class.
-        let hit = f.onset_hit[3] || f.onset_hit[1] || f.onset_hit[2];
-        if hit && !self.last_onset && self.lit > 0.3 && !self.going_out && !f.silent {
+        self.since_ray += dt;
+        let hit = f.onset_hit[3];
+        if hit && !self.last_onset && self.since_ray > RAY_GAP && self.lit > 0.3 && !self.going_out && !f.silent {
+            self.since_ray = 0.0;
             let class = f.chroma.iter().enumerate().fold((0usize, -1.0f32), |a, (i, v)| if *v > a.1 { (i, *v) } else { a }).0;
             let strength = (0.55 + 0.7 * f.onset_strength[3].min(1.0) + 0.5 * flare).min(1.5);
             self.spawn_rays(class, strength);
@@ -320,6 +379,27 @@ impl Scene for Sigil {
         for ring in self.arrangement.rings.iter_mut() {
             ring.rot += dt * ring.speed * pace;
         }
+        self.poly_rot -= dt * 0.04 * self.arrangement.spin_dir * pace;
+        // Triangles step a twelfth of a turn every bar (four beats) and glide there.
+        let bar = f.beat_count / 4;
+        if bar != self.last_bar && f.beat_confidence > 0.3 {
+            self.last_bar = bar;
+            self.tri_target += std::f32::consts::TAU / 12.0;
+        }
+        self.tri_target += dt * 0.02 * pace;
+        self.tri_rot += (self.tri_target - self.tri_rot) * (1.0 - (-dt / 0.25).exp());
+        // The pen walks one trace segment per beat, or at a steady pace without a beat.
+        let segs = (self.arrangement.trace_n.max(2) - 1) as f32;
+        if f.beat_confidence > 0.3 {
+            let want = ((f.beat_count % (segs as u32).max(1)) as f32 + f.beat_phase.clamp(0.0, 1.0)).min(segs);
+            let mut diff = want - self.pen;
+            if diff < -segs * 0.5 {
+                diff += segs;
+            }
+            self.pen = (self.pen + diff * (1.0 - (-dt / 0.08).exp())).rem_euclid(segs);
+        } else {
+            self.pen = (self.pen + dt * 0.7 * pace).rem_euclid(segs);
+        }
 
         let mut bands = [[0.0f32; 4]; 4];
         for (i, b) in self.bands.iter().enumerate() {
@@ -339,6 +419,12 @@ impl Scene for Sigil {
             chroma[i / 4][i % 4] = (0.6 * f.chroma_slow[i] + 0.6 * f.chroma[i]).clamp(0.0, 1.2);
         }
         let a = &self.arrangement;
+        let mut trace = [[0.0f32; 4]; 4];
+        for i in 0..a.trace_n.min(8) {
+            let ang = self.orbit_angle + a.trace[i] as f32 * std::f32::consts::TAU / 12.0;
+            trace[i / 2][(i % 2) * 2] = a.orbit_radius * ang.cos();
+            trace[i / 2][(i % 2) * 2 + 1] = a.orbit_radius * ang.sin();
+        }
         let params = GlyphParams {
             resolution: [ctx.width as f32, ctx.height as f32],
             time: ctx.time,
@@ -353,6 +439,10 @@ impl Scene for Sigil {
             music: [self.energy, onset, beat, flare],
             style: [s.glow, s.ground, s.rays, ctx.palette_shift],
             misc: [(-dt / s.persistence.max(0.02)).exp(), s.rings, self.spin, s.react],
+            shape: [a.poly_n as f32, a.poly_k as f32, a.poly_r, self.poly_rot],
+            tri: [a.tri_r, a.tri_size, self.tri_rot, s.shapes],
+            trace,
+            trace_meta: [a.trace_n as f32, self.pen, s.trace, a.nest as f32],
             palette: ctx.palette.copied().unwrap_or([[0.0; 4]; crate::color::ENTRIES]),
         };
         queue.write_buffer(&self.params_buf, 0, bytemuck::bytes_of(&params));
@@ -375,12 +465,14 @@ impl Scene for Sigil {
         slider_row(ui, "Rings", &mut s.rings, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Rays", &mut s.rays, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Orbs", &mut s.orbs, 0.0..=2.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Shapes", &mut s.shapes, 0.0..=2.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Trace", &mut s.trace, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Ground", &mut s.ground, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Afterimage", &mut s.persistence, 0.05..=4.0, |v| format!("{v:.2} s"), true);
         slider_row(ui, "Spin", &mut s.spin, 0.0..=4.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Reacts", &mut s.react, 0.0..=2.0, |v| format!("{v:.2}"), false);
         toggle_row(ui, "Rebuild on track change", &mut s.rebuild);
-        hint(ui, "Rings breathe with their band (sub to air, inside out), rays strike on onsets at the angle of the pitch class, the orbs light with the chord. Give the layer the neon or rave palette.");
+        hint(ui, "Rings breathe with their band (sub to air, inside out), rays strike on onsets at the angle of the pitch class, the orbs light with the chord, the star and triangles turn with energy and step on bars, and a pen writes the sigil trace in time with the beat. Every track draws a new glyph. Give the layer the neon or rave palette.");
         ui.add_space(6.0);
         if ghost_button(ui, "Reset sigil", false).clicked() {
             *s = Default::default();
@@ -406,7 +498,7 @@ mod tests {
 
     #[test]
     fn params_layout_matches_wgsl() {
-        assert_eq!(std::mem::size_of::<GlyphParams>(), 704 + 512);
+        assert_eq!(std::mem::size_of::<GlyphParams>(), 816 + 512);
         assert_eq!(offset_of!(GlyphParams, tint), 16);
         assert_eq!(offset_of!(GlyphParams, bands), 32);
         assert_eq!(offset_of!(GlyphParams, rings), 96);
@@ -415,7 +507,10 @@ mod tests {
         assert_eq!(offset_of!(GlyphParams, orbit), 624);
         assert_eq!(offset_of!(GlyphParams, build), 640);
         assert_eq!(offset_of!(GlyphParams, misc), 688);
-        assert_eq!(offset_of!(GlyphParams, palette), 704);
+        assert_eq!(offset_of!(GlyphParams, shape), 704);
+        assert_eq!(offset_of!(GlyphParams, trace), 736);
+        assert_eq!(offset_of!(GlyphParams, trace_meta), 800);
+        assert_eq!(offset_of!(GlyphParams, palette), 816);
     }
 
     #[test]
@@ -429,6 +524,10 @@ mod tests {
                 assert!(r.radius > 0.05 && r.radius <= 1.2, "seed {seed}: radius {}", r.radius);
             }
             assert!((1..=6).contains(&a.symmetry));
+            assert!(a.trace_n >= 4 && a.trace_n <= 7);
+            for w in a.trace[..a.trace_n].windows(2) {
+                assert_ne!(w[0], w[1], "seed {seed}: trace repeats a point");
+            }
         }
     }
 }

@@ -36,7 +36,8 @@ impl Strip {
     }
 
     /// `t` is the animated visibility. `right_inset` keeps the strip clear of the panel.
-    pub fn draw(&mut self, ctx: &egui::Context, np: Option<&NowPlaying>, tint_from_art: &mut bool, accent: Color32, t: f32, right_inset: f32) -> StripActions {
+    /// `identity`: show art, title and artist (the "show what's playing" setting).
+    pub fn draw(&mut self, ctx: &egui::Context, np: Option<&NowPlaying>, tint_from_art: &mut bool, identity: bool, accent: Color32, t: f32, right_inset: f32) -> StripActions {
         let mut a = StripActions::default();
         if t <= 0.001 {
             return a;
@@ -54,17 +55,23 @@ impl Strip {
             // Swallow clicks on the strip background so they don't reach the scene.
             ui.interact(rect, egui::Id::unique("strip-bg"), Sense::click());
 
-            // Art + text.
+            // Art + text (only when the user wants to see what is playing).
             let art_r = Rect::from_min_size(pos2(rect.min.x + 16.0, rect.min.y + 12.0), vec2(48.0, 48.0));
-            match art_id {
+            if !identity {
+                p.text(pos2(rect.min.x + 16.0, rect.min.y + 31.0), Align2::LEFT_CENTER, "now playing hidden", theme::sans(12.0), TEXT_3);
+                p.text(pos2(rect.min.x + 16.0, rect.min.y + 49.0), Align2::LEFT_CENTER, "N to show", theme::sans(11.0), TEXT_3);
+            }
+            match art_id.filter(|_| identity) {
                 Some(id) => {
                     p.image(id, art_r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
                 }
-                None => {
+                None if identity => {
                     p.rect_filled(art_r, 4.0, HAIRLINE);
                 }
+                None => {}
             }
             let (title, sub) = match np {
+                _ if !identity => (String::new(), String::new()),
                 Some(n) if !n.title.is_empty() => (n.title.clone(), if n.album.is_empty() { n.artist.clone() } else { format!("{}  ·  {}", n.artist, n.album) }),
                 _ => ("Nothing playing".to_string(), String::new()),
             };

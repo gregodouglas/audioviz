@@ -18,6 +18,9 @@ struct MixParams {
     _pad: [f32; 3],
 }
 
+/// Manual switches (keys, clicks) fade fast; the auto director takes its time.
+const FADE_MANUAL_S: f32 = 0.5;
+const FADE_AUTO_S: f32 = 4.0;
 const MIN_DWELL_S: f32 = 90.0;
 const MAX_DWELL_S: f32 = 360.0;
 const QUIET_FOR_S: f32 = 6.0;
@@ -75,13 +78,32 @@ impl Director {
         self.last_switch.elapsed().as_secs_f32()
     }
 
-    /// Start a cross-fade to `index` (no-op if already there or fading).
+    /// Manual switch: a short cross-fade to `index`. A switch during a fade
+    /// retargets immediately (the fade in progress is completed first), so
+    /// every click lands.
     pub fn switch_to(&mut self, index: usize) {
-        if index >= self.scenes.len() || index == self.current || self.fade.is_some() {
+        self.start_fade(index, FADE_MANUAL_S);
+    }
+
+    fn start_fade(&mut self, index: usize, seconds: f32) {
+        if index >= self.scenes.len() || index == self.target() {
             return;
         }
+        if let Some((to, _)) = self.fade.take() {
+            self.previous = Some(self.current);
+            self.current = to;
+        }
+        if index == self.current {
+            return;
+        }
+        self.fade_seconds = seconds;
         self.fade = Some((index, 0.0));
         self.last_switch = Instant::now();
+    }
+
+    /// The scene the user asked for: the fade target while fading, else current.
+    pub fn target(&self) -> usize {
+        self.fade.map(|(to, _)| to).unwrap_or(self.current)
     }
 
     pub fn next(&mut self) {
@@ -157,7 +179,7 @@ impl Director {
                 self.last_cue = cue;
                 self.trend_peak = 0.0;
                 self.quiet_for = 0.0;
-                self.switch_to(next);
+                self.start_fade(next, FADE_AUTO_S);
             }
         }
     }

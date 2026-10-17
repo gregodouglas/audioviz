@@ -144,7 +144,7 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState
         // Footer.
         let fy = rect.max.y - 44.0;
         p.hline((rect.min.x + RAIL_W + 20.0)..=(rect.max.x - 20.0), fy, egui::Stroke::new(1.0, HAIRLINE));
-        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 14.0), Align2::LEFT_CENTER, "H hide everything   Tab panel   1-3 scene", theme::mono(10.5), TEXT_3);
+        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 14.0), Align2::LEFT_CENTER, "H hide all   Tab panel   N now playing", theme::mono(10.5), TEXT_3);
         p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 30.0), Align2::LEFT_CENTER, "C calibrate   F11 fullscreen   ?  more", theme::mono(10.5), TEXT_3);
         p.text(pos2(rect.max.x - 20.0, fy + 14.0), Align2::RIGHT_CENTER, crate::VERSION, theme::mono(10.0), TEXT_3);
         let sc = ui.interact(Rect::from_min_size(pos2(rect.min.x + RAIL_W + 20.0, fy + 22.0), vec2(220.0, 16.0)), egui::Id::unique("footer-shortcuts"), Sense::click());
@@ -183,10 +183,7 @@ fn scene_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, scen
     small_caps(ui, stats.scene_names.get(stats.scene_current).copied().unwrap_or("scene"));
     ui.add_space(4.0);
     scene.ui(ui, settings);
-    if stats.scene_current == 2 {
-        ui.add_space(6.0);
-        toggle_row(ui, "Title overlay (T)", &mut settings.type_overlay);
-    }
+
 }
 
 fn post_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats) {
@@ -332,9 +329,12 @@ fn display_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, a:
     ui.add_space(8.0);
     small_caps(ui, "Chrome");
     toggle_row(ui, "Auto-hide bar and strip (3 s)", &mut settings.chrome_autohide);
-    toggle_row(ui, "Track-change toast", &mut settings.toast);
+    toggle_row(ui, "Show what's playing (N)", &mut settings.show_now_playing);
+    if settings.show_now_playing {
+        toggle_row(ui, "Title overlay in the starfield (T)", &mut settings.type_overlay);
+        toggle_row(ui, "Track-change toast", &mut settings.toast);
+    }
     toggle_row(ui, "Tint from album art", &mut settings.tint_from_art);
-    toggle_row(ui, "Title overlay in the starfield (T)", &mut settings.type_overlay);
     ui.add_space(8.0);
     small_caps(ui, "Developer");
     toggle_row(ui, "Show meters", &mut settings.developer);

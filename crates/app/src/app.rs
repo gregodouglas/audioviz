@@ -589,7 +589,7 @@ impl Running {
         // --- egui: overlays, chrome, strip, panel ---
         let fullscreen = self.gpu.window.fullscreen().is_some();
         let maximized = self.gpu.window.is_maximized();
-        let overlay_on = self.settings.type_overlay && (self.director.current == STARFIELD_SCENE || self.director.is_fading());
+        let overlay_on = self.settings.show_now_playing && self.settings.type_overlay && (self.director.current == STARFIELD_SCENE || self.director.is_fading());
         let calibrating = self.calibration.is_some();
         let empty = matches!(capture, CaptureMode::Endpoint { .. }) && self.first_run.is_none() && !calibrating;
         let ui_view = frame.texture.create_view(&wgpu::TextureViewDescriptor { format: Some(self.gpu.ui_format), ..Default::default() });
@@ -608,7 +608,7 @@ impl Running {
             fullscreen,
             settings_path: config::path().map(|p| p.display().to_string()).unwrap_or_default(),
             scene_names: self.director.scenes.iter().map(|s| s.name()).collect(),
-            scene_current: self.director.current,
+            scene_current: self.director.target(),
             scene_fading: self.director.is_fading(),
             last_cue: self.director.last_cue,
             now_playing: now_playing.as_ref().map(|n| format!("{} — {}{}", n.artist, n.title, if n.playing { "" } else { " (paused)" })),
@@ -627,7 +627,7 @@ impl Running {
             self.cursor_hidden = want_cursor_hidden;
             self.gpu.window.set_cursor_visible(!want_cursor_hidden);
         }
-        let toast_on = !self.zen && self.settings.toast && !(overlay_on) && self.toast.as_ref().is_some_and(|(_, _, t)| t.elapsed().as_secs_f32() < TOAST_SECONDS);
+        let toast_on = !self.zen && self.settings.show_now_playing && self.settings.toast && !(overlay_on) && self.toast.as_ref().is_some_and(|(_, _, t)| t.elapsed().as_secs_f32() < TOAST_SECONDS);
         let accent = crate::chrome::accent(self.tint_current);
         let target_short = self.settings.target_process.trim_end_matches(".exe").to_lowercase();
 
@@ -676,8 +676,9 @@ impl Running {
                 };
                 empty_actions = overlays::empty_state(ctx, &settings.target_process, &device, spotify_installed);
             }
-            strip_actions = strip.draw(ctx, now_playing.as_ref(), &mut settings.tint_from_art, accent, t_strip, right);
-            panel_actions = panel::draw(ctx, settings, panel_state, &features, &stats, &mut *director.scenes[director.current], t_panel);
+            strip_actions = strip.draw(ctx, now_playing.as_ref(), &mut settings.tint_from_art, settings.show_now_playing, accent, t_strip, right);
+            let shown = director.target();
+            panel_actions = panel::draw(ctx, settings, panel_state, &features, &stats, &mut *director.scenes[shown], t_panel);
             let input = ChromeInput {
                 scene_names: &stats.scene_names,
                 scene_current: stats.scene_current,
@@ -859,9 +860,7 @@ impl Running {
             self.first_run = None;
             self.settings.onboarded = true;
         }
-        if !self.director.is_fading() {
-            self.settings.scene = self.director.current;
-        }
+        self.settings.scene = self.director.target();
     }
 
     /// Bottom-left one-liners: capture failure, calibration result, look name.
@@ -949,6 +948,7 @@ impl Running {
             KeyCode::KeyC => self.toggle_calibration(),
             KeyCode::KeyA => self.settings.auto_scenes = !self.settings.auto_scenes,
             KeyCode::KeyT => self.settings.type_overlay = !self.settings.type_overlay,
+            KeyCode::KeyN => self.settings.show_now_playing = !self.settings.show_now_playing,
             KeyCode::KeyL => self.next_look(),
             KeyCode::Slash | KeyCode::F1 => self.show_shortcuts = !self.show_shortcuts,
             KeyCode::Digit1 => self.director.switch_to(0),

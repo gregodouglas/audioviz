@@ -47,7 +47,7 @@ Settings live in `%APPDATA%\audioviz\settings.json` (plain JSON; delete it to re
 
 No telemetry, no accounts, no network on its own. The one connection the app can make is the **Check for updates** button in About, when you press it: one request to GitHub's releases endpoint through the Windows HTTP stack, nothing sent but the request. `PRIVACY.md` lists exactly what the app touches and how to verify this yourself (`cargo deny` bans every Rust HTTP/TLS/socket crate and CI enforces it). `SECURITY.md` says how to report a problem.
 
-Direct dependencies (all MIT/Apache-2.0 or similar; `cargo deny check licenses` enforces the allow-list): `wgpu`, `winit`, `egui` + `egui-wgpu` + `egui-winit`, `wasapi`, `windows`, `sysinfo`, `realfft`, `image`, `glam`, `bytemuck`, `crossbeam-channel`, `serde` + `serde_json`, `dirs`, `tracing` + `tracing-subscriber`, `anyhow`, `pollster`. The icon generator (`xtask`) additionally uses `resvg` and `ico` and is not part of the shipped binary.
+Fonts: [Inter](https://rsms.me/inter/) and [JetBrains Mono](https://www.jetbrains.com/lp/mono/), bundled under the SIL Open Font License (`assets/fonts/`). Direct dependencies (all MIT/Apache-2.0 or similar; `cargo deny check licenses` enforces the allow-list): `wgpu`, `winit`, `egui` + `egui-wgpu` + `egui-winit`, `wasapi`, `windows`, `sysinfo`, `realfft`, `image`, `glam`, `bytemuck`, `crossbeam-channel`, `serde` + `serde_json`, `dirs`, `tracing` + `tracing-subscriber`, `anyhow`, `pollster`. The icon generator (`xtask`) additionally uses `resvg` and `ico` and is not part of the shipped binary.
 
 ## Build from source
 

@@ -57,38 +57,32 @@ pub fn bold(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name(FAMILY_BOLD.into()))
 }
 
-/// Install system fonts (a grotesk and a monospace) with egui's bundled fonts
-/// as the fallback, then the style.
+/// Bundled fonts (SIL Open Font License, see `assets/fonts/`): Inter for the
+/// interface and the title overlay, JetBrains Mono for numbers. Embedded so
+/// the app looks the same on every machine; egui's bundled fonts stay as the
+/// glyph fallback (symbols, emoji).
+pub const FAMILY_MEDIUM: &str = "swiss-medium";
+const INTER_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
+const INTER_MEDIUM: &[u8] = include_bytes!("../../../assets/fonts/Inter-Medium.ttf");
+const INTER_SEMIBOLD: &[u8] = include_bytes!("../../../assets/fonts/Inter-SemiBold.ttf");
+const MONO_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf");
+
 pub fn install(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
-    let bold_c = ["C:\\Windows\\Fonts\\segoeuib.ttf", "C:\\Windows\\Fonts\\arialbd.ttf", "/System/Library/Fonts/HelveticaNeue.ttc", "/Library/Fonts/Arial Bold.ttf"];
-    let regular_c = ["C:\\Windows\\Fonts\\segoeui.ttf", "C:\\Windows\\Fonts\\arial.ttf", "/System/Library/Fonts/HelveticaNeue.ttc", "/Library/Fonts/Arial.ttf"];
-    let mono_c = ["C:\\Windows\\Fonts\\CascadiaMono.ttf", "C:\\Windows\\Fonts\\consola.ttf", "/System/Library/Fonts/SFNSMono.ttf", "/System/Library/Fonts/Menlo.ttc"];
-    let mut add = |family: &str, candidates: &[&str], fallback: &str| {
-        for path in candidates {
-            if let Ok(bytes) = std::fs::read(path) {
-                fonts.font_data.insert(family.to_string(), Arc::new(egui::FontData::from_owned(bytes)));
-                fonts.families.insert(FontFamily::Name(family.into()), vec![family.to_string(), fallback.to_string()]);
-                tracing::info!("font {family}: {path}");
-                return true;
-            }
-        }
-        fonts.families.insert(FontFamily::Name(family.into()), vec![fallback.to_string()]);
-        false
+    let mut add = |family: &str, bytes: &'static [u8], fallback: &str| {
+        fonts.font_data.insert(family.to_string(), Arc::new(egui::FontData::from_static(bytes)));
+        fonts.families.insert(FontFamily::Name(family.into()), vec![family.to_string(), fallback.to_string()]);
     };
-    let have_sans = add(FAMILY_REGULAR, &regular_c, "Ubuntu-Light");
-    add(FAMILY_BOLD, &bold_c, "Ubuntu-Light");
-    let have_mono = add(FAMILY_MONO, &mono_c, "Hack");
-    // Make the system faces the defaults so every widget picks them up.
-    if have_sans {
-        if let Some(v) = fonts.families.get_mut(&FontFamily::Proportional) {
-            v.insert(0, FAMILY_REGULAR.to_string());
-        }
+    add(FAMILY_REGULAR, INTER_REGULAR, "Ubuntu-Light");
+    add(FAMILY_MEDIUM, INTER_MEDIUM, "Ubuntu-Light");
+    add(FAMILY_BOLD, INTER_SEMIBOLD, "Ubuntu-Light");
+    add(FAMILY_MONO, MONO_REGULAR, "Hack");
+    // Make them the defaults so every widget picks them up.
+    if let Some(v) = fonts.families.get_mut(&FontFamily::Proportional) {
+        v.insert(0, FAMILY_REGULAR.to_string());
     }
-    if have_mono {
-        if let Some(v) = fonts.families.get_mut(&FontFamily::Monospace) {
-            v.insert(0, FAMILY_MONO.to_string());
-        }
+    if let Some(v) = fonts.families.get_mut(&FontFamily::Monospace) {
+        v.insert(0, FAMILY_MONO.to_string());
     }
     ctx.set_fonts(fonts);
     ctx.set_theme(egui::Theme::Dark);

@@ -37,7 +37,7 @@ usage: audioviz [--version] [--help] [--tray] [--set key=value]...
   --set key=value   change a setting in settings.json before starting,
                     e.g. --set start_fullscreen=true --set monitor=1
 
-keys: Tab panel · H hide everything · 1-3/Space scenes · A auto scenes · T title overlay
+keys: Tab panel · H hide everything · 1-3/Space scenes · A auto scenes · N show what's playing
       L next look · C calibrate audio delay · ? shortcuts · F11 fullscreen · F5 reload shaders
       Esc closes sheet / panel / fullscreen, then quits
 settings: %APPDATA%\\audioviz\\settings.json (Windows)

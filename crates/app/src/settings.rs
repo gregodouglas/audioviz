@@ -103,6 +103,8 @@ pub struct Settings {
     pub star_drift: f32,
     pub type_overlay: bool,
     pub type_scale: f32,
+    /// Show what is playing: title overlay, toast, track identity on the strip.
+    pub show_now_playing: bool,
     // Scenes
     pub scene: usize,
     pub auto_scenes: bool,
@@ -203,6 +205,7 @@ impl Settings {
         self.section = keep.section;
         self.developer = keep.developer;
         self.onboarded = keep.onboarded;
+        self.show_now_playing = keep.show_now_playing;
         self.reduce_flashing = keep.reduce_flashing;
         self.flash_rise = keep.flash_rise;
     }
@@ -235,6 +238,7 @@ impl Default for Settings {
             star_drift: 1.0,
             type_overlay: true,
             type_scale: 1.0,
+            show_now_playing: false,
             scene: 0,
             auto_scenes: false,
             post: (0..SCENE_COUNT).map(PostSettings::default_for).collect(),

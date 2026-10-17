@@ -26,7 +26,19 @@ struct RibbonParams {
     vortex: f32,
     curl: f32,
     lifetime: f32,
+    palette_mix: f32,
+    palette_shift: f32,
+    _pp0: f32,
+    _pp1: f32,
+    palette: array<vec4<f32>, 32>,
 };
+
+fn ribbon_pal(rp: RibbonParams, t: f32) -> vec3<f32> {
+    let x = fract(t) * 32.0;
+    let i = u32(floor(x)) % 32u;
+    let f = fract(x);
+    return mix(rp.palette[i].rgb, rp.palette[(i + 1u) % 32u].rgb, f);
+}
 
 struct Particle {
     pos: vec2<f32>,

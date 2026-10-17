@@ -39,6 +39,10 @@ pub struct RibbonParams {
     pub vortex: f32,
     pub curl: f32,
     pub lifetime: f32,
+    pub palette_mix: f32,
+    pub palette_shift: f32,
+    pub _pp: [f32; 2],
+    pub palette: crate::color::Table,
 }
 
 #[repr(C)]
@@ -198,6 +202,10 @@ impl Scene for Ribbons {
             vortex: s.vortex,
             curl: s.curl,
             lifetime: 5.0,
+            palette_mix: ctx.palette_amount,
+            palette_shift: ctx.palette_shift,
+            _pp: [0.0; 2],
+            palette: ctx.palette.copied().unwrap_or([[0.0; 4]; crate::color::ENTRIES]),
         };
         queue.write_buffer(&self.params_buf, 0, bytemuck::bytes_of(&params));
 

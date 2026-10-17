@@ -273,6 +273,58 @@ impl Default for Luminescence {
     }
 }
 
+/// Palette grade modifier: recolour the picture through the layer's palette.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Grade {
+    pub enabled: bool,
+    /// false = by brightness (gradient map), true = by the picture's hue.
+    pub by_hue: bool,
+    pub amount: f32,
+    pub react: f32,
+}
+
+impl Default for Grade {
+    fn default() -> Self {
+        Self { enabled: true, by_hue: false, amount: 1.0, react: 1.0 }
+    }
+}
+
+/// A layer's palette: a preset by name, or its own stops.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PaletteSel {
+    /// "none" = the layer colours itself as before; a preset name; or "custom".
+    pub name: String,
+    pub custom: Vec<crate::color::Stop>,
+    /// How far visuals lean on the palette instead of their own colouring.
+    pub amount: f32,
+    /// Cycles per second the palette shifts along itself (0 = still).
+    pub cycle: f32,
+    pub cyclic: bool,
+    pub react: f32,
+}
+
+impl Default for PaletteSel {
+    fn default() -> Self {
+        Self { name: "none".into(), custom: crate::color::default_custom(), amount: 1.0, cycle: 0.0, cyclic: true, react: 1.0 }
+    }
+}
+
+impl PaletteSel {
+    pub fn active(&self) -> bool {
+        self.name != "none"
+    }
+    /// The stops this selection means (a preset's, or the custom list).
+    pub fn stops(&self) -> Vec<crate::color::Stop> {
+        if self.name == "custom" {
+            self.custom.clone()
+        } else {
+            crate::color::preset(&self.name).map(|p| p.stops.to_vec()).unwrap_or_else(|| crate::color::preset("phosphor").unwrap().stops.to_vec())
+        }
+    }
+}
+
 /// A modifier: one full-screen pass over a layer's picture before the mix.
 /// A layer runs an ordered chain of up to `MAX_MODS`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -287,13 +339,15 @@ pub enum Modifier {
     Mask(Mask),
     Fractal(Fractal),
     Lumi(Luminescence),
+    Grade(Grade),
 }
 
 pub const MAX_MODS: usize = 6;
 
 impl Modifier {
     /// Every kind with a constructor, in the order the panel offers them.
-    pub const KINDS: [(&'static str, fn() -> Modifier); 9] = [
+    pub const KINDS: [(&'static str, fn() -> Modifier); 10] = [
+        ("palette", || Modifier::Grade(Grade::default())),
         ("kaleidoscope", || Modifier::Fold(Fold::default())),
         ("fractal", || Modifier::Fractal(Fractal::default())),
         ("luminescence", || Modifier::Lumi(Luminescence::default())),
@@ -316,6 +370,7 @@ impl Modifier {
             Modifier::Mask(_) => "mask",
             Modifier::Fractal(_) => "fractal",
             Modifier::Lumi(_) => "luminescence",
+            Modifier::Grade(_) => "palette",
         }
     }
 
@@ -334,6 +389,7 @@ impl Modifier {
             Modifier::Mask(m) => &m.enabled,
             Modifier::Fractal(m) => &m.enabled,
             Modifier::Lumi(m) => &m.enabled,
+            Modifier::Grade(m) => &m.enabled,
         }
     }
 
@@ -348,6 +404,7 @@ impl Modifier {
             Modifier::Mask(m) => &mut m.enabled,
             Modifier::Fractal(m) => &mut m.enabled,
             Modifier::Lumi(m) => &mut m.enabled,
+            Modifier::Grade(m) => &mut m.enabled,
         }
     }
 }
@@ -511,6 +568,8 @@ pub struct Layer {
     pub opacity: f32,
     pub band: AudioBand,
     pub tint: LayerTint,
+    /// Colour palette the visual and the palette modifier draw from.
+    pub palette: PaletteSel,
     /// Ordered chain of modifiers run over the visual's output.
     pub modifiers: Vec<Modifier>,
     /// Pre-chain field, migrated into `modifiers` on load; never written.
@@ -524,7 +583,7 @@ pub struct Layer {
 
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, band: AudioBand::default(), tint: LayerTint::default(), modifiers: Vec::new(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default() }
+        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default() }
     }
 }
 

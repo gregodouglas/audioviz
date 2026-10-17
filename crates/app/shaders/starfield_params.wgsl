@@ -18,7 +18,8 @@ struct StarParams {
     turb: f32,              // disk turbulence contrast
     flare: f32,             // low-onset flare 0..1
     az: f32,                // camera azimuth, radians (slow drift)
-    _p0: f32,
-    _p1: f32,
+    palette_mix: f32,       // how far the disk takes the layer palette
+    palette_shift: f32,
     _p2: f32,
+    palette: array<vec4<f32>, 32>,
 };

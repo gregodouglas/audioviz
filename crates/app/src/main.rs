@@ -4,6 +4,7 @@
 mod app;
 mod bandfilter;
 mod chrome;
+mod color;
 mod config;
 mod director;
 mod engine;

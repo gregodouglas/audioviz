@@ -2,6 +2,9 @@
 //!   cargo run -p audioviz --example settings_probe -- path\to\settings.json
 //! Prints the layers, post and a few fields after migration. Never writes.
 
+#[path = "../src/color.rs"]
+#[allow(dead_code)]
+mod color;
 #[path = "../src/settings.rs"]
 #[allow(dead_code)]
 mod settings;

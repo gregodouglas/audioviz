@@ -30,9 +30,10 @@ pub struct StarParams {
     pub turb: f32,
     pub flare: f32,
     pub az: f32,
-    pub _p0: f32,
-    pub _p1: f32,
+    pub palette_mix: f32,
+    pub palette_shift: f32,
     pub _p2: f32,
+    pub palette: crate::color::Table,
 }
 
 pub struct Starfield {
@@ -125,9 +126,10 @@ impl Scene for Starfield {
             turb: (0.35 + 0.65 * onset + 0.25 * (self.energy - 1.0)).clamp(0.0, 1.5),
             flare: f.onset_pulse[0].min(1.0),
             az: self.az,
-            _p0: 0.0,
-            _p1: 0.0,
+            palette_mix: ctx.palette_amount,
+            palette_shift: ctx.palette_shift,
             _p2: 0.0,
+            palette: ctx.palette.copied().unwrap_or([[0.0; 4]; crate::color::ENTRIES]),
         };
         queue.write_buffer(&self.params_buf, 0, bytemuck::bytes_of(&params));
         fullscreen_pass(encoder, "starfield", &self.out, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.pipeline, &self.group);
@@ -169,7 +171,7 @@ mod tests {
 
     #[test]
     fn params_layout_matches_wgsl() {
-        assert_eq!(std::mem::size_of::<StarParams>(), 160);
+        assert_eq!(std::mem::size_of::<StarParams>(), 160 + 512);
         assert_eq!(offset_of!(StarParams, tint), 16);
         assert_eq!(offset_of!(StarParams, bands), 32);
         assert_eq!(offset_of!(StarParams, onset), 96);

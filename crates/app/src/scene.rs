@@ -27,6 +27,11 @@ pub struct FrameCtx<'a> {
     pub art_id: u64,
     /// Folder for the kaleidoscope's photo slideshow (may be empty).
     pub photos_folder: &'a str,
+    /// The layer's baked palette when one is chosen, with its current shift
+    /// (0..1 along the table) and how far the visual should lean on it.
+    pub palette: Option<&'a crate::color::Table>,
+    pub palette_shift: f32,
+    pub palette_amount: f32,
 }
 
 pub trait Scene {

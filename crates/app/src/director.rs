@@ -12,6 +12,7 @@ use audioviz_metadata::ArtImage;
 use bytemuck::{Pod, Zeroable};
 
 use crate::bandfilter::{BandPass, band_features};
+use crate::color;
 use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, fullscreen_pass, fullscreen_pass2, hdr_texture};
 use crate::scenes::kaleido::Kaleido;
 use crate::scenes::ribbons::Ribbons;
@@ -56,6 +57,22 @@ struct ModParams {
     p3: [f32; 4],
 }
 
+/// The palette grade modifier's uniform: the generic params plus the table.
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct GradeParams {
+    m: ModParams,
+    pal: color::Table,
+}
+
+/// Per-layer palette state: the baked table, what it was baked from, and the shift.
+struct PaletteState {
+    key: u64,
+    table: color::Table,
+    shift: f32,
+    last_beat: f32,
+}
+
 /// Per-slot modifier state that lives across frames (angles, beat counters, rings).
 #[derive(Clone, Copy)]
 struct ModState {
@@ -95,7 +112,7 @@ impl Chain {
             ping: [hdr_texture(device, &format!("layer {i} mod a"), width, height), hdr_texture(device, &format!("layer {i} mod b"), width, height)],
             hist: [hdr_texture(device, &format!("layer {i} hist a"), width, height), hdr_texture(device, &format!("layer {i} hist b"), width, height)],
             hist_cur: 0,
-            bufs: (0..MAX_MODS).map(|j| scene::uniform_buffer(device, &format!("layer {i} mod {j}"), std::mem::size_of::<ModParams>() as u64)).collect(),
+            bufs: (0..MAX_MODS).map(|j| scene::uniform_buffer(device, &format!("layer {i} mod {j}"), std::mem::size_of::<GradeParams>() as u64)).collect(),
             states: vec![ModState::default(); MAX_MODS],
         }
     }
@@ -107,7 +124,7 @@ impl Chain {
 }
 
 /// One pipeline per modifier kind, in `MOD_SHADERS` order.
-const MOD_SHADERS: [&str; 9] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl", "fractal.wgsl", "lumi.wgsl"];
+const MOD_SHADERS: [&str; 10] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl", "fractal.wgsl", "lumi.wgsl", "grade.wgsl"];
 /// Pipeline indices with special plumbing.
 const MOD_FEEDBACK: usize = 1;
 const MOD_LUMI: usize = 8;
@@ -123,6 +140,7 @@ fn mod_index(m: &Modifier) -> usize {
         Modifier::Mask(_) => 6,
         Modifier::Fractal(_) => 7,
         Modifier::Lumi(_) => 8,
+        Modifier::Grade(_) => 9,
     }
 }
 
@@ -163,6 +181,7 @@ pub struct Director {
     filters: Vec<BandPass>,
     meters: Vec<Meter>,
     chains: Vec<Chain>,
+    palettes: Vec<PaletteState>,
     mod_layout: wgpu::BindGroupLayout,
     mod_pipelines: Vec<wgpu::RenderPipeline>,
     mirror_sampler: wgpu::Sampler,
@@ -304,6 +323,11 @@ fn mod_params(m: &Modifier, st: &mut ModState, f: &FeatureFrame, tint: [f32; 3],
             // Charge rate keeps the slow pool's steady state near the picture's own level.
             p.p3 = [k.uv, onset, 1.0 / k.afterglow_s.max(0.1), 0.0];
         }
+        Modifier::Grade(k) => {
+            // p0.z (shift) is filled in by the caller from the layer's palette state.
+            let amount = (k.amount * (1.0 + 0.15 * k.react * onset)).clamp(0.0, 1.0);
+            p.p0 = [k.by_hue as u32 as f32, amount, 0.0, k.react];
+        }
         Modifier::Mask(k) => {
             let radius = (k.radius * (1.0 + 0.1 * k.react * bass)).max(0.01);
             let shape = match k.shape {
@@ -334,6 +358,7 @@ impl Director {
         let meters = (0..MAX_LAYERS).map(|i| Meter::new(device, i, width, height)).collect();
         let tints = (0..MAX_LAYERS).map(|i| settings.layer(i).tint.color).collect();
         let chains = (0..MAX_LAYERS).map(|i| Chain::new(device, i, width, height)).collect();
+        let palettes = (0..MAX_LAYERS).map(|_| PaletteState { key: 0, table: color::bake(color::preset("phosphor").unwrap().stops, true), shift: 0.0, last_beat: 0.0 }).collect();
         let mod_layout = scene::tex_layout(device, "mod", 1);
         let mod_pipelines = build_mods(device, shaders, &mod_layout)?;
         let mirror_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -350,6 +375,7 @@ impl Director {
             filters,
             meters,
             chains,
+            palettes,
             mod_layout,
             mod_pipelines,
             mirror_sampler,
@@ -408,6 +434,8 @@ impl Director {
         self.tints.insert(to, t);
         let c = self.chains.remove(from);
         self.chains.insert(to, c);
+        let p = self.palettes.remove(from);
+        self.palettes.insert(to, p);
     }
 
     /// Move a modifier within layer `layer`'s chain so its live state follows it.
@@ -562,7 +590,25 @@ impl Director {
             for c in 0..3 {
                 self.tints[i][c] += (want[c] - self.tints[i][c]) * k;
             }
-            let ctx = FrameCtx { features: feats, tint: self.tints[i], dt, time, width: self.width, height: self.height, points: pts, auto_gain, art: art_image, art_id, photos_folder: &settings.photos_folder };
+            // Palette: rebake when the selection changed; shift it with the music.
+            {
+                let ps = &mut self.palettes[i];
+                let key = color::key(&layer.palette.name, &layer.palette.custom, layer.palette.cyclic);
+                if key != ps.key {
+                    ps.key = key;
+                    ps.table = color::bake(&layer.palette.stops(), layer.palette.cyclic);
+                }
+                let energy = energy_of(feats);
+                let beat = feats.beat_pulse * feats.beat_confidence;
+                if beat > ps.last_beat + 0.4 && layer.palette.cycle != 0.0 {
+                    ps.shift += 0.04 * layer.palette.react * layer.palette.cycle.signum();
+                }
+                ps.last_beat = beat;
+                ps.shift = (ps.shift + dt * layer.palette.cycle * (0.5 + 0.5 * energy * layer.palette.react)).rem_euclid(1.0);
+            }
+            let pal_active = layer.palette.active();
+            let (pal_table, pal_shift, pal_amount) = (&self.palettes[i].table, self.palettes[i].shift, if pal_active { layer.palette.amount } else { 0.0 });
+            let ctx = FrameCtx { features: feats, tint: self.tints[i], dt, time, width: self.width, height: self.height, points: pts, auto_gain, art: art_image, art_id, photos_folder: &settings.photos_folder, palette: pal_active.then_some(pal_table), palette_shift: pal_shift, palette_amount: pal_amount };
             self.layers[i].render(queue, encoder, &ctx, &layer);
             queue.write_buffer(&self.layer_bufs[i], 0, bytemuck::bytes_of(&LayerParams { opacity: layer.opacity, dt, flags: level as u32, _pad: 0.0 }));
 
@@ -575,8 +621,13 @@ impl Director {
                     if !m.enabled() {
                         continue;
                     }
-                    let p = mod_params(m, &mut chain.states[j], feats, self.tints[i], dt, time, self.width, self.height);
-                    queue.write_buffer(&chain.bufs[j], 0, bytemuck::bytes_of(&p));
+                    let mut p = mod_params(m, &mut chain.states[j], feats, self.tints[i], dt, time, self.width, self.height);
+                    if matches!(m, Modifier::Grade(_)) {
+                        p.p0[2] = pal_shift;
+                        queue.write_buffer(&chain.bufs[j], 0, bytemuck::bytes_of(&GradeParams { m: p, pal: *pal_table }));
+                    } else {
+                        queue.write_buffer(&chain.bufs[j], 0, bytemuck::bytes_of(&p));
+                    }
                     passes.push((j, mod_index(m)));
                 }
             }

@@ -9,6 +9,7 @@ use egui::{Align2, Color32, Rect, Sense, pos2, vec2};
 use crate::overlays::CalibrationView;
 use crate::scene::Scene;
 use crate::scene_store::SceneDef;
+use crate::color;
 use crate::settings::{AudioBand, FoldMode, FractalMode, ImageSource, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Section, Settings, TintMode, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3};
 use crate::widgets::{self, ghost_button, hint, section_header, slider_row, small_caps, toggle_row};
@@ -288,6 +289,78 @@ fn drag_handle(ui: &mut egui::Ui, id: egui::Id, payload: ModDrag) {
     });
 }
 
+/// Paint a palette as a horizontal strip.
+fn palette_strip(ui: &mut egui::Ui, stops: &[color::Stop], cyclic: bool, height: f32) {
+    let table = color::bake(stops, cyclic);
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
+    let n = table.len() as f32;
+    for (i, e) in table.iter().enumerate() {
+        let x0 = rect.min.x + rect.width() * i as f32 / n;
+        let x1 = rect.min.x + rect.width() * (i as f32 + 1.0) / n;
+        let c = Color32::from_rgb((e[0].clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0) as u8, (e[1].clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0) as u8, (e[2].clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0) as u8);
+        ui.painter().rect_filled(Rect::from_min_max(pos2(x0, rect.min.y), pos2(x1 + 0.5, rect.max.y)), 0.0, c);
+    }
+    ui.painter().rect_stroke(rect, 3.0, egui::Stroke::new(1.0, HAIRLINE), egui::StrokeKind::Outside);
+}
+
+fn palette_section(ui: &mut egui::Ui, settings: &mut Settings, editing: usize) {
+    let l = settings.layer_mut(editing);
+    let ps = &mut l.palette;
+    ui.horizontal_wrapped(|ui| {
+        if pill(ui, "none", ps.name == "none") {
+            ps.name = "none".into();
+        }
+        for pr in color::PRESETS {
+            if pill(ui, pr.name, ps.name == pr.name) {
+                ps.name = pr.name.into();
+            }
+        }
+        if pill(ui, "custom", ps.name == "custom") {
+            ps.name = "custom".into();
+        }
+    });
+    if !ps.active() {
+        hint(ui, "Visuals colour themselves (tint, pitch hues, blackbody). Pick a palette to colour the ribbons' particles and the black hole's disk from it, or add the palette modifier to recolour any layer.");
+        return;
+    }
+    ui.add_space(4.0);
+    let stops = ps.stops();
+    palette_strip(ui, &stops, ps.cyclic, 14.0);
+    ui.add_space(4.0);
+    if ps.name == "custom" {
+        let mut remove: Option<usize> = None;
+        let n = ps.custom.len();
+        for (i, st) in ps.custom.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                ui.color_edit_button_rgb(&mut st.rgb);
+                ui.add(egui::Slider::new(&mut st.t, 0.0..=1.0).show_value(false));
+                if n > 2 && ui.add(egui::Button::new(egui::RichText::new("×").color(TEXT_3)).frame(false)).clicked() {
+                    remove = Some(i);
+                }
+            });
+        }
+        if let Some(i) = remove {
+            ps.custom.remove(i);
+        }
+        ui.horizontal(|ui| {
+            if n < 8 && ui.add(egui::Button::new(egui::RichText::new("add stop").size(11.0)).frame(false)).clicked() {
+                let t = ps.custom.iter().map(|s| s.t).fold(0.0f32, f32::max);
+                ps.custom.push(color::Stop { t: (t + 0.2).min(1.0), rgb: [1.0, 1.0, 1.0] });
+            }
+            for pr in color::PRESETS.iter().take(6) {
+                if ui.add(egui::Button::new(egui::RichText::new(format!("from {}", pr.name)).size(11.0)).frame(false)).clicked() {
+                    ps.custom = pr.stops.to_vec();
+                }
+            }
+        });
+    }
+    toggle_row(ui, "Wrap around (seamless cycling)", &mut ps.cyclic);
+    slider_row(ui, "Amount", &mut ps.amount, 0.0..=1.0, |v| format!("{v:.2}"), false);
+    slider_row(ui, "Cycle", &mut ps.cycle, -1.0..=1.0, |v| format!("{v:.2} /s"), false);
+    slider_row(ui, "Reacts", &mut ps.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
+    hint(ui, "Cycling moves the colours along the palette with the energy and steps on beats. The ribbons spread a chord across it; the black hole's disk runs cool to hot along it.");
+}
+
 fn modifiers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, editing: usize, a: &mut Actions) {
     let l = settings.layer_mut(editing);
     let n = l.modifiers.len();
@@ -462,6 +535,19 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             slider_row(ui, "Reacts", &mut k.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "A dual phosphor: the picture flashes in its own colour and leaves a long afterglow in a shifted hue; charged areas sparkle on transients like plankton.");
         }
+        Modifier::Grade(k) => {
+            ui.horizontal(|ui| {
+                if pill(ui, "by brightness", !k.by_hue) {
+                    k.by_hue = false;
+                }
+                if pill(ui, "by hue", k.by_hue) {
+                    k.by_hue = true;
+                }
+            });
+            slider_row(ui, "Amount", &mut k.amount, 0.0..=1.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Reacts", &mut k.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Recolours this layer's picture through its palette (choose one above; none = phosphor). By brightness is a gradient map: dark to the first colours, bright to the last.");
+        }
         Modifier::Mask(k) => {
             ui.horizontal(|ui| {
                 ui.label("Shape");
@@ -613,6 +699,10 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
             }
         });
     }
+    // Palette.
+    ui.add_space(8.0);
+    small_caps(ui, "Palette");
+    palette_section(ui, settings, editing);
     // Modifier chain.
     ui.add_space(8.0);
     small_caps(ui, "Modifiers");

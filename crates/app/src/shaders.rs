@@ -36,6 +36,7 @@ shader_table!(
     "mask.wgsl",
     "fractal.wgsl",
     "lumi.wgsl",
+    "grade.wgsl",
     "ribbons_params.wgsl",
     "ribbons_update.wgsl",
     "ribbons_draw.wgsl",

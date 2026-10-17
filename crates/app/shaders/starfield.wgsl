@@ -82,8 +82,18 @@ fn tinted(t: f32) -> vec3<f32> {
     return c;
 }
 
+fn star_pal(t: f32) -> vec3<f32> {
+    let x = fract(t) * 32.0;
+    let i = u32(floor(x)) % 32u;
+    let f = fract(x);
+    return mix(P.palette[i].rgb, P.palette[(i + 1u) % 32u].rgb, f);
+}
+
 fn disk_palette(t: f32) -> vec3<f32> {
-    return mix(tinted(t), blackbody(t), P.tint.w);
+    let own = mix(tinted(t), blackbody(t), P.tint.w);
+    // Layer palette: temperature runs along it (cool outer edge -> hot inner).
+    let p = star_pal(clamp(t / 1.6, 0.0, 0.97) * 0.97 + P.palette_shift) * (0.6 + 0.8 * clamp(t, 0.0, 1.5));
+    return mix(own, p, P.palette_mix);
 }
 
 // ---------------------------------------------------------------- disk

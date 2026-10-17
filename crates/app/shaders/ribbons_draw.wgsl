@@ -52,7 +52,11 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
     let class_hue = f32((u32(part.pitch) * 7u) % 12u) / 12.0;
     let hue = fract(mix(P.key_hue, class_hue, 0.6));
     let fade = smoothstep(0.0, 0.6, part.age) * (1.0 - smoothstep(part.life - 1.0, part.life, part.age));
-    let col = mix(P.tint.rgb, hsv2rgb(hue, P.saturation, 1.0), 0.85) * fade;
+    let own = mix(P.tint.rgb, hsv2rgb(hue, P.saturation, 1.0), 0.85);
+    // Palette: each particle takes the colour at its hue position (so a
+    // chord spreads across the palette), shifted with the music.
+    let pal = ribbon_pal(P, class_hue + part.seed * 0.08 + P.palette_shift) * 1.3;
+    let col = mix(own, pal, P.palette_mix) * fade;
 
     var out: VsOut;
     out.pos = vec4<f32>(ndc, 0.0, 1.0);

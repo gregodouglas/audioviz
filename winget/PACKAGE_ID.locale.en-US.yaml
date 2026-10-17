@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
+# Template: rendered by scripts/release.ps1 into dist/winget/manifests/...
+PackageIdentifier: {{PACKAGE_ID}}
+PackageVersion: {{VERSION}}
+PackageLocale: en-US
+Publisher: {{PUBLISHER}}
+PublisherUrl: {{REPO_URL}}
+PublisherSupportUrl: {{REPO_URL}}/issues
+PackageName: audioviz
+PackageUrl: {{REPO_URL}}
+License: MIT
+LicenseUrl: {{REPO_URL}}/blob/main/LICENSE
+Copyright: Copyright (c) 2026 {{PUBLISHER}}
+ShortDescription: A spacey, line-based music visualizer for whatever is playing (Spotify first)
+Description: |-
+  audioviz listens to what Windows is playing (Spotify by default, per-process loopback)
+  and draws it: a phosphor XY oscilloscope, chroma-steered flow-field ribbons, and a
+  gravitationally lensed starfield with a now-playing title overlay. Native Rust + wgpu,
+  no telemetry, no network access. Settings live in %APPDATA%\audioviz.
+Moniker: audioviz
+Tags:
+- audio
+- music
+- oscilloscope
+- spotify
+- visualizer
+- wgpu
+PrivacyUrl: {{REPO_URL}}/blob/main/PRIVACY.md
+ReleaseNotesUrl: {{REPO_URL}}/releases/tag/v{{VERSION}}
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0

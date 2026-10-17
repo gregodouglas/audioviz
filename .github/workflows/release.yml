@@ -1,0 +1,107 @@
+name: Release
+
+# Tag `vX.Y.Z` (matching the workspace version in Cargo.toml) to cut a release:
+#   git tag v0.1.0 && git push origin v0.1.0
+# Produces: installer (Inno Setup, per-user), portable zip, SHA256SUMS.txt,
+# rendered winget manifests, release notes. macOS is built only to keep the
+# core green for Phase 6 (its audio/metadata backends are null).
+#
+# Code signing: set the repository variable CODE_SIGNING=true and the secrets
+# AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET / SIGNING_ENDPOINT /
+# SIGNING_ACCOUNT / SIGNING_PROFILE for Azure Artifact Signing. Until then the
+# binaries are unsigned (see PRIVACY.md and README).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    name: Windows release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check tag matches Cargo.toml version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart("v")
+          $ver = (Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
+          if ($tag -ne $ver) { throw "tag $tag != Cargo.toml version $ver" }
+          "AUDIOVIZ_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      - name: Build release binary
+        run: cargo build --release -p audioviz --locked
+
+      - name: Sign binary (Azure Artifact Signing)
+        if: vars.CODE_SIGNING == 'true'
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.SIGNING_PROFILE }}
+          files-folder: target/release
+          files-folder-filter: exe
+
+      - name: Package (installer, portable zip, checksums, winget manifests, notes)
+        shell: pwsh
+        run: scripts/release.ps1 -Version $env:AUDIOVIZ_VERSION -SkipBuild -RepoUrl "https://github.com/${{ github.repository }}"
+
+      - name: Sign installer (Azure Artifact Signing)
+        if: vars.CODE_SIGNING == 'true'
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.SIGNING_PROFILE }}
+          files-folder: dist
+          files-folder-filter: exe
+
+      - name: Re-hash after signing
+        if: vars.CODE_SIGNING == 'true'
+        shell: pwsh
+        run: scripts/release.ps1 -Version $env:AUDIOVIZ_VERSION -SkipBuild -SkipInstaller -RepoUrl "https://github.com/${{ github.repository }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audioviz-${{ env.AUDIOVIZ_VERSION }}-windows
+          path: dist/
+
+      - name: GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: audioviz ${{ env.AUDIOVIZ_VERSION }}
+          body_path: dist/RELEASE_NOTES.md
+          draft: true
+          files: |
+            dist/audioviz-*-setup.exe
+            dist/audioviz-*-portable-win64.zip
+            dist/SHA256SUMS.txt
+            dist/audioviz-*-winget-manifests.zip
+
+  macos:
+    name: macOS build (core only)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace --all-targets --locked
+      - run: cargo test --workspace --locked

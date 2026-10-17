@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/audio", "crates/analysis", "crates/metadata", "crates/app"]
+members = ["crates/audio", "crates/analysis", "crates/metadata", "crates/app", "xtask"]
+default-members = ["crates/audio", "crates/analysis", "crates/metadata", "crates/app"]
 
 [workspace.package]
 version = "0.1.0"

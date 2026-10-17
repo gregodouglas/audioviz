@@ -4,6 +4,7 @@ OUT-SYNC.md
 
 # build outputs
 /target/
+/dist/
 /node_modules/
 /dist/
 /.venv/

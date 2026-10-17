@@ -1,0 +1,76 @@
+# cargo-deny policy. Run locally with `cargo deny check`; CI runs it on every push.
+# Three jobs: known vulnerabilities, license allow-list, and a ban on any crate
+# that could open a network connection. The last one is the mechanical half of
+# PRIVACY.md: the app has no way to phone home because nothing in its
+# dependency tree can speak HTTP, DNS or sockets beyond what the OS audio and
+# media-session APIs need.
+
+[graph]
+# Windows is the shipping target; macOS builds in CI for the core.
+targets = [
+    "x86_64-pc-windows-msvc",
+    "aarch64-apple-darwin",
+]
+all-features = false
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = []
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "BSL-1.0",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+    "LicenseRef-UFL-1.0",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "allow"
+wildcards = "allow"
+# No network stacks. If one of these ever appears it means a dependency grew
+# a feature we did not ask for; investigate before relaxing.
+deny = [
+    { crate = "reqwest", reason = "no network: see PRIVACY.md" },
+    { crate = "hyper", reason = "no network: see PRIVACY.md" },
+    { crate = "hyper-util", reason = "no network: see PRIVACY.md" },
+    { crate = "h2", reason = "no network: see PRIVACY.md" },
+    { crate = "ureq", reason = "no network: see PRIVACY.md" },
+    { crate = "curl", reason = "no network: see PRIVACY.md" },
+    { crate = "curl-sys", reason = "no network: see PRIVACY.md" },
+    { crate = "isahc", reason = "no network: see PRIVACY.md" },
+    { crate = "attohttpc", reason = "no network: see PRIVACY.md" },
+    { crate = "minreq", reason = "no network: see PRIVACY.md" },
+    { crate = "tungstenite", reason = "no network: see PRIVACY.md" },
+    { crate = "tokio-tungstenite", reason = "no network: see PRIVACY.md" },
+    { crate = "native-tls", reason = "no network: see PRIVACY.md" },
+    { crate = "rustls", reason = "no network: see PRIVACY.md" },
+    { crate = "openssl", reason = "no network: see PRIVACY.md" },
+    { crate = "openssl-sys", reason = "no network: see PRIVACY.md" },
+    { crate = "trust-dns-resolver", reason = "no network: see PRIVACY.md" },
+    { crate = "hickory-resolver", reason = "no network: see PRIVACY.md" },
+    { crate = "mio", reason = "no network: see PRIVACY.md" },
+    { crate = "socket2", reason = "no network: see PRIVACY.md" },
+    { crate = "sentry", reason = "no telemetry: see PRIVACY.md" },
+    { crate = "sentry-core", reason = "no telemetry: see PRIVACY.md" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

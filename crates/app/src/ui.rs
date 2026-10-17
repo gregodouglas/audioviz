@@ -168,7 +168,7 @@ pub struct Actions {
 
 pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stats: &Stats, scene: &mut dyn Scene) -> Actions {
     let mut actions = Actions::default();
-    egui::Window::new("audioviz")
+    egui::Window::new(format!("audioviz {}", crate::VERSION))
         .default_width(320.0)
         .resizable(false)
         .show(ctx, |ui| {

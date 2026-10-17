@@ -57,6 +57,15 @@ fn time_floor(t: f32) -> i32 {
     t.floor() as i32
 }
 
+/// The taskbar / title-bar icon, embedded from `assets/icon-256.png`
+/// (regenerate with `cargo xtask icon`).
+fn window_icon() -> Option<winit::window::Icon> {
+    const PNG: &[u8] = include_bytes!("../../../assets/icon-256.png");
+    let img = image::load_from_memory_with_format(PNG, image::ImageFormat::Png).ok()?.into_rgba8();
+    let (w, h) = img.dimensions();
+    winit::window::Icon::from_rgba(img.into_raw(), w, h).ok()
+}
+
 pub struct App {
     state: Option<Running>,
 }
@@ -384,7 +393,7 @@ impl ApplicationHandler for App {
             .ok()
             .and_then(|v| v.split_once('x').and_then(|(a, b)| Some((a.parse::<f64>().ok()?, b.parse::<f64>().ok()?))))
             .unwrap_or((1280.0, 800.0));
-        let attrs = Window::default_attributes().with_title("audioviz").with_inner_size(winit::dpi::PhysicalSize::new(w, h));
+        let attrs = Window::default_attributes().with_title("audioviz").with_inner_size(winit::dpi::PhysicalSize::new(w, h)).with_window_icon(window_icon());
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
         match Running::new(window) {
             Ok(r) => self.state = Some(r),

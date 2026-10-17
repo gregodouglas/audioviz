@@ -1,0 +1,13 @@
+[package]
+name = "xtask"
+description = "Repo chores for audioviz: `cargo xtask icon` renders assets/icon.svg to .png and .ico"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+resvg = "0.48"
+ico = "0.6"

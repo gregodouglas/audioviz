@@ -61,6 +61,8 @@ pub enum FoldMode {
 #[serde(default)]
 pub struct Fold {
     pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
     pub mode: FoldMode,
     pub segments: u32,
     /// Rotation, radians per second at average energy.
@@ -78,7 +80,7 @@ pub struct Fold {
 
 impl Default for Fold {
     fn default() -> Self {
-        Self { enabled: true, mode: FoldMode::Radial, segments: 8, speed: 0.15, zoom: 1.0, offset: 0.25, wander: 1.0, step_beats: 0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, mode: FoldMode::Radial, segments: 8, speed: 0.15, zoom: 1.0, offset: 0.25, wander: 1.0, step_beats: 0, react: 1.0 }
     }
 }
 
@@ -105,6 +107,8 @@ impl Default for LegacyFold {
 #[serde(default)]
 pub struct Feedback {
     pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
     pub decay: f32,
     /// Zoom rate per second (positive = outward).
     pub zoom: f32,
@@ -115,7 +119,7 @@ pub struct Feedback {
 
 impl Default for Feedback {
     fn default() -> Self {
-        Self { enabled: true, decay: 0.9, zoom: 0.25, spin: 0.1, react: 1.0 }
+        Self { enabled: true, mix: 1.0, decay: 0.9, zoom: 0.25, spin: 0.1, react: 1.0 }
     }
 }
 
@@ -124,6 +128,8 @@ impl Default for Feedback {
 #[serde(default)]
 pub struct Polar {
     pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
     /// false = wrap (x becomes angle), true = unwrap (the inverse).
     pub unwrap: bool,
     pub radius: f32,
@@ -133,7 +139,7 @@ pub struct Polar {
 
 impl Default for Polar {
     fn default() -> Self {
-        Self { enabled: true, unwrap: false, radius: 1.0, spin: 0.1, react: 1.0 }
+        Self { enabled: true, mix: 1.0, unwrap: false, radius: 1.0, spin: 0.1, react: 1.0 }
     }
 }
 
@@ -142,6 +148,8 @@ impl Default for Polar {
 #[serde(default)]
 pub struct Ripple {
     pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
     pub amount: f32,
     pub wavelength: f32,
     pub speed: f32,
@@ -151,7 +159,7 @@ pub struct Ripple {
 
 impl Default for Ripple {
     fn default() -> Self {
-        Self { enabled: true, amount: 0.04, wavelength: 0.15, speed: 0.8, sine: 0.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, amount: 0.04, wavelength: 0.15, speed: 0.8, sine: 0.0, react: 1.0 }
     }
 }
 
@@ -160,6 +168,8 @@ impl Default for Ripple {
 #[serde(default)]
 pub struct Edge {
     pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
     pub strength: f32,
     /// Share of the original kept underneath.
     pub keep: f32,
@@ -169,7 +179,7 @@ pub struct Edge {
 
 impl Default for Edge {
     fn default() -> Self {
-        Self { enabled: true, strength: 1.5, keep: 0.0, tinted: false, react: 1.0 }
+        Self { enabled: true, mix: 1.0, strength: 1.5, keep: 0.0, tinted: false, react: 1.0 }
     }
 }
 
@@ -178,6 +188,8 @@ impl Default for Edge {
 #[serde(default)]
 pub struct ChromaSplit {
     pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
     pub amount: f32,
     pub radial: bool,
     pub react: f32,
@@ -185,7 +197,7 @@ pub struct ChromaSplit {
 
 impl Default for ChromaSplit {
     fn default() -> Self {
-        Self { enabled: true, amount: 0.012, radial: true, react: 1.0 }
+        Self { enabled: true, mix: 1.0, amount: 0.012, radial: true, react: 1.0 }
     }
 }
 
@@ -202,6 +214,8 @@ pub enum MaskShape {
 #[serde(default)]
 pub struct Mask {
     pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
     pub shape: MaskShape,
     pub radius: f32,
     pub soft: f32,
@@ -211,7 +225,7 @@ pub struct Mask {
 
 impl Default for Mask {
     fn default() -> Self {
-        Self { enabled: true, shape: MaskShape::Circle, radius: 0.7, soft: 0.1, invert: false, react: 1.0 }
+        Self { enabled: true, mix: 1.0, shape: MaskShape::Circle, radius: 0.7, soft: 0.1, invert: false, react: 1.0 }
     }
 }
 
@@ -229,6 +243,8 @@ pub enum FractalMode {
 #[serde(default)]
 pub struct Fractal {
     pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
     pub mode: FractalMode,
     pub iterations: u32,
     /// KIFS scale per step (>1 shrinks the cell each level).
@@ -245,7 +261,7 @@ pub struct Fractal {
 
 impl Default for Fractal {
     fn default() -> Self {
-        Self { enabled: true, mode: FractalMode::Kifs, iterations: 4, scale: 1.9, angle: 0.35, offset: 0.8, zoom: 1.0, falloff: 0.8, react: 1.0 }
+        Self { enabled: true, mix: 1.0, mode: FractalMode::Kifs, iterations: 4, scale: 1.9, angle: 0.35, offset: 0.8, zoom: 1.0, falloff: 0.8, react: 1.0 }
     }
 }
 
@@ -254,6 +270,8 @@ impl Default for Fractal {
 #[serde(default)]
 pub struct Luminescence {
     pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
     /// Fast pool release, seconds.
     pub fresh_s: f32,
     /// Slow pool release, seconds (the afterglow).
@@ -272,7 +290,7 @@ pub struct Luminescence {
 
 impl Default for Luminescence {
     fn default() -> Self {
-        Self { enabled: true, fresh_s: 0.35, afterglow_s: 4.0, fresh_gain: 0.6, afterglow_gain: 0.5, hue_shift: -140.0, excite: 1.5, uv: 0.6, sparkle: 1.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, fresh_s: 0.35, afterglow_s: 4.0, fresh_gain: 0.6, afterglow_gain: 0.5, hue_shift: -140.0, excite: 1.5, uv: 0.6, sparkle: 1.0, react: 1.0 }
     }
 }
 
@@ -281,6 +299,8 @@ impl Default for Luminescence {
 #[serde(default)]
 pub struct Grade {
     pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
     /// false = by brightness (gradient map), true = by the picture's hue.
     pub by_hue: bool,
     pub amount: f32,
@@ -289,7 +309,7 @@ pub struct Grade {
 
 impl Default for Grade {
     fn default() -> Self {
-        Self { enabled: true, by_hue: false, amount: 1.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, by_hue: false, amount: 1.0, react: 1.0 }
     }
 }
 
@@ -379,6 +399,54 @@ impl Modifier {
 
     pub fn enabled(&self) -> bool {
         *self.enabled_ref()
+    }
+
+    pub fn mix(&self) -> f32 {
+        match self {
+            Modifier::Fold(k) => k.mix,
+            Modifier::Feedback(k) => k.mix,
+            Modifier::Polar(k) => k.mix,
+            Modifier::Ripple(k) => k.mix,
+            Modifier::Edge(k) => k.mix,
+            Modifier::Chroma(k) => k.mix,
+            Modifier::Mask(k) => k.mix,
+            Modifier::Fractal(k) => k.mix,
+            Modifier::Lumi(k) => k.mix,
+            Modifier::Grade(k) => k.mix,
+        }
+    }
+
+    pub fn mix_mut(&mut self) -> &mut f32 {
+        match self {
+            Modifier::Fold(k) => &mut k.mix,
+            Modifier::Feedback(k) => &mut k.mix,
+            Modifier::Polar(k) => &mut k.mix,
+            Modifier::Ripple(k) => &mut k.mix,
+            Modifier::Edge(k) => &mut k.mix,
+            Modifier::Chroma(k) => &mut k.mix,
+            Modifier::Mask(k) => &mut k.mix,
+            Modifier::Fractal(k) => &mut k.mix,
+            Modifier::Lumi(k) => &mut k.mix,
+            Modifier::Grade(k) => &mut k.mix,
+        }
+    }
+
+    /// Fresh defaults of the same kind.
+    pub fn reset(&mut self) {
+        let enabled = self.enabled();
+        *self = match self {
+            Modifier::Fold(_) => Modifier::Fold(Fold::default()),
+            Modifier::Feedback(_) => Modifier::Feedback(Feedback::default()),
+            Modifier::Polar(_) => Modifier::Polar(Polar::default()),
+            Modifier::Ripple(_) => Modifier::Ripple(Ripple::default()),
+            Modifier::Edge(_) => Modifier::Edge(Edge::default()),
+            Modifier::Chroma(_) => Modifier::Chroma(ChromaSplit::default()),
+            Modifier::Mask(_) => Modifier::Mask(Mask::default()),
+            Modifier::Fractal(_) => Modifier::Fractal(Fractal::default()),
+            Modifier::Lumi(_) => Modifier::Lumi(Luminescence::default()),
+            Modifier::Grade(_) => Modifier::Grade(Grade::default()),
+        };
+        *self.enabled_mut() = enabled;
     }
 
     fn enabled_ref(&self) -> &bool {
@@ -741,6 +809,9 @@ pub struct Settings {
     pub layers: Vec<Layer>,
     /// Which layer the panel and keys 1-3 edit.
     pub editing: usize,
+    /// Solo: render only this layer while tuning it (never saved).
+    #[serde(skip)]
+    pub solo: Option<usize>,
     /// Name of the active scene ("" = unsaved).
     pub scene_name: String,
     pub post: PostSettings,
@@ -835,6 +906,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             layers: vec![Layer::new(VisualKind::Scope, true, 1.0), Layer::new(VisualKind::Ribbons, false, 0.5), Layer::new(VisualKind::Starfield, false, 0.5)],
+            solo: None,
             editing: 0,
             scene_name: String::new(),
             post: PostSettings::default(),

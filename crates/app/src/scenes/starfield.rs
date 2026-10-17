@@ -151,7 +151,7 @@ impl Scene for Starfield {
             slider_def(ui, "Infall streams", &mut s.streams, Some(d.streams), 0.0..=2.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Breathe with bass", &mut s.breathe, Some(d.breathe), 0.0..=1.0, |v| format!("{v:.2}"), false);
         });
-        group(ui, "hole.sky", "Sky", false, 4, |ui| {
+        group(ui, "hole.sky", "Sky", true, 4, |ui| {
             slider_def(ui, "Nebula", &mut s.nebula, Some(d.nebula), 0.0..=2.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Star density", &mut s.density, Some(d.density), 0.1..=2.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Onset twinkle", &mut s.twinkle, Some(d.twinkle), 0.0..=2.0, |v| format!("{v:.2}"), false);

@@ -13,7 +13,7 @@ use crate::scene::Scene;
 use crate::scene_store::SceneDef;
 use crate::color;
 use crate::settings::{AudioBand, ChromaSplit, Edge, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, ImageSource, LayerTab, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
-use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3};
+use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
 use crate::widgets::{self, chip, dropdown, ghost_button, group, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
 const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -455,36 +455,40 @@ fn modifier_page(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelSt
         return;
     };
     toggle_row(ui, "On", m.enabled_mut());
+    slider_def(ui, "Mix", m.mix_mut(), Some(1.0), 0.0..=1.0, |v| format!("{:.0}%", v * 100.0), false);
     ui.add_space(4.0);
     modifier_controls(ui, m);
     ui.add_space(10.0);
+    let (mut do_reset, mut do_remove) = (false, false);
     ui.horizontal(|ui| {
-        if ghost_button(ui, "Remove", false).clicked() {
-            l.modifiers.remove(j);
-            a.remove_modifier = Some((editing, j));
-            state.mod_open = false;
-        }
+        do_reset = ghost_button(ui, "Reset", false).clicked();
+        do_remove = ghost_button(ui, "Remove", false).clicked();
         if ghost_button(ui, "‹ Back to effects", false).clicked() {
             state.mod_open = false;
         }
     });
+    if do_reset {
+        m.reset();
+    }
+    if do_remove {
+        l.modifiers.remove(j);
+        a.remove_modifier = Some((editing, j));
+        state.mod_open = false;
+    }
 }
 
 fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
     match m {
         Modifier::Fold(k) => {
             let d = Fold::default();
+            small_caps(ui, "Mirrors");
             let modes = [FoldMode::Radial, FoldMode::Pinwheel, FoldMode::Tiled];
             if let Some(i) = segmented(ui, &["radial", "pinwheel", "tiled"], modes.iter().position(|m| *m == k.mode).unwrap_or(0)) {
                 k.mode = modes[i];
             }
             if k.mode != FoldMode::Tiled {
-                let mut seg = k.segments as f32;
-                slider_row(ui, "Segments", &mut seg, 1.0..=24.0, |v| format!("{v:.0}"), false);
-                k.segments = seg.round() as u32;
-                let mut step = k.step_beats as f32;
-                slider_row(ui, "Step on beats", &mut step, 0.0..=16.0, |v| if v < 0.5 { "off".into() } else { format!("every {v:.0}") }, false);
-                k.step_beats = step.round() as u32;
+                slider_def(ui, "Segments", &mut k.segments, Some(d.segments), 1..=24, |v| format!("{v:.0}"), false);
+                slider_def(ui, "Step on beats", &mut k.step_beats, Some(d.step_beats), 0..=16, |v| if v < 0.5 { "off".into() } else { format!("every {v:.0}") }, false);
             }
             slider_def(ui, "Spin", &mut k.speed, Some(d.speed), -2.0..=2.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Zoom", &mut k.zoom, Some(d.zoom), 0.2..=3.0, |v| format!("{v:.2}"), false);
@@ -503,6 +507,7 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
         }
         Modifier::Polar(k) => {
             let d = Polar::default();
+            small_caps(ui, "Direction");
             if let Some(i) = segmented(ui, &["wrap", "unwrap"], k.unwrap as usize) {
                 k.unwrap = i == 1;
             }
@@ -536,12 +541,11 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
         }
         Modifier::Fractal(k) => {
             let d = Fractal::default();
+            small_caps(ui, "Recursion");
             if let Some(i) = segmented(ui, &["kaleidoscopic IFS", "julia"], (k.mode == FractalMode::Julia) as usize) {
                 k.mode = if i == 1 { FractalMode::Julia } else { FractalMode::Kifs };
             }
-            let mut it = k.iterations as f32;
-            slider_row(ui, "Depth", &mut it, 1.0..=8.0, |v| format!("{v:.0}"), false);
-            k.iterations = it.round() as u32;
+            slider_def(ui, "Depth", &mut k.iterations, Some(d.iterations), 1..=8, |v| format!("{v:.0}"), false);
             if k.mode == FractalMode::Kifs {
                 slider_def(ui, "Scale per level", &mut k.scale, Some(d.scale), 1.1..=3.0, |v| format!("{v:.2}"), false);
                 slider_def(ui, "Twist", &mut k.angle, Some(d.angle), -2.0..=2.0, |v| format!("{v:.2}"), false);
@@ -570,6 +574,7 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
         }
         Modifier::Grade(k) => {
             let d = Grade::default();
+            small_caps(ui, "Map");
             if let Some(i) = segmented(ui, &["by brightness", "by hue"], k.by_hue as usize) {
                 k.by_hue = i == 1;
             }
@@ -579,6 +584,7 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
         }
         Modifier::Mask(k) => {
             let d = Mask::default();
+            small_caps(ui, "Shape");
             let shapes = [MaskShape::Circle, MaskShape::Band, MaskShape::Hex];
             if let Some(i) = segmented(ui, &["circle", "band", "hex"], shapes.iter().position(|m| *m == k.shape).unwrap_or(0)) {
                 k.shape = shapes[i];
@@ -664,15 +670,19 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
                 ui.painter().rect_filled(Rect::from_min_size(pos2(r.min.x, r.min.y + 2.0), vec2(3.0, 18.0)), 1.5, c);
                 resp.on_hover_cursor(egui::CursorIcon::Grab);
             });
-            let l = settings.layer_mut(i);
-            mini_switch(ui, &mut l.enabled);
-            let label = egui::RichText::new(format!("{}  {}", i + 1, l.visual.short())).font(if focused { theme::bold(12.5) } else { theme::sans(12.5) }).color(if focused { TEXT } else { TEXT_2 });
-            if ui.add(egui::Button::new(label).frame(false)).clicked() {
-                a.select_layer = Some(i);
+            {
+                let l = settings.layer_mut(i);
+                mini_switch(ui, &mut l.enabled);
+                let label = egui::RichText::new(format!("{}  {}", i + 1, l.visual.short())).font(if focused { theme::bold(12.5) } else { theme::sans(12.5) }).color(if focused { TEXT } else { TEXT_2 });
+                if ui.add(egui::Button::new(label).frame(false)).clicked() {
+                    a.select_layer = Some(i);
+                }
+                if l.band.enabled {
+                    chip(ui, &l.band.label(), TEXT_2, false);
+                }
             }
-            if l.band.enabled {
-                chip(ui, &l.band.label(), TEXT_2, false);
-            }
+            let solo = settings.solo == Some(i);
+            let mut solo_click = false;
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if arrow_button(ui, false, i + 1 < MAX_LAYERS) {
                     a.move_layer = Some((i, i + 1));
@@ -680,13 +690,23 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
                 if arrow_button(ui, true, i > 0) {
                     a.move_layer = Some((i, i - 1));
                 }
+                let l = settings.layer_mut(i);
                 if l.enabled {
-                    ui.spacing_mut().slider_width = 64.0;
                     let v = ui.visuals_mut();
+                    v.widgets.inactive.bg_fill = theme::with_alpha(TEXT_3, 110);
                     v.selection.bg_fill = theme::with_alpha(hue, 150);
-                    ui.add(egui::Slider::new(&mut l.opacity, 0.0..=2.0).show_value(false)).on_hover_text(format!("opacity {:.2}", l.opacity));
+                    ui.spacing_mut().interact_size.y = 16.0;
+                    ui.label(egui::RichText::new(format!("{:.2}", l.opacity)).font(theme::mono(10.5)).color(TEXT_2));
+                    ui.spacing_mut().slider_width = 56.0;
+                    ui.add(egui::Slider::new(&mut l.opacity, 0.0..=2.0).show_value(false)).on_hover_text("opacity: this layer's share of the mix");
+                }
+                if chip(ui, "S", if solo { WARN_C } else { TEXT_3 }, true).on_hover_text("solo: show only this layer while tuning").clicked() {
+                    solo_click = true;
                 }
             });
+            if solo_click {
+                settings.solo = if solo { None } else { Some(i) };
+            }
         });
         if has_chain {
             ui.horizontal(|ui| {
@@ -712,6 +732,14 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
             }
         }
         ui.add_space(2.0);
+    }
+    if settings.solo.is_some() {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("solo on: only that layer is drawn").size(11.0).color(WARN_C));
+            if ui.add(egui::Button::new(egui::RichText::new("clear").size(11.0).color(TEXT_2)).frame(false)).clicked() {
+                settings.solo = None;
+            }
+        });
     }
 }
 

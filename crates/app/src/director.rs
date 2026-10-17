@@ -100,8 +100,10 @@ const SEG_SET: [f32; 6] = [6.0, 8.0, 5.0, 10.0, 4.0, 12.0];
 /// Per-layer modifier chain resources: two ping-pong textures, a history
 /// pair for feedback, a uniform buffer and state per slot.
 struct Chain {
-    ping: [wgpu::TextureView; 2],
+    ping: [wgpu::TextureView; 3],
     hist: [wgpu::TextureView; 2],
+    /// Wet/dry uniforms, one per slot.
+    mix_bufs: Vec<wgpu::Buffer>,
     hist_cur: usize,
     bufs: Vec<wgpu::Buffer>,
     states: Vec<ModState>,
@@ -110,7 +112,8 @@ struct Chain {
 impl Chain {
     fn new(device: &wgpu::Device, i: usize, width: u32, height: u32) -> Self {
         Self {
-            ping: [hdr_texture(device, &format!("layer {i} mod a"), width, height), hdr_texture(device, &format!("layer {i} mod b"), width, height)],
+            ping: [hdr_texture(device, &format!("layer {i} mod a"), width, height), hdr_texture(device, &format!("layer {i} mod b"), width, height), hdr_texture(device, &format!("layer {i} mod c"), width, height)],
+            mix_bufs: (0..MAX_MODS).map(|j| scene::uniform_buffer(device, &format!("layer {i} mix {j}"), std::mem::size_of::<MixParams>() as u64)).collect(),
             hist: [hdr_texture(device, &format!("layer {i} hist a"), width, height), hdr_texture(device, &format!("layer {i} hist b"), width, height)],
             hist_cur: 0,
             bufs: (0..MAX_MODS).map(|j| scene::uniform_buffer(device, &format!("layer {i} mod {j}"), std::mem::size_of::<GradeParams>() as u64)).collect(),
@@ -119,7 +122,7 @@ impl Chain {
     }
 
     fn resize(&mut self, device: &wgpu::Device, i: usize, width: u32, height: u32) {
-        self.ping = [hdr_texture(device, &format!("layer {i} mod a"), width, height), hdr_texture(device, &format!("layer {i} mod b"), width, height)];
+        self.ping = [hdr_texture(device, &format!("layer {i} mod a"), width, height), hdr_texture(device, &format!("layer {i} mod b"), width, height), hdr_texture(device, &format!("layer {i} mod c"), width, height)];
         self.hist = [hdr_texture(device, &format!("layer {i} hist a"), width, height), hdr_texture(device, &format!("layer {i} hist b"), width, height)];
     }
 }
@@ -563,7 +566,7 @@ impl Director {
         let mut first = true;
         for i in 0..MAX_LAYERS.min(self.layers.len()) {
             let layer = settings.layer(i);
-            if !layer.enabled || layer.opacity <= 0.0 {
+            if !layer.enabled || layer.opacity <= 0.0 || settings.solo.is_some_and(|k| k != i) {
                 continue;
             }
             let band = layer.band;
@@ -616,7 +619,7 @@ impl Director {
 
             // Modifier chain: advance every slot's state and write its uniform
             // first (mutable), then run the passes (immutable borrows only).
-            let mut passes: Vec<(usize, usize)> = Vec::new(); // (slot, pipeline index)
+            let mut passes: Vec<(usize, usize, f32)> = Vec::new(); // (slot, pipeline index, wet/dry)
             {
                 let chain = &mut self.chains[i];
                 for (j, m) in layer.modifiers.iter().enumerate().take(MAX_MODS) {
@@ -630,15 +633,20 @@ impl Director {
                     } else {
                         queue.write_buffer(&chain.bufs[j], 0, bytemuck::bytes_of(&p));
                     }
-                    passes.push((j, mod_index(m)));
+                    let mix = m.mix().clamp(0.0, 1.0);
+                    if mix < 0.999 {
+                        queue.write_buffer(&chain.mix_bufs[j], 0, bytemuck::bytes_of(&MixParams { t: mix, _pad: [0.0; 3] }));
+                    }
+                    passes.push((j, mod_index(m), mix));
                 }
             }
             let chain = &self.chains[i];
             let mut src: &wgpu::TextureView = self.layers[i].output();
             let mut pp = 0usize;
             let mut hist_flip = false;
-            for (j, pi) in passes {
+            for (j, pi, mix) in passes {
                 let (hist_prev, hist_cur) = (chain.hist_cur, 1 - chain.hist_cur);
+                let input = src;
                 let g = scene::tex_group(device, &self.mod_layout, &[src, &chain.hist[hist_prev]], &self.mirror_sampler, &chain.bufs[j]);
                 if pi == MOD_FEEDBACK {
                     // Feedback's output is its own history.
@@ -649,12 +657,20 @@ impl Director {
                     // Luminescence writes its picture and, beside it, its pool state.
                     fullscreen_pass2(encoder, "luminescence", &chain.ping[pp], &chain.hist[hist_cur], &self.mod_pipelines[pi], &g);
                     src = &chain.ping[pp];
-                    pp = 1 - pp;
+                    pp = (pp + 1) % 3;
                     hist_flip = true;
                 } else {
                     fullscreen_pass(encoder, "modifier", &chain.ping[pp], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.mod_pipelines[pi], &g);
                     src = &chain.ping[pp];
-                    pp = 1 - pp;
+                    pp = (pp + 1) % 3;
+                }
+                // Wet/dry: blend the pass's output back toward its input. Three
+                // ping textures guarantee the input is not the one being written.
+                if mix < 0.999 {
+                    let g = scene::tex_group(device, &self.mix_layout, &[input, src], &self.sampler, &chain.mix_bufs[j]);
+                    fullscreen_pass(encoder, "modifier mix", &chain.ping[pp], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.mix_pipeline, &g);
+                    src = &chain.ping[pp];
+                    pp = (pp + 1) % 3;
                 }
             }
             let out = src;

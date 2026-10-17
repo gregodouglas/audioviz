@@ -586,7 +586,7 @@ impl Scene for Sigil {
             slider_def(ui, "Glow", &mut s.glow, Some(d.glow), 0.0..=3.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Afterimage", &mut s.persistence, Some(d.persistence), 0.05..=4.0, |v| format!("{v:.2} s"), true);
         });
-        group(ui, "sigil.elements", "Elements", false, 8, |ui| {
+        group(ui, "sigil.elements", "Elements", true, 8, |ui| {
             slider_def(ui, "Core", &mut s.core, Some(d.core), 0.0..=2.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Rings", &mut s.rings, Some(d.rings), 0.0..=2.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Rays", &mut s.rays, Some(d.rays), 0.0..=2.0, |v| format!("{v:.2}"), false);
@@ -597,7 +597,7 @@ impl Scene for Sigil {
             slider_def(ui, "Ground", &mut s.ground, Some(d.ground), 0.0..=2.0, |v| format!("{v:.2}"), false);
         });
         let mut new_arrangement = false;
-        group(ui, "sigil.structure", "Structure", false, 4, |ui| {
+        group(ui, "sigil.structure", "Structure", true, 4, |ui| {
             slider_def(ui, "Star sides", &mut s.sides, Some(d.sides), 0..=8, |v| if v < 0.5 { "by track".to_string() } else if v < 3.0 { "3".to_string() } else { format!("{v:.0}") }, false);
             if s.sides != 0 {
                 s.sides = s.sides.max(3);
@@ -609,7 +609,7 @@ impl Scene for Sigil {
                 new_arrangement = true;
             }
         });
-        group(ui, "sigil.motion", "Motion", false, 3, |ui| {
+        group(ui, "sigil.motion", "Motion", true, 3, |ui| {
             slider_def(ui, "Spin", &mut s.spin, Some(d.spin), 0.0..=4.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Explode on drops", &mut s.explode, Some(d.explode), 0.0..=2.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Reacts", &mut s.react, Some(d.react), 0.0..=2.0, |v| format!("{v:.2}"), false);

@@ -134,3 +134,13 @@ Greg: "most important are controls and tuners and sliders." Looking at the panel
 - **Default tick** on the rail at the default value (log ranges mapped properly), label dimmed while the value sits there, double-click on the slider returns to it.
 - **Hover**: the row gets a faint raised background (one frame behind) and the label brightens, so the control under the pointer is unambiguous. Toggle rows got the same hover.
 - Dropdown rows share the label column width.
+
+## Third pass: missing options (2026-10-17)
+
+Greg: "not all the sliders are there for certain things." An audit of every params struct against the panel found no field without a control, but three real gaps and one false impression:
+
+- **Groups were collapsed by default** (Elements, Structure, Motion, Sky), so a visual looked like it had six controls. Every group now opens by default; the remembered state only closes what you close.
+- **Per-modifier Mix** (wet/dry) did not exist. Every modifier now has `mix` (default 1): the director blends the pass's output back toward its input with the existing mix shader, using a third ping texture so the input is never the texture being written. Costs one fullscreen pass per modifier only when Mix is below 100%. Old settings files load with 1.
+- **Reset on a modifier page** (keeps the On state) next to Remove and Back; `Modifier::reset`.
+- **Solo** on each stack row (the `S` chip): the director draws only that layer while tuning it. Never saved (`Settings.solo` is skipped), a warning line under the stack clears it.
+- Stack rows show the opacity value in mono beside the slider. Segmented controls on modifier pages carry a label (Mirrors, Direction, Recursion, Map, Shape). Integer sliders (Segments, Step on beats, Depth) have defaults and ticks too.

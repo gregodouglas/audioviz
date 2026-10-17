@@ -162,6 +162,7 @@ dependencies = [
  "anyhow",
  "audioviz-analysis",
  "audioviz-audio",
+ "audioviz-metadata",
  "bytemuck",
  "crossbeam-channel",
  "dirs",
@@ -196,6 +197,16 @@ dependencies = [
  "sysinfo",
  "tracing",
  "wasapi",
+]
+
+[[package]]
+name = "audioviz-metadata"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "image",
+ "tracing",
+ "windows",
 ]
 
 [[package]]
@@ -1130,6 +1141,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]

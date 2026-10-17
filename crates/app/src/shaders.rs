@@ -27,6 +27,8 @@ shader_table!(
     "ribbons_params.wgsl",
     "ribbons_update.wgsl",
     "ribbons_draw.wgsl",
+    "starfield_params.wgsl",
+    "starfield.wgsl",
 );
 
 fn is_prelude(name: &str) -> bool {

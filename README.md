@@ -6,12 +6,12 @@ Aesthetic direction: spacey, line-based, post-modern / minimal generative art. N
 
 ## Status
 
-**Phase 3 landed (2026-10-17).** Rust + wgpu, Windows per-process loopback on Spotify with auto-reconnect, engine thread with the full v1 analysis (bands, loudness, onsets, predictive beat clock, chroma), phosphor XY oscilloscope with bloom, AgX tonemapping, auto-exposure, frame cap, monitor selection and persisted settings. See `docs/phase1-spike.md` to build and run, `docs/phase2-analysis.md` for the feature set, `docs/phase3-polish.md` for the render pipeline and ambient behavior; research in `docs/research/00-synthesis.md`.
+**Phase 4 landed (2026-10-17).** Rust + wgpu native app. Three scenes with cross-fades: a phosphor XY oscilloscope, chroma-steered flow-field ribbons (GPU compute), and a gravitationally lensed starfield with a Swiss-grid title overlay fed by Windows now-playing metadata (track, artist, album, art). Per-process Spotify loopback with auto-reconnect, full v1 analysis (bands, loudness, onsets, predictive beat clock, chroma), bloom + AgX + auto-exposure post, frame cap, monitor selection, persisted settings, optional auto scene director. Docs: `docs/phase1-spike.md` (build/run), `docs/phase2-analysis.md`, `docs/phase3-polish.md`, `docs/phase4-scenes.md`; research in `docs/research/00-synthesis.md`.
 
 ```
 cargo run --release -p audioviz
 ```
-Tab panel · F11 fullscreen · F5 reload shaders · Esc quit.
+Tab panel · 1-3/Space scenes · A auto · T title overlay · F11 fullscreen · F5 reload shaders · Esc quit.
 
 ## Layout
 
@@ -24,5 +24,6 @@ Tab panel · F11 fullscreen · F5 reload shaders · Esc quit.
 - `docs/decisions/` — architecture decision records, numbered
 - `crates/audio` — `AudioSource` trait + WASAPI backend
 - `crates/analysis` — `Analyzer` → `FeatureFrame`
-- `crates/app` — winit + wgpu app, scenes, egui overlay, WGSL shaders in `shaders/`
+- `crates/metadata` — `MetadataSource` trait + Windows SMTC backend (now playing + art)
+- `crates/app` — winit + wgpu app: `scene.rs`/`director.rs`/`post.rs`, `scenes/` (scope, ribbons, starfield), `overlay.rs`, egui panel, WGSL in `shaders/`
 - `scripts/snapshot.ps1` — dev tool: run for N seconds and capture the window to PNG

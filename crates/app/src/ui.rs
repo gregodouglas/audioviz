@@ -32,8 +32,17 @@ pub struct Settings {
     pub ribbons_persistence: f32,
     pub ribbons_saturation: f32,
     pub ribbons_count: u32,
+    // Starfield scene
+    pub star_mass: f32,
+    pub star_density: f32,
+    pub star_grid: f32,
+    pub star_twinkle: f32,
+    pub star_drift: f32,
+    pub type_overlay: bool,
+    pub type_scale: f32,
     // Scenes
     pub scene: usize,
+    pub auto_scenes: bool,
     // Post
     pub exposure: f32,
     pub auto_exposure: bool,
@@ -71,7 +80,15 @@ impl Default for Settings {
             ribbons_persistence: 0.3,
             ribbons_saturation: 0.45,
             ribbons_count: 12_000,
+            star_mass: 1.0,
+            star_density: 1.0,
+            star_grid: 1.0,
+            star_twinkle: 0.6,
+            star_drift: 1.0,
+            type_overlay: true,
+            type_scale: 1.0,
             scene: 0,
+            auto_scenes: false,
             exposure: 1.0,
             auto_exposure: true,
             bloom: 0.3,
@@ -98,6 +115,8 @@ pub struct Stats {
     pub scene_names: Vec<&'static str>,
     pub scene_current: usize,
     pub scene_fading: bool,
+    pub last_cue: &'static str,
+    pub now_playing: Option<String>,
 }
 
 #[derive(Default)]
@@ -136,6 +155,13 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stat
                         ui.small("fading…");
                     }
                 });
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut settings.auto_scenes, "auto (track change, drops, quiet, dwell)");
+                    ui.small(format!("last cue: {}", stats.last_cue));
+                });
+                if let Some(np) = &stats.now_playing {
+                    ui.small(np);
+                }
                 ui.separator();
                 scene.ui(ui, settings);
             });
@@ -205,7 +231,7 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stat
             });
 
             ui.separator();
-            ui.small("Tab: panel · 1-4/Space: scene · F11: fullscreen · F5: reload shaders · Esc: quit");
+            ui.small("Tab: panel · 1-4/Space: scene · A: auto scenes · T: title overlay · F11: fullscreen · F5: reload shaders · Esc: quit");
         });
     actions
 }

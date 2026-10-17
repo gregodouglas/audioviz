@@ -1,0 +1,15 @@
+[package]
+name = "audioviz-metadata"
+description = "Now-playing metadata sources for audioviz (track, artist, album, art)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+tracing.workspace = true
+image.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = ["Media_Control", "Storage_Streams", "Foundation", "Foundation_Collections"] }

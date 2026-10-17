@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use audioviz_audio::CaptureTarget;
+use audioviz_metadata::MetadataHandle;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
@@ -12,12 +13,17 @@ use crate::config;
 use crate::director::Director;
 use crate::engine::Engine;
 use crate::gpu::Gpu;
+use crate::overlay::Overlay;
 use crate::post::{Post, PostParams};
 use crate::scene::FrameCtx;
 use crate::scenes::ribbons::Ribbons;
 use crate::scenes::scope::{MAX_POINTS, Scope};
+use crate::scenes::starfield::Starfield;
 use crate::shaders::ShaderSet;
 use crate::ui::{Settings, Stats};
+
+/// Scene index of the starfield (the one with the type overlay).
+const STARFIELD_SCENE: usize = 2;
 
 struct Running {
     gpu: Gpu,
@@ -27,8 +33,10 @@ struct Running {
     egui_ctx: egui::Context,
     egui_state: egui_winit::State,
     egui_renderer: egui_wgpu::Renderer,
+    overlay: Overlay,
 
     engine: Engine,
+    metadata: MetadataHandle,
     /// (L, R) points waiting to be drawn, newest last.
     pending_points: Vec<[f32; 2]>,
 
@@ -63,13 +71,16 @@ impl Running {
         let (w, h) = (gpu.config.width, gpu.config.height);
         let scope = Scope::new(&gpu.device, w, h, &shaders).map_err(|e| anyhow::anyhow!("scope: {e}"))?;
         let ribbons = Ribbons::new(&gpu.device, w, h, &shaders).map_err(|e| anyhow::anyhow!("ribbons: {e}"))?;
-        let mut director = Director::new(&gpu.device, &shaders, vec![Box::new(scope), Box::new(ribbons)]).map_err(|e| anyhow::anyhow!("director: {e}"))?;
+        let starfield = Starfield::new(&gpu.device, w, h, &shaders).map_err(|e| anyhow::anyhow!("starfield: {e}"))?;
+        let mut director = Director::new(&gpu.device, &shaders, vec![Box::new(scope), Box::new(ribbons), Box::new(starfield)]).map_err(|e| anyhow::anyhow!("director: {e}"))?;
         // Start on the remembered scene; AUDIOVIZ_SCENE=n overrides (dev).
         let start_scene = std::env::var("AUDIOVIZ_SCENE").ok().and_then(|v| v.parse().ok()).unwrap_or(settings.scene);
         director.current = start_scene.min(director.scenes.len() - 1);
+        director.auto = settings.auto_scenes;
         let post = Post::new(&gpu.device, gpu.config.format, w, h, &shaders).map_err(|e| anyhow::anyhow!("post: {e}"))?;
 
         let egui_ctx = egui::Context::default();
+        crate::overlay::install_fonts(&egui_ctx);
         let egui_state = egui_winit::State::new(
             egui_ctx.clone(),
             egui::ViewportId::ROOT,
@@ -84,6 +95,8 @@ impl Running {
         if settings.audio_delay_ms > 0.0 {
             engine.set_delay_ms(settings.audio_delay_ms);
         }
+        let app_filter = settings.target_process.trim_end_matches(".exe").to_lowercase();
+        let metadata = audioviz_metadata::default_source().start(&app_filter)?;
 
         let mut running = Self {
             gpu,
@@ -93,7 +106,9 @@ impl Running {
             egui_ctx,
             egui_state,
             egui_renderer,
+            overlay: Overlay::new(),
             engine,
+            metadata,
             pending_points: Vec::with_capacity(MAX_POINTS),
             sent_delay_ms: settings.audio_delay_ms,
             applied_monitor: settings.monitor,
@@ -188,6 +203,7 @@ impl Running {
         if self.settings.monitor != self.applied_monitor && self.gpu.window.fullscreen().is_some() {
             self.set_fullscreen(true);
         }
+        self.director.auto = self.settings.auto_scenes;
         self.maybe_save(false);
 
         let now = Instant::now();
@@ -195,15 +211,17 @@ impl Running {
         self.last_frame = now;
         self.fps = self.fps * 0.95 + (1.0 / dt) * 0.05;
 
-        // Pull audio.
+        // Pull audio and metadata.
         self.engine.drain_points(&mut self.pending_points);
         if self.pending_points.len() > MAX_POINTS - 1 {
             let drop = self.pending_points.len() - (MAX_POINTS - 1);
             self.pending_points.drain(..drop);
         }
         let features = self.engine.features();
+        let now_playing = self.metadata.latest();
         let target = if features.peak > 0.02 { (0.9 / features.peak).clamp(0.3, 6.0) } else { self.auto_gain_value };
         self.auto_gain_value += (target - self.auto_gain_value) * (1.0 - (-dt / 1.5).exp());
+        self.director.consider(&features, now_playing.as_ref().map(|n| n.track_id), dt);
 
         let frame = match self.gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) => f,
@@ -254,9 +272,10 @@ impl Running {
             },
         );
 
-        // --- egui ---
+        // --- egui: type overlay (starfield scene) and the debug panel ---
+        let overlay_on = self.settings.type_overlay && (self.director.current == STARFIELD_SCENE || self.director.is_fading());
         let mut actions = crate::ui::Actions::default();
-        if self.settings.show_ui {
+        if self.settings.show_ui || overlay_on {
             let ui_view = frame.texture.create_view(&wgpu::TextureViewDescriptor { format: Some(self.gpu.ui_format), ..Default::default() });
             let raw_input = self.egui_state.take_egui_input(&self.gpu.window);
             let shader_error = match (&self.director.last_error, &self.post_error) {
@@ -275,11 +294,23 @@ impl Running {
                 scene_names: self.director.scenes.iter().map(|s| s.name()).collect(),
                 scene_current: self.director.current,
                 scene_fading: self.director.is_fading(),
+                last_cue: self.director.last_cue,
+                now_playing: now_playing.as_ref().map(|n| format!("♪ {} — {}{}", n.artist, n.title, if n.playing { "" } else { " (paused)" })),
             };
+            let show_ui = self.settings.show_ui;
             let settings = &mut self.settings;
             let director = &mut self.director;
-            let egui::FullOutput { platform_output, mut textures_delta, shapes, pixels_per_point, .. } =
-                self.egui_ctx.run_pass(raw_input, |ctx| actions = crate::ui::draw(ctx, settings, &features, &stats, &mut *director.scenes[director.current]));
+            let overlay = &mut self.overlay;
+            let tint = settings.tint;
+            let type_scale = settings.type_scale;
+            let egui::FullOutput { platform_output, mut textures_delta, shapes, pixels_per_point, .. } = self.egui_ctx.run_pass(raw_input, |ctx| {
+                if overlay_on {
+                    overlay.draw(ctx, now_playing.as_ref(), &features, tint, type_scale);
+                }
+                if show_ui {
+                    actions = crate::ui::draw(ctx, settings, &features, &stats, &mut *director.scenes[director.current]);
+                }
+            });
             self.egui_state.handle_platform_output(&self.gpu.window, platform_output);
             let primitives = self.egui_ctx.tessellate(shapes, pixels_per_point);
             let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: [self.gpu.config.width, self.gpu.config.height], pixels_per_point };
@@ -375,6 +406,8 @@ impl ApplicationHandler for App {
                     st.reload_shaders();
                 }
                 KeyCode::Space => st.director.next(),
+                KeyCode::KeyA => st.settings.auto_scenes = !st.settings.auto_scenes,
+                KeyCode::KeyT => st.settings.type_overlay = !st.settings.type_overlay,
                 KeyCode::Digit1 => st.director.switch_to(0),
                 KeyCode::Digit2 => st.director.switch_to(1),
                 KeyCode::Digit3 => st.director.switch_to(2),

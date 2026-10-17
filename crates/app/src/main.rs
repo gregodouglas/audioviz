@@ -6,6 +6,7 @@ mod config;
 mod director;
 mod engine;
 mod gpu;
+mod overlay;
 mod post;
 mod scene;
 mod scenes;

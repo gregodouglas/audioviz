@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/audio", "crates/analysis", "crates/app"]
+members = ["crates/audio", "crates/analysis", "crates/metadata", "crates/app"]
 
 [workspace.package]
 version = "0.1.0"
@@ -29,6 +29,8 @@ hound = "3.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "7"
+windows = "0.62"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 
 [profile.dev]
 opt-level = 1

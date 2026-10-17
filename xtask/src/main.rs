@@ -24,12 +24,20 @@ fn main() -> anyhow::Result<()> {
 fn mockups() -> anyhow::Result<()> {
     let img = repo_root().join("docs").join("img");
     std::fs::create_dir_all(&img)?;
-    let win = mockup::window_svg(1280.0, 800.0);
-    std::fs::write(img.join("ui-mockup.svg"), &win)?;
-    mockup::render_png(&win, 1.0, &img.join("ui-mockup.png"))?;
-    let inst = mockup::installer_svg();
-    std::fs::write(img.join("installer-mockup.svg"), &inst)?;
-    mockup::render_png(&inst, 1.5, &img.join("installer-mockup.png"))?;
+    let (w, h) = (1280.0, 800.0);
+    let frames: [(&str, String, f32); 7] = [
+        ("ui-mockup", mockup::frame_panel(w, h), 1.0),
+        ("ui-hover", mockup::frame_hover(w, h), 1.0),
+        ("ui-ambient", mockup::frame_ambient(w, h), 1.0),
+        ("ui-empty", mockup::frame_empty(w, h), 1.0),
+        ("ui-calibrate", mockup::frame_calibrate(w, h), 1.0),
+        ("installer-mockup", mockup::installer_install_svg(), 1.5),
+        ("installer-finish", mockup::installer_finish_svg(), 1.5),
+    ];
+    for (name, svg, scale) in &frames {
+        std::fs::write(img.join(format!("{name}.svg")), svg)?;
+        mockup::render_png(svg, *scale, &img.join(format!("{name}.png")))?;
+    }
     println!("wrote {}", img.display());
     Ok(())
 }

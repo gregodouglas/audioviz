@@ -15,7 +15,56 @@ Greg's verdict on the 0.1.0 build: the scenes look considered, the shell around 
 - **Motion:** 120 ms ease-out for show/hide; nothing bounces.
 - **Density:** 28 px chrome bar, 32 px control rows, 8 px grid.
 
-A one-page mockup (`docs/img/ui-mockup.png`, drawn as SVG by `cargo xtask mockup` so it stays in sync with the token values above) is the first deliverable; Greg signs it off before implementation.
+Mockups are drawn as SVG by `cargo xtask mockup` from the token values above and rendered to `docs/img/`; Greg signs them off before implementation. Second pass (2026-10-17, after Greg's "this is 100% the right direction, go further"): seven frames covering the real states, not just the panel.
+
+| Frame | File | What it settles |
+|---|---|---|
+| Panel open | `ui-mockup.png` | Chrome bar, docked panel, icon rail, Looks (presets) |
+| Hover | `ui-hover.png` | Bar + bottom transport strip, status chips, tint-from-art |
+| Ambient | `ui-ambient.png` | Nothing but the scene; 4 s track-change toast |
+| Empty | `ui-empty.png` | Spotify not running: one sentence, two actions |
+| Calibration | `ui-calibrate.png` | Tap ring, per-tap dots, verdict line |
+| Install page | `installer-mockup.png` | Checks, upgrade banner, options, one button |
+| Finish page | `installer-finish.png` | What happened, launch options, one tip |
+
+## What the second pass adds (the UX, by state)
+
+**Who it is for:** someone with Spotify open and a second monitor, running this for hours and touching it a few times a night. Every addition below is judged by "does it earn its place when the user is not looking at it?"
+
+Ambient (most of the time)
+- Nothing on screen but the scene. Chrome, strip and notices are all hover-revealed and fade after 3 s of mouse rest; fullscreen hides them too.
+- Track-change toast: art thumb, title, artist, bottom-left, 4 s, in the scenes without a title overlay. Off switch in Display.
+- **Reduce flashing** toggle (Display): caps the frame-to-frame luminance delta for photosensitive viewers. This is a safety feature, on by default for the first run on an unknown display, and it ships before anything cosmetic.
+
+Hover (bar + strip)
+- Bar: mark · name · scene pips (1 2 3, A auto) · status chips (capture source, sync ms, monitor + fps) · window controls. Chips are read-only glances; clicking one opens the matching panel section.
+- Strip: album art, title, artist · album, previous / play-pause / next via the Windows media session (SMTC supports control, not just reading), progress with elapsed / total. Controlling Spotify from the visualizer on the second monitor is the single most useful addition.
+- **Tint from album art**: the scene accent follows the dominant art colour (we already receive the art). Toggle on the strip; the fixed phosphor tint remains the default.
+- `?` shows every shortcut as an overlay.
+
+Panel
+- Docked right, translucent over the scene, icon rail: Scene, Post, Sync, Display, Looks, Meters, About.
+- **Looks**: named presets of all settings (Night, Party, Studio ship as examples). Save current, export / import JSON (share a look with someone). Scene-and-look are what a non-tinkerer actually wants to switch.
+- Display: monitor picker as a small diagram of the monitors (like Windows display settings), start fullscreen on it, fps cap, low-power mode (30 fps when the window is not visible or on battery), toast on/off, reduce flashing.
+- About: version, license, privacy summary, **Copy diagnostics** (GPU, backend, capture mode, fps, settings path) for bug reports, link to the releases page (opened in the browser, the app itself never goes online).
+- Meters behind a developer toggle.
+
+Empty state (Spotify not running or nothing playing)
+- One sentence, which device is being listened to meanwhile, two actions: Open Spotify, Pick another app (sets the capture target). Replaces the current bottom-left notice for this case.
+
+Calibration
+- Full overlay: pulsing tap ring, dots per tap (matched / missed), the numbers, and a verdict ("Looking good" under ±15 ms, "Taps are scattered, try a track with a clear kick" otherwise). Enter applies, C cancels.
+
+Tray
+- Start-at-sign-in installs minimised to the tray. Tray menu: show, scene, fullscreen on monitor N, pause capture, quit. For an ambient app the tray is the primary control surface when the window is on the other monitor.
+
+Installer (Inno, step 1)
+- Checks before installing: Windows build, DirectX 12 GPU name, Spotify present, current output device. Failing a check explains it on the page instead of failing after install.
+- Upgrade banner with "your settings are kept"; location with Change; three options (Start Menu, desktop, start at sign-in minimised to tray); one footer line with size, the unsigned status and where the checksum is.
+- Finish page: what was done, Launch, Open Spotify too, Start fullscreen on my second monitor, one tip.
+- Uninstaller: same visual, "keep my settings" default, done in one page.
+
+Not in this phase: album-art-driven scenes beyond the tint, multiple windows, macOS.
 
 ## Scope, in build order
 

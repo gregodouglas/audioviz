@@ -4,6 +4,7 @@
 //! pixels.
 
 use audioviz_analysis::FeatureFrame;
+use audioviz_metadata::ArtImage;
 
 use crate::settings::{Layer, VisualKind};
 use crate::shaders::ShaderSet;
@@ -21,6 +22,11 @@ pub struct FrameCtx<'a> {
     pub points: &'a [[f32; 2]],
     /// Scope auto gain (0.9 / recent peak), smoothed.
     pub auto_gain: f32,
+    /// Album art of the playing track, and an id that changes with it.
+    pub art: Option<&'a ArtImage>,
+    pub art_id: u64,
+    /// Folder for the kaleidoscope's photo slideshow (may be empty).
+    pub photos_folder: &'a str,
 }
 
 pub trait Scene {

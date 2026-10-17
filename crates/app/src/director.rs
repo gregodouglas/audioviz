@@ -13,8 +13,10 @@ use crate::bandfilter::{BandPass, band_features};
 use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, fullscreen_pass, hdr_texture};
 use crate::scenes::ribbons::Ribbons;
 use crate::scenes::scope::Scope;
+use crate::scenes::kaleido::Kaleido;
 use crate::scenes::starfield::Starfield;
-use crate::settings::{TintMode, MAX_LAYERS, Settings, VisualKind};
+use audioviz_metadata::ArtImage;
+use crate::settings::{FoldMode, TintMode, MAX_LAYERS, Settings, VisualKind};
 use crate::shaders::ShaderSet;
 
 #[repr(C)]
@@ -38,6 +40,24 @@ impl Meter {
     fn new(device: &wgpu::Device, i: usize, width: u32, height: u32) -> Self {
         Self { down: hdr_texture(device, &format!("layer {i} down"), width / 8, height / 8), state: [hdr_texture(device, &format!("layer {i} meter a"), 1, 1), hdr_texture(device, &format!("layer {i} meter b"), 1, 1)], cur: 0 }
     }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Default)]
+struct FoldParams {
+    resolution: [f32; 2],
+    segments: f32,
+    angle: f32,
+    zoom: f32,
+    mode: u32,
+    size: f32,
+    _pad: f32,
+}
+
+/// Per-layer kaleidoscope fold: its output texture and rotation state.
+struct FoldState {
+    tex: wgpu::TextureView,
+    angle: f32,
 }
 
 struct LayerPipelines {
@@ -65,6 +85,11 @@ pub struct Director {
     pub layers: Vec<Box<dyn Scene>>,
     filters: Vec<BandPass>,
     meters: Vec<Meter>,
+    folds: Vec<FoldState>,
+    fold_bufs: Vec<wgpu::Buffer>,
+    fold_layout: wgpu::BindGroupLayout,
+    fold_pipeline: wgpu::RenderPipeline,
+    mirror_sampler: wgpu::Sampler,
     /// Smoothed effective tint per layer.
     tints: Vec<[f32; 3]>,
     layer_bufs: Vec<wgpu::Buffer>,
@@ -96,6 +121,7 @@ fn make(kind: VisualKind, device: &wgpu::Device, w: u32, h: u32, shaders: &Shade
         VisualKind::Scope => Box::new(Scope::new(device, w, h, shaders)?),
         VisualKind::Ribbons => Box::new(Ribbons::new(device, w, h, shaders)?),
         VisualKind::Starfield => Box::new(Starfield::new(device, w, h, shaders)?),
+        VisualKind::Kaleido => Box::new(Kaleido::new(device, w, h, shaders)?),
     })
 }
 
@@ -115,11 +141,28 @@ impl Director {
         let filters = (0..MAX_LAYERS).map(|_| BandPass::new(20.0, 400.0, 48_000.0)).collect();
         let meters = (0..MAX_LAYERS).map(|i| Meter::new(device, i, width, height)).collect();
         let tints = (0..MAX_LAYERS).map(|i| settings.layer(i).tint.color).collect();
+        let folds = (0..MAX_LAYERS).map(|i| FoldState { tex: hdr_texture(device, &format!("layer {i} fold"), width, height), angle: 0.0 }).collect();
+        let fold_bufs = (0..MAX_LAYERS).map(|i| scene::uniform_buffer(device, &format!("fold {i}"), std::mem::size_of::<FoldParams>() as u64)).collect();
+        let fold_layout = scene::tex_layout(device, "fold", 0);
+        let fold_pipeline = build_fold(device, shaders, &fold_layout)?;
+        let mirror_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("fold mirror"),
+            address_mode_u: wgpu::AddressMode::MirrorRepeat,
+            address_mode_v: wgpu::AddressMode::MirrorRepeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
         let layer_bufs = (0..MAX_LAYERS).map(|i| scene::uniform_buffer(device, &format!("layer {i}"), std::mem::size_of::<LayerParams>() as u64)).collect();
         Ok(Self {
             layers,
             filters,
             meters,
+            folds,
+            fold_bufs,
+            fold_layout,
+            fold_pipeline,
+            mirror_sampler,
             tints,
             layer_bufs,
             sampler,
@@ -172,6 +215,8 @@ impl Director {
         self.meters.insert(to, m);
         let t = self.tints.remove(from);
         self.tints.insert(to, t);
+        let f = self.folds.remove(from);
+        self.folds.insert(to, f);
     }
 
     pub fn seconds_since_switch(&self) -> f32 {
@@ -232,6 +277,9 @@ impl Director {
         for (i, m) in self.meters.iter_mut().enumerate() {
             m.down = hdr_texture(device, &format!("layer {i} down"), width / 8, height / 8);
         }
+        for (i, f) in self.folds.iter_mut().enumerate() {
+            f.tex = hdr_texture(device, &format!("layer {i} fold"), width, height);
+        }
         self.dissolve = None;
     }
 
@@ -240,6 +288,10 @@ impl Director {
         match build_layer(device, shaders, &self.layer_layout) {
             Ok(p) => self.layer_pipelines = p,
             Err(e) => errors.push(format!("layer: {e}")),
+        }
+        match build_fold(device, shaders, &self.fold_layout) {
+            Ok(p) => self.fold_pipeline = p,
+            Err(e) => errors.push(format!("fold: {e}")),
         }
         if let Err(e) = build_mix(device, shaders, &self.mix_layout).map(|p| self.mix_pipeline = p) {
             errors.push(format!("mix: {e}"));
@@ -254,7 +306,7 @@ impl Director {
 
     /// Render every enabled layer and composite into `target`.
     #[allow(clippy::too_many_arguments)]
-    pub fn render(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, settings: &Settings, features: &FeatureFrame, points: &[[f32; 2]], sample_rate: u32, tint: [f32; 3], art: Option<[f32; 3]>, dt: f32, time: f32, auto_gain: f32, target: &wgpu::TextureView) {
+    pub fn render(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, settings: &Settings, features: &FeatureFrame, points: &[[f32; 2]], sample_rate: u32, tint: [f32; 3], art: Option<[f32; 3]>, art_image: Option<&ArtImage>, art_id: u64, dt: f32, time: f32, auto_gain: f32, target: &wgpu::TextureView) {
         queue.write_buffer(&self.one_buf, 0, bytemuck::bytes_of(&LayerParams { opacity: 1.0, dt, flags: 0, _pad: 0.0 }));
         // Levelling: with auto exposure on, each layer is brought to its own
         // dark-field mean before mixing, so opacity is the mix ratio and a dim
@@ -299,10 +351,22 @@ impl Director {
             for c in 0..3 {
                 self.tints[i][c] += (want[c] - self.tints[i][c]) * k;
             }
-            let ctx = FrameCtx { features: feats, tint: self.tints[i], dt, time, width: self.width, height: self.height, points: pts, auto_gain };
+            let ctx = FrameCtx { features: feats, tint: self.tints[i], dt, time, width: self.width, height: self.height, points: pts, auto_gain, art: art_image, art_id, photos_folder: &settings.photos_folder };
             self.layers[i].render(queue, encoder, &ctx, &layer);
             queue.write_buffer(&self.layer_bufs[i], 0, bytemuck::bytes_of(&LayerParams { opacity: layer.opacity, dt, flags: level as u32, _pad: 0.0 }));
-            let out = self.layers[i].output();
+            // Kaleidoscope fold: mirrors over the visual's output, spinning with the music.
+            let fo = layer.fold;
+            if fo.enabled {
+                let energy = ((feats.bass_att + feats.mid_att + feats.treb_att) / 3.0).clamp(0.0, 2.5);
+                let st = &mut self.folds[i];
+                st.angle += dt * fo.speed * (0.4 + 0.6 * energy * fo.react) + dt * 1.5 * fo.react * feats.onset_pulse[3].min(1.0);
+                let zoom = (fo.zoom * (1.0 + 0.06 * fo.react * (feats.bass_att - 1.0).clamp(-1.0, 1.5))).max(0.05);
+                let p = FoldParams { resolution: [self.width as f32, self.height as f32], segments: fo.segments.clamp(2, 32) as f32, angle: st.angle, zoom, mode: (fo.mode == FoldMode::Tiled) as u32, size: 0.45, _pad: 0.0 };
+                queue.write_buffer(&self.fold_bufs[i], 0, bytemuck::bytes_of(&p));
+                let g = scene::tex_group(device, &self.fold_layout, &[self.layers[i].output()], &self.mirror_sampler, &self.fold_bufs[i]);
+                fullscreen_pass(encoder, "fold", &self.folds[i].tex, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.fold_pipeline, &g);
+            }
+            let out = if fo.enabled { &self.folds[i].tex } else { self.layers[i].output() };
             let m = &self.meters[i];
             let (prev_s, cur_s) = (m.cur, 1 - m.cur);
             if level {
@@ -346,6 +410,13 @@ impl Director {
 fn smoothstep(x: f32) -> f32 {
     let x = x.clamp(0.0, 1.0);
     x * x * (3.0 - 2.0 * x)
+}
+
+fn build_fold(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Result<wgpu::RenderPipeline, String> {
+    scene::guarded(device, || {
+        let m = scene::shader(device, shaders, "fold.wgsl");
+        scene::pipeline(device, "fold", layout, &m, HDR_FORMAT, None)
+    })
 }
 
 fn build_layer(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Result<LayerPipelines, String> {

@@ -51,3 +51,14 @@ struct LayerParams {
     flags: u32,       // bit0 (1): apply the layer's levelling gain
     _pad0: f32,
 };
+
+// Kaleidoscope fold params (director.rs::FoldParams, 32 bytes).
+struct FoldParams {
+    resolution: vec2<f32>,
+    segments: f32,
+    angle: f32,
+    zoom: f32,
+    mode: u32,        // 0 radial (two mirrors), 1 tiled (three mirrors)
+    size: f32,        // tiled: triangle inradius in image units
+    _pad0: f32,
+};

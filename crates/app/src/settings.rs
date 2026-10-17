@@ -18,15 +18,17 @@ pub enum VisualKind {
     Scope,
     Ribbons,
     Starfield,
+    Kaleido,
 }
 
 impl VisualKind {
-    pub const ALL: [VisualKind; 3] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield];
+    pub const ALL: [VisualKind; 4] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield, VisualKind::Kaleido];
     pub fn name(self) -> &'static str {
         match self {
             VisualKind::Scope => "Phosphor scope",
             VisualKind::Ribbons => "Flow-field ribbons",
             VisualKind::Starfield => "Black hole",
+            VisualKind::Kaleido => "Kaleidoscope",
         }
     }
     pub fn short(self) -> &'static str {
@@ -34,7 +36,67 @@ impl VisualKind {
             VisualKind::Scope => "scope",
             VisualKind::Ribbons => "ribbons",
             VisualKind::Starfield => "starfield",
+            VisualKind::Kaleido => "kaleido",
         }
+    }
+}
+
+/// Mirror geometry of a layer's kaleidoscope fold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FoldMode {
+    /// Two mirrors: N-fold symmetry around the centre.
+    Radial,
+    /// Three mirrors at 60 degrees: a triangular tiling of one cell.
+    Tiled,
+}
+
+/// Kaleidoscope fold applied to a layer's output before the mix.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Fold {
+    pub enabled: bool,
+    pub mode: FoldMode,
+    pub segments: u32,
+    /// Rotation, radians per second at average energy.
+    pub speed: f32,
+    pub zoom: f32,
+    /// How much energy, onsets and bass move it.
+    pub react: f32,
+}
+
+impl Default for Fold {
+    fn default() -> Self {
+        Self { enabled: false, mode: FoldMode::Radial, segments: 8, speed: 0.15, zoom: 1.0, react: 1.0 }
+    }
+}
+
+/// Where the kaleidoscope's object cell takes its picture from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ImageSource {
+    Art,
+    Photos,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct KaleidoParams {
+    pub source: ImageSource,
+    /// Photos: seconds each picture stays before the crossfade.
+    pub dwell_s: f32,
+    /// Fraction of the picture's height the window shows.
+    pub zoom: f32,
+    pub drift: f32,
+    /// Spin kick on onsets.
+    pub tumble: f32,
+    /// 0 = the picture's own colours, 1 = fully pulled to the layer tint.
+    pub tint_mix: f32,
+}
+
+impl Default for KaleidoParams {
+    fn default() -> Self {
+        Self { source: ImageSource::Art, dwell_s: 15.0, zoom: 0.6, drift: 1.0, tumble: 1.0, tint_mix: 0.0 }
     }
 }
 
@@ -168,14 +230,16 @@ pub struct Layer {
     pub opacity: f32,
     pub band: AudioBand,
     pub tint: LayerTint,
+    pub fold: Fold,
     pub scope: ScopeParams,
     pub ribbons: RibbonsParams,
     pub starfield: StarfieldParams,
+    pub kaleido: KaleidoParams,
 }
 
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, band: AudioBand::default(), tint: LayerTint::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default() }
+        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, band: AudioBand::default(), tint: LayerTint::default(), fold: Fold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default() }
     }
 }
 
@@ -244,6 +308,8 @@ pub struct Settings {
     pub tint_from_art: bool,
     /// Show what is playing: toast and track identity on the strip.
     pub show_now_playing: bool,
+    /// Folder of photos for the kaleidoscope's "my photos" picture source.
+    pub photos_folder: String,
     // ---- director ----
     pub auto_scenes: bool,
     // ---- accessibility ----
@@ -302,6 +368,7 @@ impl Default for Settings {
             tint: [0.40, 1.0, 0.55],
             tint_from_art: false,
             show_now_playing: false,
+            photos_folder: String::new(),
             auto_scenes: false,
             reduce_flashing: true,
             flash_rise: 2.0,

@@ -9,7 +9,7 @@ use egui::{Align2, Color32, Rect, Sense, pos2, vec2};
 use crate::overlays::CalibrationView;
 use crate::scene::Scene;
 use crate::scene_store::SceneDef;
-use crate::settings::{AudioBand, MAX_LAYERS, Section, Settings, TintMode, VisualKind};
+use crate::settings::{AudioBand, FoldMode, ImageSource, MAX_LAYERS, Section, Settings, TintMode, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3};
 use crate::widgets::{self, ghost_button, hint, section_header, slider_row, small_caps, toggle_row};
 
@@ -297,6 +297,10 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, lay
             let active = l.visual == k;
             if ui.add(egui::Button::new(egui::RichText::new(k.short()).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE }))).clicked() {
                 l.visual = k;
+                // The kaleidoscope is its picture plus the fold: turn the mirrors on with it.
+                if k == VisualKind::Kaleido {
+                    l.fold.enabled = true;
+                }
             }
         }
     });
@@ -348,6 +352,32 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, lay
             }
         });
     }
+    // Kaleidoscope fold.
+    ui.add_space(4.0);
+    {
+        let l = settings.layer_mut(editing);
+        toggle_row(ui, "Kaleidoscope fold", &mut l.fold.enabled);
+        if l.fold.enabled {
+            ui.horizontal(|ui| {
+                ui.label("Mirrors");
+                for (name, mode) in [("radial", FoldMode::Radial), ("tiled", FoldMode::Tiled)] {
+                    let active = l.fold.mode == mode;
+                    if ui.add(egui::Button::new(egui::RichText::new(name).color(if active { ACCENT } else { TEXT })).fill(if active { theme::with_alpha(ACCENT, 30) } else { Color32::TRANSPARENT }).stroke(egui::Stroke::new(1.0, if active { ACCENT } else { HAIRLINE }))).clicked() {
+                        l.fold.mode = mode;
+                    }
+                }
+            });
+            if l.fold.mode == FoldMode::Radial {
+                let mut seg = l.fold.segments as f32;
+                slider_row(ui, "Segments", &mut seg, 2.0..=24.0, |v| format!("{v:.0}"), false);
+                l.fold.segments = seg.round() as u32;
+            }
+            slider_row(ui, "Spin", &mut l.fold.speed, -2.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Zoom", &mut l.fold.zoom, 0.2..=3.0, |v| format!("{v:.2}"), false);
+            slider_row(ui, "Reacts", &mut l.fold.react, 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Mirrors over this layer's picture. Spin follows energy and onsets; zoom breathes with the bass.");
+        }
+    }
     ui.add_space(8.0);
     widgets::hairline(ui);
     ui.add_space(8.0);
@@ -361,6 +391,26 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, lay
         } else {
             hint(ui, "switching visual…");
         }
+    }
+    if kind == VisualKind::Kaleido && settings.layer(editing).kaleido.source == ImageSource::Photos {
+        ui.add_space(4.0);
+        ui.label("Photos folder");
+        ui.add(egui::TextEdit::singleline(&mut settings.photos_folder).desired_width(f32::INFINITY).hint_text(r"C:\Users\you\Pictures"));
+        ui.horizontal(|ui| {
+            if ui.add(egui::Button::new(egui::RichText::new("Use my Pictures").size(11.0)).frame(false)).clicked() {
+                if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
+                    settings.photos_folder = std::path::Path::new(&home).join("Pictures").display().to_string();
+                }
+            }
+            let n = std::fs::read_dir(settings.photos_folder.trim()).map(|rd| rd.filter_map(|e| e.ok()).filter(|e| e.path().extension().and_then(|x| x.to_str()).is_some_and(|x| matches!(x.to_ascii_lowercase().as_str(), "jpg" | "jpeg" | "png"))).count()).ok();
+            let msg = match n {
+                Some(0) => "no jpg/png files there".to_string(),
+                Some(n) => format!("{n} pictures"),
+                None => "folder not found".to_string(),
+            };
+            ui.label(egui::RichText::new(msg).size(11.0).color(TEXT_3));
+        });
+        hint(ui, "JPEG and PNG, shown in a shuffled order. The folder is not read until this picture source is picked.");
     }
     ui.add_space(8.0);
     small_caps(ui, "Scene tint");

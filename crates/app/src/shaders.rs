@@ -27,11 +27,14 @@ shader_table!(
     "layer.wgsl",
     "layer_down.wgsl",
     "layer_meter.wgsl",
+    "fold.wgsl",
     "ribbons_params.wgsl",
     "ribbons_update.wgsl",
     "ribbons_draw.wgsl",
     "starfield_params.wgsl",
     "starfield.wgsl",
+    "kaleido_params.wgsl",
+    "kaleido.wgsl",
 );
 
 fn is_prelude(name: &str) -> bool {

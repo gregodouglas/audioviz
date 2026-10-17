@@ -31,7 +31,7 @@ fn scene(name: &str, layers: Vec<Layer>, f: impl FnOnce(&mut Settings)) -> Scene
 }
 
 pub fn builtin() -> Vec<SceneDef> {
-    vec![
+    let mut v = vec![
         scene("Scope", vec![Layer::new(VisualKind::Scope, true, 1.0), Layer::new(VisualKind::Ribbons, false, 0.5), Layer::new(VisualKind::Starfield, false, 0.5)], |_| {}),
         scene("Ribbons", vec![Layer::new(VisualKind::Ribbons, true, 1.0), Layer::new(VisualKind::Scope, false, 0.5), Layer::new(VisualKind::Starfield, false, 0.5)], |_| {}),
         scene("Starfield", vec![Layer::new(VisualKind::Starfield, true, 1.0), Layer::new(VisualKind::Ribbons, false, 0.5), Layer::new(VisualKind::Scope, false, 0.5)], |s| s.post.bloom = 0.12),
@@ -133,7 +133,21 @@ pub fn builtin() -> Vec<SceneDef> {
                 s.post.grain = 0.05;
             },
         ),
-    ]
+    ];
+    v.push(scene(
+        "Kaleidoscope",
+        vec![
+            {
+                let mut l = Layer::new(VisualKind::Kaleido, true, 1.0);
+                l.fold.enabled = true;
+                l
+            },
+            Layer::new(VisualKind::Ribbons, false, 0.4),
+            Layer::new(VisualKind::Scope, false, 0.5),
+        ],
+        |s| s.post.bloom = 0.1,
+    ));
+    v
 }
 
 fn read_dir(d: Option<PathBuf>, out: &mut Vec<SceneDef>) {

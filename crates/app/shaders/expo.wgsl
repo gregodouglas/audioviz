@@ -33,21 +33,32 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> FsIn {
 @fragment
 fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
     var mean = 0.0;
+    var samples: array<f32, 16>;
     for (var y = 0; y < 4; y++) {
         for (var x = 0; x < 4; x++) {
             let uv = (vec2<f32>(f32(x), f32(y)) + 0.5) / 4.0;
             let c = textureSampleLevel(mean_tex, samp, uv, 0.0).rgb;
             // Max channel, not luminance: the tint color must not change exposure.
-            mean += max(c.r, max(c.g, c.b));
+            let m = max(c.r, max(c.g, c.b));
+            samples[y * 4 + x] = m;
+            mean += m;
         }
     }
     mean /= 16.0;
+    // Coverage: how much of the frame carries light. Dark-field visuals (a
+    // trace, a disk) aim at a dark mean; a picture that fills the frame (the
+    // kaleidoscope's photo) aims at a photographic one.
+    var lit = 0.0;
+    for (var i = 0; i < 16; i++) {
+        lit += select(0.0, 1.0, samples[i] > 0.3 * mean);
+    }
+    let aim = mix(0.03, 0.15, smoothstep(0.5, 1.0, lit / 16.0));
 
     let prev = textureSampleLevel(prev_expo, samp, vec2<f32>(0.5), 0.0);
     var e = 1.0;
     if ((P.flags & 1u) != 0u) {
         // Aim the pre-tonemap mean at a dark-field level; lines still clip white.
-        let want = clamp(0.03 / max(mean, 1e-5), 0.25, 6.0);
+        let want = clamp(aim / max(mean, 1e-5), 0.25, 6.0);
         let rate = 1.0 - exp(-P.dt / 2.0);
         e = select(mix(prev.r, want, rate), want, prev.r <= 0.0);
     }

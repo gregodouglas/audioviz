@@ -10,7 +10,7 @@ struct StarParams {
     energy: f32,            // slewed broadband energy, ~1 = average
     density: f32,           // star density
     twinkle: f32,           // onset twinkle strength
-    drift: f32,             // camera orbit drift (unused in the shader; az carries it)
+    streams: f32,           // infall tendrils and outer streams
     disk: f32,              // disk brightness
     doppler: f32,           // Doppler beaming strength
     tilt: f32,              // camera elevation above the disk plane, radians
@@ -20,6 +20,6 @@ struct StarParams {
     az: f32,                // camera azimuth, radians (slow drift)
     palette_mix: f32,       // how far the disk takes the layer palette
     palette_shift: f32,
-    _p2: f32,
+    nebula: f32,            // nebula haze and the band
     palette: array<vec4<f32>, 32>,
 };

@@ -18,6 +18,7 @@ const CAM_DIST: f32 = 16.0;
 const FOCAL: f32 = 1.75;
 const R_IN: f32 = 3.0;      // ISCO, in rs
 const R_OUT: f32 = 9.5;     // disk outer edge, in rs
+const R_FAR: f32 = 17.0;    // outer reach of the infall streams, in rs
 const STEPS: i32 = 120;
 
 @vertex
@@ -46,6 +47,10 @@ fn vnoise(p: vec2<f32>) -> f32 {
     let c = hash21(i + vec2<f32>(0.0, 1.0));
     let d = hash21(i + vec2<f32>(1.0, 1.0));
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+fn fbm(p: vec2<f32>) -> f32 {
+    return 0.5 * vnoise(p) + 0.3 * vnoise(p * 2.1 + 5.0) + 0.2 * vnoise(p * 4.3 - 2.0);
 }
 
 // Value noise periodic in x with period `k` cells (x in cell units).
@@ -102,23 +107,38 @@ fn disk_palette(t: f32) -> vec3<f32> {
 // ray travelling in direction `dir` (away from the camera).
 fn disk_sample(hit: vec3<f32>, dir: vec3<f32>) -> vec4<f32> {
     let r = length(hit.xz) / P.rs;
-    if (r < R_IN * 0.97 || r > R_OUT) { return vec4<f32>(0.0); }
+    if (r < R_IN * 0.97 || r > R_FAR) { return vec4<f32>(0.0); }
     let phi = atan2(hit.z, hit.x);
-
-    // Keplerian shear: inner material laps the outer. Texture lives in
-    // (azimuth, log radius) so streaks are long along the orbit.
-    let omega = pow(r, -1.5) * 5.2;
-    let a = (phi + P.phase * omega) / (2.0 * PI);
     let lr = log(r);
+
+    // Outside the disk: thin streams of matter spiralling in to feed it.
+    if (r > R_OUT * 0.98) {
+        // Two or three thin log-spiral arms, broken into wisps, fading fast with radius.
+        let arms = pow(0.5 + 0.5 * sin(3.0 * phi + 6.5 * lr - P.phase * 0.7), 10.0);
+        let wisp = pow(pnoise(vec2<f32>((phi / (2.0 * PI) + 0.25 * lr) * 18.0, lr * 7.0 + P.phase * 0.35), 18.0), 2.5);
+        let streams = arms * wisp * pow(R_OUT / r, 3.0) * smoothstep(R_FAR, R_OUT * 1.25, r);
+        let gain = P.streams * (0.5 + 0.5 * P.energy) * 0.4;
+        let col = disk_palette(0.3) * streams * gain;
+        return vec4<f32>(col, clamp(streams * 0.2, 0.0, 0.3));
+    }
+
+    // Keplerian shear plus an inward flow: inner material laps the outer and
+    // everything drifts toward the hole along log spirals.
+    let omega = pow(r, -1.5) * 5.2;
+    let a = (phi + P.phase * omega + 0.9 * lr) / (2.0 * PI);
+    let lrf = lr + P.phase * 0.14;
     let k1 = 24.0;
     let k2 = 48.0;
     var n = 0.0;
-    n += 0.55 * pnoise(vec2<f32>(a * k1, lr * 9.0 + 3.1), k1);
-    n += 0.30 * pnoise(vec2<f32>(a * k2 + 7.0, lr * 19.0 - 2.0), k2);
-    n += 0.15 * pnoise(vec2<f32>(a * 96.0 + 2.0, lr * 38.0 + 5.0), 96.0);
+    n += 0.55 * pnoise(vec2<f32>(a * k1, lrf * 9.0 + 3.1), k1);
+    n += 0.30 * pnoise(vec2<f32>(a * k2 + 7.0, lrf * 19.0 - 2.0), k2);
+    n += 0.15 * pnoise(vec2<f32>(a * 96.0 + 2.0, lrf * 38.0 + 5.0), 96.0);
     // Contrast rises with turbulence (onsets); the field never goes fully dark.
     n = pow(clamp(n, 0.0, 1.0), 1.2 + 2.2 * P.turb);
-    let tex = 0.18 + 1.6 * n;
+    var tex = 0.18 + 1.6 * n;
+    // Infall tendrils at the inner edge: bright filaments racing inward.
+    let tend = pow(pnoise(vec2<f32>(a * 40.0 + lrf * 4.0, lrf * 26.0 + P.phase * 2.2), 40.0), 7.0);
+    tex += tend * (3.0 + 6.0 * P.onset) * smoothstep(R_IN * 2.2, R_IN, r) * P.streams;
 
     // Spectrum rings: 16 bands laid out inner -> outer, gently.
     let bi = clamp((lr - log(R_IN)) / (log(R_OUT) - log(R_IN)) * 15.99, 0.0, 15.99);
@@ -188,7 +208,10 @@ fn stars(sky: vec2<f32>, inv: mat2x2<f32>, scale: f32, present: f32, gain: f32, 
             let hb = hash21(c * 2.3 + seed + 1.0);
             let sparkle = 0.5 + 0.5 * sin(P.time * (14.0 + 22.0 * hb) + hb * 40.0);
             let bb = band(u32(hb * 15.99));
-            let tw = 1.0 + P.twinkle * (1.4 * P.onset * sparkle + 0.35 * bb * (0.5 + 0.5 * sin(P.time * 3.0 + hb * 20.0)));
+            // A slow shimmer on every star; only a few flash on transients.
+            let shimmer = 0.88 + 0.12 * sin(P.time * (0.7 + 1.4 * hb) + hb * 31.0);
+            let flash = step(0.82, hb) * sparkle * P.onset * 1.6 + 0.25 * bb * step(0.6, hb);
+            let tw = shimmer * (1.0 + P.twinkle * flash);
             let amp = gain * (0.04 + 1.6 * mag) * tw;
             let sigma = 0.62;
             var s = exp(-d2 / (2.0 * sigma * sigma));
@@ -199,7 +222,7 @@ fn stars(sky: vec2<f32>, inv: mat2x2<f32>, scale: f32, present: f32, gain: f32, 
                 let ax = abs(e.x);
                 let ay = abs(e.y);
                 let spike = exp(-ay * ay * 2.2) * exp(-ax / len) + exp(-ax * ax * 2.2) * exp(-ay / len);
-                s += spikes * b * (0.10 * spike + 0.05 * exp(-sqrt(d2) * 0.8));
+                s += spikes * b * (0.10 * spike + 0.14 * exp(-sqrt(d2) * 0.55));
             }
             acc += col * amp * s;
         }
@@ -226,11 +249,12 @@ fn march(x0: vec3<f32>, v0: vec3<f32>) -> Ray {
     let hv = cross(x0, v0);
     let h2 = dot(hv, hv);
     let k = 1.5 * rs * h2;
-    let exit_r = R_OUT * rs * 2.0;
+    let exit_r = R_FAR * rs * 1.3;
 
     var x = x0;
     var v = v0;
     var done = false;
+    var crossings = 0.0;
     for (var i = 0; i < STEPS; i++) {
         let r = length(x);
         if (r < rs * 1.02) { ray.captured = 1.0; done = true; break; }
@@ -248,7 +272,11 @@ fn march(x0: vec3<f32>, v0: vec3<f32>) -> Ray {
             let t = x.y / (x.y - xn.y);
             let hit = mix(x, xn, t);
             let s = disk_sample(hit, normalize(vn));
-            let w = 1.0 - ray.disk.a;
+            crossings += 1.0;
+            // Later images of the disk (the photon-ring pile-up) count for less,
+            // so the ring reads as a glow rather than a hard line.
+            let cw = select(1.0, 1.0 / (1.0 + 0.9 * (crossings - 1.0)), crossings > 1.5);
+            let w = (1.0 - ray.disk.a) * cw;
             ray.disk = vec4<f32>(ray.disk.rgb + s.rgb * w, ray.disk.a + s.a * w);
         }
         // A whisper of volumetric glow above and below the disk body.
@@ -297,7 +325,7 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
     let hv = cross(cam, dir);
     let b = length(hv);
     var ray: Ray;
-    if (b > R_OUT * P.rs * 1.18) {
+    if (b > R_FAR * P.rs * 1.05) {
         ray.disk = vec4<f32>(0.0);
         ray.captured = 0.0;
         ray.haze = 0.0;
@@ -323,9 +351,19 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
         // Fade the field where one pixel spans more than a cell (photon-ring smear).
         let fade1 = 1.0 - smoothstep(0.25 / 230.0, 0.9 / 230.0, stretch);
         let fade2 = 1.0 - smoothstep(0.25 / 75.0, 0.9 / 75.0, stretch);
-        col += stars(sky, inv, 230.0, 0.42 * dens, 0.22, 1.0, 0.0) * fade1;
-        col += stars(sky, inv, 75.0, 0.30 * dens, 0.8, 2.0, 1.0) * fade2;
-        col += stars(sky, inv, 26.0, 0.12 * dens, 1.8, 3.0, 1.0) * fade2;
+        // The band: a great circle of denser faint stars and dust.
+        let bn = normalize(vec3<f32>(0.35, 1.0, 0.25));
+        let band_w = exp(-pow(dot(ray.dir, bn), 2.0) / 0.05);
+        // Three depths with their own parallax against the camera's orbit.
+        col += stars(sky + vec2<f32>(P.az * 0.02, 0.0), inv, 230.0, 0.42 * dens * (1.0 + 1.6 * band_w), 0.22, 1.0, 0.0) * fade1;
+        col += stars(sky + vec2<f32>(P.az * 0.05, 0.0), inv, 75.0, 0.30 * dens, 0.8, 2.0, 1.0) * fade2;
+        col += stars(sky + vec2<f32>(P.az * 0.09, 0.0), inv, 26.0, 0.12 * dens, 1.8, 3.0, 1.0) * fade2;
+        // Nebula haze and the band's dust, faint, in the disk's cool colour.
+        let neb = fbm(sky * 3.0 + vec2<f32>(7.0, 2.0) + P.az * 0.02);
+        let dust = fbm(sky * 9.0 - 3.0);
+        let fine = fbm(sky * 22.0 + 11.0);
+        let haze = (0.5 * neb * neb * neb * (0.5 + fine) + 0.7 * band_w * dust * dust * fine) * P.nebula;
+        col += mix(disk_palette(0.35), P.tint.rgb, 0.35) * haze * 0.07;
     }
 
     // Disk over the stars. A soft knee keeps the photon ring, where images of

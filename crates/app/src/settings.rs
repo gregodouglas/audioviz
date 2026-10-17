@@ -492,11 +492,17 @@ pub struct StarfieldParams {
     pub doppler: f32,
     /// Camera elevation above the disk plane, degrees.
     pub tilt: f32,
+    /// How much the hole's size breathes with the bass (0 = steady).
+    pub breathe: f32,
+    /// Nebula haze and the Milky Way band behind the stars.
+    pub nebula: f32,
+    /// Infall: tendrils at the inner edge and streams spiralling in from outside.
+    pub streams: f32,
 }
 
 impl Default for StarfieldParams {
     fn default() -> Self {
-        Self { mass: 1.0, density: 1.0, twinkle: 0.6, drift: 1.0, disk: 1.0, doppler: 1.0, tilt: 5.0 }
+        Self { mass: 1.0, density: 1.0, twinkle: 0.6, drift: 1.0, disk: 1.0, doppler: 1.0, tilt: 5.0, breathe: 0.0, nebula: 1.0, streams: 1.0 }
     }
 }
 

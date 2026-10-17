@@ -22,7 +22,7 @@ pub struct StarParams {
     pub energy: f32,
     pub density: f32,
     pub twinkle: f32,
-    pub drift: f32,
+    pub streams: f32,
     pub disk: f32,
     pub doppler: f32,
     pub tilt: f32,
@@ -32,7 +32,7 @@ pub struct StarParams {
     pub az: f32,
     pub palette_mix: f32,
     pub palette_shift: f32,
-    pub _p2: f32,
+    pub nebula: f32,
     pub palette: crate::color::Table,
 }
 
@@ -96,7 +96,7 @@ impl Scene for Starfield {
         self.energy += (energy - self.energy) * (1.0 - (-dt / 0.5).exp());
         self.phase += dt * (0.35 + 0.45 * self.energy);
         self.az += dt * 0.012 * s.drift;
-        let rs = s.mass * (0.9 + 0.22 * self.breath);
+        let rs = s.mass * (1.0 + 0.25 * s.breathe * self.breath);
 
         let mut bands = [[0.0f32; 4]; 4];
         for i in 0..16 {
@@ -118,7 +118,7 @@ impl Scene for Starfield {
             energy: self.energy,
             density: s.density,
             twinkle: s.twinkle,
-            drift: s.drift,
+            streams: s.streams,
             disk: s.disk,
             doppler: s.doppler,
             tilt: s.tilt.to_radians(),
@@ -128,7 +128,7 @@ impl Scene for Starfield {
             az: self.az,
             palette_mix: ctx.palette_amount,
             palette_shift: ctx.palette_shift,
-            _p2: 0.0,
+            nebula: s.nebula,
             palette: ctx.palette.copied().unwrap_or([[0.0; 4]; crate::color::ENTRIES]),
         };
         queue.write_buffer(&self.params_buf, 0, bytemuck::bytes_of(&params));
@@ -146,10 +146,13 @@ impl Scene for Starfield {
         slider_row(ui, "Disk brightness", &mut s.disk, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Doppler", &mut s.doppler, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Tilt", &mut s.tilt, 0.0..=25.0, |v| format!("{v:.0}°"), false);
+        slider_row(ui, "Infall streams", &mut s.streams, 0.0..=2.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Breathe with bass", &mut s.breathe, 0.0..=1.0, |v| format!("{v:.2}"), false);
+        slider_row(ui, "Nebula", &mut s.nebula, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Star density", &mut s.density, 0.1..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Onset twinkle", &mut s.twinkle, 0.0..=2.0, |v| format!("{v:.2}"), false);
         slider_row(ui, "Drift", &mut s.drift, 0.0..=4.0, |v| format!("{v:.2}"), false);
-        hint(ui, "Mass breathes with the bass; the disk follows energy and onsets; stars twinkle on transients.");
+        hint(ui, "The disk's brightness, turbulence and infall follow energy and onsets; stars shimmer slowly and a few flash on transients.");
         ui.add_space(6.0);
         if ghost_button(ui, "Reset black hole", false).clicked() {
             *s = Default::default();

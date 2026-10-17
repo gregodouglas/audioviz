@@ -1,0 +1,20 @@
+# coordination channels (conversational, not durable — see W:/projects/CLAUDE.md)
+SYNC.md
+OUT-SYNC.md
+
+# build outputs
+/target/
+/node_modules/
+/dist/
+/.venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# secrets
+.env
+.env.*
+!.env.example

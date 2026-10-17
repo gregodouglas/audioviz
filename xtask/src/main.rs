@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, bail};
 
+mod installer_images;
 mod mockup;
 
 const ICO_SIZES: [u32; 7] = [16, 24, 32, 48, 64, 128, 256];
@@ -16,7 +17,8 @@ fn main() -> anyhow::Result<()> {
     match task.as_str() {
         "icon" => icon(),
         "mockup" => mockups(),
-        _ => bail!("usage: cargo xtask <icon|mockup>"),
+        "installer-images" => installer_images::run(),
+        _ => bail!("usage: cargo xtask <icon|mockup|installer-images>"),
     }
 }
 

@@ -61,6 +61,10 @@ fn migrate_post(s: &mut Settings, raw: &serde_json::Value) {
 }
 
 pub fn save(settings: &Settings) {
+    // A dev run with AUDIOVIZ_DEFAULTS must never clobber the real file.
+    if std::env::var_os("AUDIOVIZ_DEFAULTS").is_some() {
+        return;
+    }
     let Some(p) = path() else { return };
     if let Some(dir) = p.parent() {
         let _ = std::fs::create_dir_all(dir);

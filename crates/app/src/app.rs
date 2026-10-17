@@ -311,6 +311,11 @@ impl Running {
     fn set_fullscreen(&mut self, on: bool) {
         let w = &self.gpu.window;
         if on {
+            // From a maximized window the client area keeps the maximized
+            // size inside the fullscreen window; restore first.
+            if w.is_maximized() {
+                w.set_maximized(false);
+            }
             let monitor = w.available_monitors().nth(self.settings.monitor);
             w.set_fullscreen(Some(Fullscreen::Borderless(monitor)));
             self.applied_monitor = self.settings.monitor;

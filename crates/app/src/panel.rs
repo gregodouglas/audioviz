@@ -244,6 +244,38 @@ fn mini_switch(ui: &mut egui::Ui, on: &mut bool) {
     ui.painter().circle_filled(pos2(sw.min.x + 7.0 + 10.0 * t, sw.center().y), 5.0, widgets::lerp_color(TEXT_2, theme::BG, t));
 }
 
+/// A small triangle button; returns true when clicked. Dimmed when `enabled` is false.
+fn arrow_button(ui: &mut egui::Ui, up: bool, enabled: bool) -> bool {
+    let (r, resp) = ui.allocate_exact_size(vec2(16.0, 16.0), if enabled { Sense::click() } else { Sense::hover() });
+    let c = if !enabled { theme::with_alpha(TEXT_3, 90) } else if resp.hovered() { TEXT } else { TEXT_3 };
+    let cx = r.center().x;
+    let (y0, y1) = if up { (r.max.y - 5.0, r.min.y + 5.0) } else { (r.min.y + 5.0, r.max.y - 5.0) };
+    ui.painter().add(egui::Shape::convex_polygon(vec![pos2(cx - 4.0, y0), pos2(cx + 4.0, y0), pos2(cx, y1)], c, egui::Stroke::NONE));
+    if enabled {
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
+    } else {
+        false
+    }
+}
+
+/// Drop target over a whole item (its row plus anything drawn under it, the
+/// full content width): draws the insertion line and returns the dragged
+/// payload when the pointer is released over it.
+fn drop_zone<T: Clone + Send + Sync + 'static>(ui: &mut egui::Ui, top: f32, bottom: f32) -> Option<T> {
+    let x = ui.max_rect().x_range();
+    let rect = Rect::from_x_y_ranges(x, top..=bottom);
+    let hover = ui.ctx().pointer_hover_pos().is_some_and(|p| rect.contains(p));
+    if !hover {
+        return None;
+    }
+    ui.painter().rect_filled(rect, 4.0, theme::with_alpha(ACCENT, 18));
+    ui.painter().hline(x, top - 1.0, egui::Stroke::new(2.0, ACCENT));
+    if ui.input(|i| i.pointer.any_released()) {
+        return egui::DragAndDrop::take_payload::<T>(ui.ctx()).map(|a| (*a).clone());
+    }
+    None
+}
+
 fn drag_handle(ui: &mut egui::Ui, id: egui::Id, payload: ModDrag) {
     ui.dnd_drag_source(id, payload, |ui| {
         let (r, resp) = ui.allocate_exact_size(vec2(14.0, 16.0), Sense::hover());
@@ -268,7 +300,8 @@ fn modifiers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut Pan
     let mut moved: Option<(usize, usize)> = None;
     for j in 0..n {
         let focused = j == state.editing_mod;
-        let row = ui.horizontal(|ui| {
+        let top = ui.cursor().top();
+        ui.horizontal(|ui| {
             drag_handle(ui, ui.scope_id().with(("mod drag", editing, j)), ModDrag(j));
             let m = &mut l.modifiers[j];
             mini_switch(ui, m.enabled_mut());
@@ -280,19 +313,19 @@ fn modifiers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut Pan
                 if ui.add(egui::Button::new(egui::RichText::new("×").color(TEXT_3)).frame(false)).on_hover_text("remove").clicked() {
                     remove = Some(j);
                 }
+                if arrow_button(ui, false, j + 1 < n) {
+                    moved = Some((j, j + 1));
+                }
+                if arrow_button(ui, true, j > 0) {
+                    moved = Some((j, j - 1));
+                }
             });
         });
         if dragging {
-            let rect = row.response.rect;
-            let hover = ui.ctx().pointer_hover_pos().is_some_and(|p| rect.contains(p));
-            if hover {
-                ui.painter().hline(rect.x_range(), rect.min.y - 2.0, egui::Stroke::new(2.0, ACCENT));
-                if ui.input(|i| i.pointer.any_released()) {
-                    if let Some(from) = egui::DragAndDrop::take_payload::<ModDrag>(ui.ctx()) {
-                        if from.0 != j {
-                            moved = Some((from.0, j));
-                        }
-                    }
+            let bottom = ui.cursor().top();
+            if let Some(from) = drop_zone::<ModDrag>(ui, top, bottom) {
+                if from.0 != j {
+                    moved = Some((from.0, j));
                 }
             }
         }
@@ -457,7 +490,8 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
     let dragging = egui::DragAndDrop::has_payload_of_type::<usize>(ui.ctx());
     for i in 0..MAX_LAYERS {
         let focused = i == editing;
-        let row = ui.horizontal(|ui| {
+        let top = ui.cursor().top();
+        ui.horizontal(|ui| {
             // Drag handle: three short lines; the row's index is the payload.
             let drag_id = ui.scope_id().with(("layer drag", i));
             ui.dnd_drag_source(drag_id, i, |ui| {
@@ -484,30 +518,30 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
             if l.band.enabled {
                 ui.label(egui::RichText::new(l.band.label()).font(theme::mono(10.5)).color(TEXT_3));
             }
-            if focused {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(egui::RichText::new("editing").size(11.0).color(ACCENT));
-                });
-            }
-        });
-        // Drop target: the whole row. An accent line marks where the dragged layer lands.
-        if dragging {
-            let rect = row.response.rect;
-            let hover = ui.ctx().pointer_hover_pos().is_some_and(|p| rect.contains(p));
-            if hover {
-                ui.painter().hline(rect.x_range(), rect.min.y - 2.0, egui::Stroke::new(2.0, ACCENT));
-                if ui.input(|i| i.pointer.any_released()) {
-                    if let Some(from) = egui::DragAndDrop::take_payload::<usize>(ui.ctx()) {
-                        if *from != i {
-                            a.move_layer = Some((*from, i));
-                        }
-                    }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if arrow_button(ui, false, i + 1 < MAX_LAYERS) {
+                    a.move_layer = Some((i, i + 1));
                 }
-            }
-        }
+                if arrow_button(ui, true, i > 0) {
+                    a.move_layer = Some((i, i - 1));
+                }
+                if focused {
+                    ui.label(egui::RichText::new("editing").size(11.0).color(ACCENT));
+                }
+            });
+        });
         if settings.layer(i).enabled {
             let l = settings.layer_mut(i);
             slider_row(ui, "    opacity", &mut l.opacity, 0.0..=2.0, |v| format!("{v:.2}"), false);
+        }
+        // Drop target: the whole item (row and slider, full width).
+        if dragging {
+            let bottom = ui.cursor().top();
+            if let Some(from) = drop_zone::<usize>(ui, top, bottom) {
+                if from != i {
+                    a.move_layer = Some((from, i));
+                }
+            }
         }
     }
 

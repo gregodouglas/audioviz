@@ -14,7 +14,7 @@ Fast visual iteration is handled by an **engine-first hybrid** rather than a sep
 - The Rust engine (capture + analysis + feature frame) is written once, from the phase 1 spike onward. It broadcasts feature frames over a localhost WebSocket (also a debugging tool).
 - WGSL hot reload (file watch, revalidate, rebuild pipeline) and egui sliders on every tunable parameter are built into the Rust app in phase 1, so shader and parameter edits need no recompile.
 - An optional `sketchbook/` (Vite + TypeScript + WebGPU) subscribes to the engine's WebSocket and iterates new scenes in the browser with hot module reload. It shares one `features.wgsl` struct file with Rust, so finished shaders port with zero edits; only the thin TypeScript host is discarded.
-- The sketchbook is stood up when scene 2 (flow-field ribbons) begins, not for scene 1, which is mostly parameter tuning.
+- The sketchbook is **developer tooling only**, never a product dependency: the shipped app is a native wgpu window with no browser or web view. Default is to iterate inside the Rust app (hot reload + egui); the sketchbook is stood up only if that proves too slow when scene 2 (flow-field ribbons) begins. Confirmed with Greg 2026-10-16 that the product must be its own application window.
 - Drift guard: the WGSL feature struct is the single source of truth, with a Rust byte-layout test.
 
 ### 2. First scene — accepted

@@ -19,16 +19,18 @@ pub enum VisualKind {
     Ribbons,
     Starfield,
     Kaleido,
+    Sigil,
 }
 
 impl VisualKind {
-    pub const ALL: [VisualKind; 4] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield, VisualKind::Kaleido];
+    pub const ALL: [VisualKind; 5] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield, VisualKind::Kaleido, VisualKind::Sigil];
     pub fn name(self) -> &'static str {
         match self {
             VisualKind::Scope => "Phosphor scope",
             VisualKind::Ribbons => "Flow-field ribbons",
             VisualKind::Starfield => "Black hole",
             VisualKind::Kaleido => "Kaleidoscope",
+            VisualKind::Sigil => "Sigil",
         }
     }
     pub fn short(self) -> &'static str {
@@ -37,6 +39,7 @@ impl VisualKind {
             VisualKind::Ribbons => "ribbons",
             VisualKind::Starfield => "starfield",
             VisualKind::Kaleido => "kaleido",
+            VisualKind::Sigil => "sigil",
         }
     }
 }
@@ -506,6 +509,35 @@ impl Default for StarfieldParams {
     }
 }
 
+/// Sigil: a neon sacred-geometry glyph (`scenes/sigil.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SigilParams {
+    /// Glyph size as a fraction of the short side.
+    pub scale: f32,
+    /// Coloured halo around every tube.
+    pub glow: f32,
+    pub rings: f32,
+    pub rays: f32,
+    pub orbs: f32,
+    /// The painterly ground and its splatter.
+    pub ground: f32,
+    /// Ray afterimage life, seconds.
+    pub persistence: f32,
+    /// Rotation of the glyph and the orbit.
+    pub spin: f32,
+    /// How much bands, onsets and beats move it.
+    pub react: f32,
+    /// Extinguish and relight a new arrangement on a track change.
+    pub rebuild: bool,
+}
+
+impl Default for SigilParams {
+    fn default() -> Self {
+        Self { scale: 0.8, glow: 1.0, rings: 1.0, rays: 1.0, orbs: 1.0, ground: 1.0, persistence: 0.7, spin: 1.0, react: 1.0, rebuild: true }
+    }
+}
+
 /// Where a layer takes its colour from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -585,11 +617,12 @@ pub struct Layer {
     pub ribbons: RibbonsParams,
     pub starfield: StarfieldParams,
     pub kaleido: KaleidoParams,
+    pub sigil: SigilParams,
 }
 
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default() }
+        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default() }
     }
 }
 

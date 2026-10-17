@@ -44,6 +44,8 @@ shader_table!(
     "starfield.wgsl",
     "kaleido_params.wgsl",
     "kaleido.wgsl",
+    "sigil_params.wgsl",
+    "sigil.wgsl",
 );
 
 fn is_prelude(name: &str) -> bool {

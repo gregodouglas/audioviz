@@ -147,6 +147,22 @@ pub fn builtin() -> Vec<SceneDef> {
         ],
         |s| s.post.bloom = 0.1,
     ));
+    v.push(scene(
+        "Sigil",
+        vec![
+            {
+                let mut l = Layer::new(VisualKind::Sigil, true, 1.0);
+                l.palette.name = "neon".into();
+                l
+            },
+            Layer::new(VisualKind::Ribbons, false, 0.4),
+            Layer::new(VisualKind::Scope, false, 0.5),
+        ],
+        |s| {
+            s.tint = [0.55, 0.35, 1.0];
+            s.post.bloom = 0.16;
+        },
+    ));
     v
 }
 

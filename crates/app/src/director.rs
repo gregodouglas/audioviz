@@ -17,6 +17,7 @@ use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, fullscreen_pass, fullscree
 use crate::scenes::kaleido::Kaleido;
 use crate::scenes::ribbons::Ribbons;
 use crate::scenes::scope::Scope;
+use crate::scenes::sigil::Sigil;
 use crate::scenes::starfield::Starfield;
 use crate::settings::{FoldMode, FractalMode, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
 use crate::shaders::ShaderSet;
@@ -217,6 +218,7 @@ fn make(kind: VisualKind, device: &wgpu::Device, w: u32, h: u32, shaders: &Shade
         VisualKind::Ribbons => Box::new(Ribbons::new(device, w, h, shaders)?),
         VisualKind::Starfield => Box::new(Starfield::new(device, w, h, shaders)?),
         VisualKind::Kaleido => Box::new(Kaleido::new(device, w, h, shaders)?),
+        VisualKind::Sigil => Box::new(Sigil::new(device, w, h, shaders)?),
     })
 }
 

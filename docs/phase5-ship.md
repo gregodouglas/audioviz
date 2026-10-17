@@ -1,6 +1,24 @@
 # Phase 5 — ship-ability
 
-Status: **not started** (brief written 2026-10-17 at the end of the Phase 4 session). Goal from `docs/research/00-synthesis.md`: installable by someone who isn't Greg; trustworthy by construction (open source, signed, no telemetry).
+Status: **built 2026-10-17, first release pending the push** (brief written 2026-10-17 at the end of the Phase 4 session). Goal from `docs/research/00-synthesis.md`: installable by someone who isn't Greg; trustworthy by construction (open source, signed, no telemetry).
+
+## Progress log
+
+**2026-10-17.** Decisions: hosting = GitHub, Greg's personal account (`gregodouglas/audioviz`, public, MIT); publisher identity = personal, "Gregory Douglas" (winget id `GregoryDouglas.audioviz`); ship unsigned first, Azure Artifact Signing steps are in `release.yml` behind the `CODE_SIGNING` repo variable.
+
+Done and verified locally:
+- `ci.yml` (Windows + macOS build/test, `cargo deny`), `release.yml` (tag → draft release with installer, portable zip, SHA256SUMS, winget manifests, notes). `deny.toml` passes: advisories, licenses, no-network bans, sources.
+- `scripts/release.ps1` builds everything into `dist/`; the Inno installer was installed silently to a scratch dir, checked (uninstall key, Start Menu shortcuts, settings untouched) and uninstalled. `winget validate` passes on the rendered manifest.
+- Icon (`cargo xtask icon`), exe version resource, window icon, `--version`/`--help`.
+- `PRIVACY.md`, `SECURITY.md`, README with screenshots (`docs/img/`), `docs/release-notes-template.md`, `docs/ROADMAP.md`.
+- Loose ends: per-scene post settings (blended across cross-fades, old global values migrated), tap-along latency calibration (C, Space, Enter), panel hidden on first run with a hint, on-screen notice when capture falls back to the endpoint or fails.
+
+Open:
+- The repo exists on GitHub but is empty: the `gh` token lacks the `workflow` scope, so the push with `.github/workflows/` was rejected. Run `gh auth refresh -h github.com -s workflow`, then `git push -u origin main`.
+- First tag (`v0.1.0`) after CI is green; then publish the draft release and submit the winget manifest with `wingetcreate`.
+- Exit-criteria check on a second machine or clean VM (`winget install` / installer).
+- Measured default delay: Greg to run the tap calibration on the reference rig and record it in `docs/phase1-spike.md`.
+- UI refresh (custom chrome, panel, installer look) is tracked in `docs/ROADMAP.md` and GitHub issues, not in this phase.
 
 ## Where the project stands
 

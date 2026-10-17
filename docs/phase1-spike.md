@@ -44,6 +44,10 @@ crates/app        winit + wgpu app, Scope scene, egui overlay, shader hot reload
 
 Loopback is captured before the output buffer, so visuals lead the ear. The "audio delay" slider holds samples back to compensate.
 
+**In-app (since Phase 5):** press **C**, tap **Space** on ten or so beats you hear, press **Enter**. The app matches each tap to the nearest onset the analyzer detected (within ±180 ms, after the current delay line) and applies the median residual to the delay. The spread (±) is the median absolute deviation of the taps; under ~15 ms is a good run. Repeat once to confirm it converges. Record the result in the table below.
+
+**By camera (reference method):**
+
 1. Play a track with a sharp, isolated click or kick (a metronome playlist works).
 2. Film the screen and the speaker together with a phone in slow-motion (120 or 240 fps).
 3. Count frames between the beam spike and the audible click in the recording; convert to ms.

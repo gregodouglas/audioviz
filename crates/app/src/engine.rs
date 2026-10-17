@@ -4,7 +4,7 @@
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use audioviz_analysis::{Analyzer, AnalyzerConfig, FeatureFrame};
 use audioviz_audio::{CaptureHandle, CaptureMode, CaptureTarget};
@@ -16,9 +16,15 @@ enum Cmd {
     DelayMs(f32),
 }
 
+/// Wall-clock times of recent onset detections (after the delay line), for
+/// tap-along latency calibration.
+type OnsetLog = Arc<Mutex<VecDeque<Instant>>>;
+const ONSET_LOG_LEN: usize = 64;
+
 pub struct Engine {
     features: Arc<Mutex<FeatureFrame>>,
     mode: Arc<Mutex<CaptureMode>>,
+    onsets: OnsetLog,
     points_rx: Receiver<Vec<[f32; 2]>>,
     cmd_tx: Sender<Cmd>,
     pub sample_rate: u32,
@@ -32,6 +38,7 @@ impl Engine {
 
         let features = Arc::new(Mutex::new(FeatureFrame::default()));
         let mode = Arc::new(Mutex::new(CaptureMode::Starting));
+        let onsets: OnsetLog = Arc::new(Mutex::new(VecDeque::with_capacity(ONSET_LOG_LEN)));
         let (points_tx, points_rx) = crossbeam_channel::bounded::<Vec<[f32; 2]>>(512);
         let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<Cmd>();
 
@@ -43,16 +50,23 @@ impl Engine {
             delay_line: VecDeque::with_capacity(sample_rate as usize * 2),
             features: features.clone(),
             mode: mode.clone(),
+            onsets: onsets.clone(),
+            last_onset: None,
             points_tx,
             cmd_rx,
         };
         std::thread::Builder::new().name("engine".into()).spawn(move || worker.run())?;
 
-        Ok(Self { features, mode, points_rx, cmd_tx, sample_rate })
+        Ok(Self { features, mode, onsets, points_rx, cmd_tx, sample_rate })
     }
 
     pub fn features(&self) -> FeatureFrame {
         self.features.lock().map(|f| f.clone()).unwrap_or_default()
+    }
+
+    /// Recent onset detection times, oldest first.
+    pub fn recent_onsets(&self) -> Vec<Instant> {
+        self.onsets.lock().map(|o| o.iter().copied().collect()).unwrap_or_default()
     }
 
     pub fn capture_mode(&self) -> CaptureMode {
@@ -81,6 +95,8 @@ struct Worker {
     delay_line: VecDeque<f32>,
     features: Arc<Mutex<FeatureFrame>>,
     mode: Arc<Mutex<CaptureMode>>,
+    onsets: OnsetLog,
+    last_onset: Option<Instant>,
     points_tx: Sender<Vec<[f32; 2]>>,
     cmd_rx: Receiver<Cmd>,
 }
@@ -127,8 +143,21 @@ impl Worker {
         }
         let released: Vec<f32> = self.delay_line.drain(..releasable).collect();
         self.analyzer.push(&released);
+        let frame = self.analyzer.frame();
+        // Log low-band and overall onsets (kicks, snares) for calibration; the
+        // hit flag lingers until the next hop, so debounce.
+        if (frame.onset_hit[0] || frame.onset_hit[3]) && self.last_onset.is_none_or(|t| t.elapsed() > Duration::from_millis(60)) {
+            let now = Instant::now();
+            self.last_onset = Some(now);
+            if let Ok(mut log) = self.onsets.lock() {
+                if log.len() >= ONSET_LOG_LEN {
+                    log.pop_front();
+                }
+                log.push_back(now);
+            }
+        }
         if let Ok(mut f) = self.features.lock() {
-            f.clone_from(self.analyzer.frame());
+            f.clone_from(frame);
         }
         let points: Vec<[f32; 2]> = released.chunks_exact(2).map(|p| [p[0], p[1]]).collect();
         // If the renderer is stalled (minimized), drop rather than block capture.

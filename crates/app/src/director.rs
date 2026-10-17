@@ -95,6 +95,12 @@ impl Director {
         self.fade.is_some()
     }
 
+    /// During a cross-fade: (target scene, eased mix 0..1). Lets the app blend
+    /// per-scene post settings along with the picture.
+    pub fn fade_state(&self) -> Option<(usize, f32)> {
+        self.fade.map(|(to, p)| (to, smoothstep(p)))
+    }
+
     fn rand(&mut self) -> f32 {
         self.rng ^= self.rng << 13;
         self.rng ^= self.rng >> 17;

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use audioviz_audio::CaptureTarget;
+use audioviz_audio::{CaptureMode, CaptureTarget};
 use audioviz_metadata::MetadataHandle;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -20,10 +20,81 @@ use crate::scenes::ribbons::Ribbons;
 use crate::scenes::scope::{MAX_POINTS, Scope};
 use crate::scenes::starfield::Starfield;
 use crate::shaders::ShaderSet;
-use crate::ui::{Settings, Stats};
+use crate::ui::{CALIBRATION_MIN_TAPS, CalibrationView, Settings, Stats};
 
 /// Scene index of the starfield (the one with the type overlay).
 const STARFIELD_SCENE: usize = 2;
+/// How long the first-run hint and a capture-fallback notice stay on screen.
+const HINT_SECONDS: f32 = 12.0;
+const NOTICE_SECONDS: f32 = 10.0;
+
+/// Tap-along audio-delay calibration. The user taps Space on beats they hear;
+/// each tap is matched to the nearest onset the analyzer detected (after the
+/// current delay line), and the median residual is the correction to apply.
+struct Calibration {
+    /// Taps not yet matched (we wait a little in case the onset lands late).
+    pending: Vec<Instant>,
+    /// Matched residuals, ms (positive = tap after onset = visuals lead the ear).
+    residuals: Vec<f32>,
+    taps: usize,
+}
+
+impl Calibration {
+    const MATCH_WINDOW_MS: f32 = 180.0;
+    const SETTLE_MS: u64 = 250;
+
+    fn new() -> Self {
+        Self { pending: Vec::new(), residuals: Vec::new(), taps: 0 }
+    }
+
+    fn tap(&mut self) {
+        self.taps += 1;
+        self.pending.push(Instant::now());
+    }
+
+    /// Resolve taps older than the settle window against the onset log.
+    fn resolve(&mut self, onsets: &[Instant]) {
+        let now = Instant::now();
+        let settle = Duration::from_millis(Self::SETTLE_MS);
+        let mut i = 0;
+        while i < self.pending.len() {
+            let tap = self.pending[i];
+            if now.duration_since(tap) < settle {
+                i += 1;
+                continue;
+            }
+            let best = onsets
+                .iter()
+                .map(|o| signed_ms(tap, *o))
+                .filter(|d| d.abs() <= Self::MATCH_WINDOW_MS)
+                .min_by(|a, b| a.abs().total_cmp(&b.abs()));
+            if let Some(d) = best {
+                self.residuals.push(d);
+            }
+            self.pending.swap_remove(i);
+        }
+    }
+
+    fn view(&self) -> CalibrationView {
+        let mut sorted = self.residuals.clone();
+        sorted.sort_by(|a, b| a.total_cmp(b));
+        let median = |v: &[f32]| if v.is_empty() { 0.0 } else { v[v.len() / 2] };
+        let offset = median(&sorted);
+        let mut dev: Vec<f32> = sorted.iter().map(|r| (r - offset).abs()).collect();
+        dev.sort_by(|a, b| a.total_cmp(b));
+        CalibrationView {
+            taps: self.taps,
+            matched: self.residuals.len(),
+            offset_ms: (self.residuals.len() >= CALIBRATION_MIN_TAPS).then_some(offset),
+            spread_ms: median(&dev),
+        }
+    }
+}
+
+/// `a - b` in milliseconds, signed.
+fn signed_ms(a: Instant, b: Instant) -> f32 {
+    if a >= b { a.duration_since(b).as_secs_f32() * 1000.0 } else { -(b.duration_since(a).as_secs_f32() * 1000.0) }
+}
 
 struct Running {
     gpu: Gpu,
@@ -51,6 +122,13 @@ struct Running {
     points_per_sec: f32,
     auto_gain_value: f32,
     post_error: Option<String>,
+    first_run: bool,
+    calibration: Option<Calibration>,
+    /// One-line result shown briefly after applying a calibration.
+    calibration_result: Option<(String, Instant)>,
+    last_capture: CaptureMode,
+    /// (message, since, persistent) for capture fallback / failure.
+    capture_notice: Option<(String, Instant, bool)>,
 }
 
 fn time_floor(t: f32) -> i32 {
@@ -78,7 +156,7 @@ impl App {
 
 impl Running {
     fn new(window: Arc<Window>) -> anyhow::Result<Self> {
-        let settings = config::load();
+        let config::Loaded { settings, first_run } = config::load();
         let gpu = Gpu::new(window.clone())?;
         let shaders = ShaderSet::load();
         let (w, h) = (gpu.config.width, gpu.config.height);
@@ -134,6 +212,11 @@ impl Running {
             points_per_sec: 0.0,
             auto_gain_value: 1.0,
             post_error: None,
+            first_run,
+            calibration: None,
+            calibration_result: None,
+            last_capture: CaptureMode::Starting,
+            capture_notice: None,
         };
         if running.settings.start_fullscreen {
             running.set_fullscreen(true);
@@ -246,6 +329,20 @@ impl Running {
         self.auto_gain_value += (target - self.auto_gain_value) * (1.0 - (-dt / 1.5).exp());
         self.director.consider(&features, now_playing.as_ref().map(|n| n.track_id), dt);
 
+        // Capture fallback / failure notice (shown briefly on each change; failures stay).
+        let capture = self.engine.capture_mode();
+        if capture != self.last_capture {
+            self.capture_notice = match &capture {
+                CaptureMode::Endpoint { device } => Some((format!("{} is not playing: visualizing '{}'", self.settings.target_process, device), Instant::now(), false)),
+                CaptureMode::Failed(e) => Some((format!("No audio: {e}"), Instant::now(), true)),
+                CaptureMode::Process { .. } | CaptureMode::Starting => None,
+            };
+            self.last_capture = capture.clone();
+        }
+        if let Some(c) = &mut self.calibration {
+            c.resolve(&self.engine.recent_onsets());
+        }
+
         let frame = match self.gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) => f,
             wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
@@ -280,17 +377,25 @@ impl Running {
         }
         self.points_per_sec = self.points_per_sec * 0.98 + (self.pending_points.len() as f32 / dt) * 0.02;
         self.pending_points.clear();
+        // Per-scene post settings, blended along the cross-fade.
+        let post = {
+            let cur = self.settings.post_for(self.director.current);
+            match self.director.fade_state() {
+                Some((to, t)) => cur.lerp(self.settings.post_for(to), t),
+                None => cur,
+            }
+        };
         self.post.render(
             &self.gpu.queue,
             &mut encoder,
             &view,
             PostParams {
-                exposure: self.settings.exposure,
-                bloom: self.settings.bloom,
-                grain: self.settings.grain,
+                exposure: post.exposure,
+                bloom: post.bloom,
+                grain: post.grain,
                 time,
                 dt,
-                flags: if self.settings.auto_exposure { 1 } else { 0 },
+                flags: if post.auto_exposure { 1 } else { 0 },
                 _pad: [0; 2],
             },
         );
@@ -298,7 +403,8 @@ impl Running {
         // --- egui: type overlay (starfield scene) and the debug panel ---
         let overlay_on = self.settings.type_overlay && (self.director.current == STARFIELD_SCENE || self.director.is_fading());
         let mut actions = crate::ui::Actions::default();
-        if self.settings.show_ui || overlay_on {
+        let notices = self.notices();
+        if self.settings.show_ui || overlay_on || !notices.is_empty() {
             let ui_view = frame.texture.create_view(&wgpu::TextureViewDescriptor { format: Some(self.gpu.ui_format), ..Default::default() });
             let raw_input = self.egui_state.take_egui_input(&self.gpu.window);
             let shader_error = match (&self.director.last_error, &self.post_error) {
@@ -319,6 +425,7 @@ impl Running {
                 scene_fading: self.director.is_fading(),
                 last_cue: self.director.last_cue,
                 now_playing: now_playing.as_ref().map(|n| format!("♪ {} — {}{}", n.artist, n.title, if n.playing { "" } else { " (paused)" })),
+                calibration: self.calibration.as_ref().map(|c| c.view()),
             };
             let show_ui = self.settings.show_ui;
             let settings = &mut self.settings;
@@ -333,6 +440,7 @@ impl Running {
                 if show_ui {
                     actions = crate::ui::draw(ctx, settings, &features, &stats, &mut *director.scenes[director.current]);
                 }
+                crate::ui::draw_notices(ctx, &notices);
             });
             self.egui_state.handle_platform_output(&self.gpu.window, platform_output);
             let primitives = self.egui_ctx.tessellate(shapes, pixels_per_point);
@@ -377,9 +485,59 @@ impl Running {
         if let Some(i) = actions.switch_scene {
             self.director.switch_to(i);
         }
+        if actions.calibrate_toggle {
+            self.toggle_calibration();
+        }
+        if actions.calibrate_apply {
+            self.apply_calibration();
+        }
         if !self.director.is_fading() {
             self.settings.scene = self.director.current;
         }
+    }
+
+    /// Bottom-left one-liners: first-run hint, capture fallback, calibration
+    /// progress when the panel is hidden, and the last calibration result.
+    fn notices(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let elapsed = self.start.elapsed().as_secs_f32();
+        if self.first_run && !self.settings.show_ui && elapsed < HINT_SECONDS {
+            out.push("Tab for settings · C to calibrate audio delay · F11 fullscreen".into());
+        }
+        if let Some((msg, since, persistent)) = &self.capture_notice {
+            if *persistent || since.elapsed().as_secs_f32() < NOTICE_SECONDS {
+                out.push(msg.clone());
+            }
+        }
+        if let Some(c) = &self.calibration {
+            if !self.settings.show_ui {
+                out.push(format!("Calibrating: tap Space on the beat · {} · Enter to apply, C to cancel", crate::ui::calibration_status(&c.view())));
+            }
+        }
+        if let Some((msg, since)) = &self.calibration_result {
+            if since.elapsed().as_secs_f32() < NOTICE_SECONDS {
+                out.push(msg.clone());
+            }
+        }
+        out
+    }
+
+    fn toggle_calibration(&mut self) {
+        self.calibration = match self.calibration {
+            Some(_) => None,
+            None => Some(Calibration::new()),
+        };
+    }
+
+    fn apply_calibration(&mut self) {
+        let Some(c) = &self.calibration else { return };
+        let view = c.view();
+        let Some(offset) = view.offset_ms else { return };
+        let before = self.settings.audio_delay_ms;
+        self.settings.audio_delay_ms = (before + offset).clamp(0.0, 300.0);
+        self.calibration_result = Some((format!("Audio delay {:.0} → {:.0} ms ({} taps, ±{:.0} ms)", before, self.settings.audio_delay_ms, view.matched, view.spread_ms), Instant::now()));
+        tracing::info!("calibration applied: delay {:.1} -> {:.1} ms from {} matched taps (spread {:.1} ms)", before, self.settings.audio_delay_ms, view.matched, view.spread_ms);
+        self.calibration = None;
     }
 }
 
@@ -431,7 +589,13 @@ impl ApplicationHandler for App {
                     st.shaders = ShaderSet::load();
                     st.reload_shaders();
                 }
-                KeyCode::Space => st.director.next(),
+                // While calibrating, Space is the tap key and Enter applies.
+                KeyCode::Space => match &mut st.calibration {
+                    Some(c) => c.tap(),
+                    None => st.director.next(),
+                },
+                KeyCode::Enter | KeyCode::NumpadEnter => st.apply_calibration(),
+                KeyCode::KeyC => st.toggle_calibration(),
                 KeyCode::KeyA => st.settings.auto_scenes = !st.settings.auto_scenes,
                 KeyCode::KeyT => st.settings.type_overlay = !st.settings.type_overlay,
                 KeyCode::Digit1 => st.director.switch_to(0),

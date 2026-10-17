@@ -8,6 +8,46 @@ use crate::scene::Scene;
 
 const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
+/// Number of scenes the per-scene settings are sized for.
+pub const SCENE_COUNT: usize = 3;
+
+/// Post-stack settings, one set per scene (the starfield wants less bloom
+/// than the scope). Blended during cross-fades.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PostSettings {
+    pub exposure: f32,
+    pub auto_exposure: bool,
+    pub bloom: f32,
+    pub grain: f32,
+}
+
+impl Default for PostSettings {
+    fn default() -> Self {
+        Self { exposure: 1.0, auto_exposure: true, bloom: 0.3, grain: 0.15 }
+    }
+}
+
+impl PostSettings {
+    pub fn default_for(scene: usize) -> Self {
+        match scene {
+            2 => Self { bloom: 0.12, ..Self::default() },
+            _ => Self::default(),
+        }
+    }
+
+    pub fn lerp(self, other: Self, t: f32) -> Self {
+        let t = t.clamp(0.0, 1.0);
+        let l = |a: f32, b: f32| a + (b - a) * t;
+        Self {
+            exposure: l(self.exposure, other.exposure),
+            auto_exposure: if t < 0.5 { self.auto_exposure } else { other.auto_exposure },
+            bloom: l(self.bloom, other.bloom),
+            grain: l(self.grain, other.grain),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -43,11 +83,8 @@ pub struct Settings {
     // Scenes
     pub scene: usize,
     pub auto_scenes: bool,
-    // Post
-    pub exposure: f32,
-    pub auto_exposure: bool,
-    pub bloom: f32,
-    pub grain: f32,
+    // Post, indexed by scene.
+    pub post: Vec<PostSettings>,
     // Audio
     pub audio_delay_ms: f32,
     pub target_process: String,
@@ -61,12 +98,18 @@ pub struct Settings {
 }
 
 impl Settings {
-    pub fn reset_post(&mut self) {
-        let d = Settings::default();
-        self.exposure = d.exposure;
-        self.auto_exposure = d.auto_exposure;
-        self.bloom = d.bloom;
-        self.grain = d.grain;
+    pub fn post_for(&self, scene: usize) -> PostSettings {
+        self.post.get(scene).copied().unwrap_or_else(|| PostSettings::default_for(scene))
+    }
+    pub fn post_mut(&mut self, scene: usize) -> &mut PostSettings {
+        while self.post.len() <= scene {
+            let i = self.post.len();
+            self.post.push(PostSettings::default_for(i));
+        }
+        &mut self.post[scene]
+    }
+    pub fn reset_post(&mut self, scene: usize) {
+        *self.post_mut(scene) = PostSettings::default_for(scene);
     }
     pub fn reset_scope(&mut self) {
         let d = Settings::default();
@@ -130,19 +173,30 @@ impl Default for Settings {
             type_scale: 1.0,
             scene: 0,
             auto_scenes: false,
-            exposure: 1.0,
-            auto_exposure: true,
-            bloom: 0.3,
-            grain: 0.15,
+            post: (0..SCENE_COUNT).map(PostSettings::default_for).collect(),
             audio_delay_ms: 0.0,
             target_process: "Spotify.exe".into(),
             fps_cap: 60,
             monitor: 0,
             start_fullscreen: false,
-            show_ui: true,
+            // Hidden on first run; a hint says "Tab for settings".
+            show_ui: false,
         }
     }
 }
+
+/// Read-only view of the tap-along calibration for the panel.
+#[derive(Clone, Default)]
+pub struct CalibrationView {
+    pub taps: usize,
+    pub matched: usize,
+    /// Median (tap - onset) in ms; None until enough taps matched.
+    pub offset_ms: Option<f32>,
+    /// Median absolute deviation of the matches, ms.
+    pub spread_ms: f32,
+}
+
+pub const CALIBRATION_MIN_TAPS: usize = 6;
 
 pub struct Stats {
     pub fps: f32,
@@ -158,12 +212,15 @@ pub struct Stats {
     pub scene_fading: bool,
     pub last_cue: &'static str,
     pub now_playing: Option<String>,
+    pub calibration: Option<CalibrationView>,
 }
 
 #[derive(Default)]
 pub struct Actions {
     pub toggle_fullscreen: bool,
     pub switch_scene: Option<usize>,
+    pub calibrate_toggle: bool,
+    pub calibrate_apply: bool,
 }
 
 pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stats: &Stats, scene: &mut dyn Scene) -> Actions {
@@ -207,16 +264,28 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stat
                 scene.ui(ui, settings);
             });
 
-            ui.collapsing("Post", |ui| {
+            let scene_name = stats.scene_names.get(stats.scene_current).copied().unwrap_or("scene");
+            ui.collapsing(format!("Post ({scene_name})"), |ui| {
+                let current = stats.scene_current;
+                let p = settings.post_mut(current);
                 ui.horizontal(|ui| {
-                    ui.add(egui::Slider::new(&mut settings.exposure, 0.1..=10.0).logarithmic(true).text("exposure"));
-                    ui.checkbox(&mut settings.auto_exposure, "auto");
+                    ui.add(egui::Slider::new(&mut p.exposure, 0.1..=10.0).logarithmic(true).text("exposure"));
+                    ui.checkbox(&mut p.auto_exposure, "auto");
                 });
-                ui.add(egui::Slider::new(&mut settings.bloom, 0.0..=3.0).text("bloom"));
-                ui.add(egui::Slider::new(&mut settings.grain, 0.0..=1.0).text("grain"));
-                if ui.button("Reset post to defaults").clicked() {
-                    settings.reset_post();
-                }
+                ui.add(egui::Slider::new(&mut p.bloom, 0.0..=3.0).text("bloom"));
+                ui.add(egui::Slider::new(&mut p.grain, 0.0..=1.0).text("grain"));
+                ui.small("Each scene keeps its own post settings; they blend during cross-fades.");
+                ui.horizontal(|ui| {
+                    if ui.button("Reset this scene").clicked() {
+                        settings.reset_post(current);
+                    }
+                    if ui.button("Copy to all scenes").clicked() {
+                        let p = settings.post_for(current);
+                        for i in 0..SCENE_COUNT.max(settings.post.len()) {
+                            *settings.post_mut(i) = p;
+                        }
+                    }
+                });
             });
 
             ui.collapsing("Display", |ui| {
@@ -236,9 +305,29 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stat
                 ui.small(format!("settings: {}", stats.settings_path));
             });
 
-            ui.collapsing("Sync", |ui| {
+            egui::CollapsingHeader::new("Sync").default_open(stats.calibration.is_some()).show(ui, |ui| {
                 ui.add(egui::Slider::new(&mut settings.audio_delay_ms, 0.0..=300.0).text("audio delay ms"));
-                ui.small("Loopback sees audio before you hear it. Raise this until the beam lands on the beat.");
+                ui.small("Loopback sees audio before you hear it. Raise this until the beam lands on the beat, or calibrate by tapping.");
+                match &stats.calibration {
+                    None => {
+                        if ui.button("Calibrate by tapping (C)").clicked() {
+                            actions.calibrate_toggle = true;
+                        }
+                    }
+                    Some(c) => {
+                        ui.colored_label(egui::Color32::from_rgb(255, 220, 90), "Tap Space on each beat you hear (10 or so).");
+                        ui.label(calibration_status(c));
+                        ui.horizontal(|ui| {
+                            let ready = c.offset_ms.is_some();
+                            if ui.add_enabled(ready, egui::Button::new("Apply (Enter)")).clicked() {
+                                actions.calibrate_apply = true;
+                            }
+                            if ui.button("Cancel (C)").clicked() {
+                                actions.calibrate_toggle = true;
+                            }
+                        });
+                    }
+                }
             });
 
             egui::CollapsingHeader::new("Beat").default_open(true).show(ui, |ui| {
@@ -275,9 +364,38 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, f: &FeatureFrame, stat
             });
 
             ui.separator();
-            ui.small("Tab: panel · 1-4/Space: scene · A: auto scenes · T: title overlay · F11: fullscreen · F5: reload shaders · Esc: quit");
+            ui.small("Tab: panel · 1-3/Space: scene · A: auto scenes · T: title overlay · C: calibrate · F11: fullscreen · F5: reload shaders · Esc: quit");
         });
     actions
+}
+
+pub fn calibration_status(c: &CalibrationView) -> String {
+    match c.offset_ms {
+        Some(off) => format!("{} taps, {} matched · offset {:+.0} ms (±{:.0})", c.taps, c.matched, off, c.spread_ms),
+        None => format!("{} taps, {} matched · need {} matches", c.taps, c.matched, CALIBRATION_MIN_TAPS),
+    }
+}
+
+/// Unobtrusive one-liners in the bottom-left corner (first-run hint, capture
+/// fallback, calibration progress while the panel is hidden).
+pub fn draw_notices(ctx: &egui::Context, lines: &[String]) {
+    if lines.is_empty() {
+        return;
+    }
+    egui::Area::new(egui::Id::unique("notices"))
+        .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(16.0, -16.0))
+        .interactable(false)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgba_unmultiplied(0, 0, 0, 140))
+                .corner_radius(4.0)
+                .inner_margin(egui::Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    for l in lines {
+                        ui.label(egui::RichText::new(l).color(egui::Color32::from_rgb(200, 210, 205)).size(13.0));
+                    }
+                });
+        });
 }
 
 fn meter(ui: &mut egui::Ui, label: &str, v: f32) {

@@ -1,0 +1,26 @@
+[package]
+name = "audioviz"
+description = "A spacey, line-based music visualizer for whatever is playing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "audioviz"
+path = "src/main.rs"
+
+[dependencies]
+audioviz-audio = { path = "../audio" }
+audioviz-analysis = { path = "../analysis" }
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+bytemuck.workspace = true
+glam.workspace = true
+wgpu.workspace = true
+winit.workspace = true
+egui.workspace = true
+egui-wgpu.workspace = true
+egui-winit.workspace = true
+pollster.workspace = true

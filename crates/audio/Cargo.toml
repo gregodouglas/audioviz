@@ -1,0 +1,16 @@
+[package]
+name = "audioviz-audio"
+description = "Audio capture sources for audioviz (system / per-process loopback)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+tracing.workspace = true
+crossbeam-channel.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+wasapi.workspace = true
+sysinfo.workspace = true

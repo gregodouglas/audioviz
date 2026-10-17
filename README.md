@@ -6,7 +6,7 @@ Aesthetic direction: spacey, line-based, post-modern / minimal generative art. N
 
 ## Status
 
-**Phase 4 landed (2026-10-17).** Rust + wgpu native app. Three scenes with cross-fades: a phosphor XY oscilloscope, chroma-steered flow-field ribbons (GPU compute), and a gravitationally lensed starfield with a Swiss-grid title overlay fed by Windows now-playing metadata (track, artist, album, art). Per-process Spotify loopback with auto-reconnect, full v1 analysis (bands, loudness, onsets, predictive beat clock, chroma), bloom + AgX + auto-exposure post, frame cap, monitor selection, persisted settings, optional auto scene director. Docs: `docs/phase1-spike.md` (build/run), `docs/phase2-analysis.md`, `docs/phase3-polish.md`, `docs/phase4-scenes.md`; research in `docs/research/00-synthesis.md`.
+**Phase 4 landed (2026-10-17).** Rust + wgpu native app. Three scenes with cross-fades: a phosphor XY oscilloscope, chroma-steered flow-field ribbons (GPU compute), and a gravitationally lensed starfield with a Swiss-grid title overlay fed by Windows now-playing metadata (track, artist, album, art). Per-process Spotify loopback with auto-reconnect, full v1 analysis (bands, loudness, onsets, predictive beat clock, chroma), bloom + AgX + auto-exposure post, frame cap, monitor selection, persisted settings, optional auto scene director. Docs: `docs/phase1-spike.md` (build/run), `docs/phase2-analysis.md`, `docs/phase3-polish.md`, `docs/phase4-scenes.md`, `docs/phase5-ship.md` (next: installer, signing, winget); research in `docs/research/00-synthesis.md`.
 
 ```
 cargo run --release -p audioviz

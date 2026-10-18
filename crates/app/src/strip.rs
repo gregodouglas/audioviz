@@ -76,9 +76,18 @@ impl Strip {
                 _ => ("Nothing playing".to_string(), String::new()),
             };
             let text_w = (rect.width() * 0.5 - 240.0 - 90.0).max(80.0);
-            let tg = p.layout(title, theme::bold(15.0), TEXT, text_w);
+            // One line each, truncated with an ellipsis: a long title must not
+            // wrap into the artist line.
+            let one_line = |text: String, font: egui::FontId, color: egui::Color32| {
+                let mut job = egui::text::LayoutJob::simple(text, font, color, text_w);
+                job.wrap.max_rows = 1;
+                job.wrap.break_anywhere = true;
+                job.wrap.overflow_character = Some('…');
+                p.layout_job(job)
+            };
+            let tg = one_line(title, theme::bold(15.0), TEXT);
             p.galley(pos2(rect.min.x + 78.0, rect.min.y + 20.0), tg, TEXT);
-            let sg = p.layout(sub, theme::sans(12.0), TEXT_2, text_w);
+            let sg = one_line(sub, theme::sans(12.0), TEXT_2);
             p.galley(pos2(rect.min.x + 78.0, rect.min.y + 42.0), sg, TEXT_2);
 
             // Controls, centred.

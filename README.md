@@ -68,7 +68,7 @@ Releases: bump `version` in `Cargo.toml`, commit, `git tag vX.Y.Z && git push --
 
 ## Status and docs
 
-**v0.1.0 released 2026-10-17** (Phase 5, ship-ability). Phase briefs: `docs/phase1-spike.md` (build/run, latency protocol), `docs/phase2-analysis.md`, `docs/phase3-polish.md`, `docs/phase4-scenes.md`, `docs/phase5-ship.md`, `docs/phase6-ui.md` (next: UI refresh). Backlog in `docs/ROADMAP.md` and the issue tracker. Research in `docs/research/00-synthesis.md`; decisions in `docs/decisions/`. macOS follows the UI refresh; the core already builds there in CI with null audio/metadata backends.
+**v0.1.0 released 2026-10-17** (Phase 5, ship-ability). Phase briefs: `docs/phase1-spike.md` (build/run, latency protocol), `docs/phase2-analysis.md`, `docs/phase3-polish.md`, `docs/phase4-scenes.md`, `docs/phase5-ship.md`, `docs/phase6-ui.md` (UI refresh, composition model, visuals, colour; progress log at the top), `docs/phase7-controls.md` (the panel's inspector model). What is still open: `docs/ROADMAP.md`. Research in `docs/research/00-synthesis.md`; decisions in `docs/decisions/`. macOS follows the UI refresh; the core already builds there in CI with null audio/metadata backends.
 
 ## Layout
 

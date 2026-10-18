@@ -1,24 +1,51 @@
 # Roadmap and open issues
 
-Working backlog beyond the phase briefs. Each item here is mirrored as a GitHub issue; this file holds the reasoning, the issue holds the discussion.
+Working backlog beyond the phase briefs. Phase briefs (`docs/phase*.md`) carry the design and the progress log; this file is the list of what is still open, in rough order, with the reasoning. Items with a GitHub issue say so; mirroring lags, the file wins.
 
-## UI refresh (Greg, 2026-10-17): "look exceptional"
+Rewritten 2026-10-18 after the Sigil, panel, colour, casting and blend-mode work. Everything since v0.1.0 is committed locally and **not pushed** until Greg says so.
 
-Greg's direction after testing the Phase 5 build: the app and installer work, but they look stock. Target is a product that looks as considered as the scenes do.
+## Now: finish 0.2.0
 
-1. **Custom window chrome, VS Code style** (`ui-chrome`). Drop the standard Windows title bar. A thin, dark, integrated bar: the mark at left, "audioviz" in the Swiss grotesk, scene pips in the centre, now-playing at right, window controls drawn by us. Hidden in fullscreen; appears on mouse-move near the top edge in windowed mode. Implementation: `winit` `with_decorations(false)` + egui-drawn bar + `window.drag_window()` / `drag_resize_window()` for move and resize; Windows snap layouts need `WM_NCHITTEST` handling (winit exposes `with_titlebar_hidden`-style options only on macOS, so on Windows this is a small `windows` crate hook on the raw window). Keep the DWM rounded corners and shadow.
-2. **Settings panel redesign** (`ui-panel`). The egui debug window becomes a docked right-hand sheet (VS Code side-panel feel): sections as a left icon rail (Scene, Post, Sync, Display, Meters), one section visible at a time, monospace numeric readouts, the same phosphor accent as the scenes. Debug-only meters move behind a "developer" toggle. Replace egui's default dark visuals with a custom `egui::Style` (type scale, 4 px radius, hairline separators, no window title bar).
-3. **Installer and uninstaller look** (`installer-modern`). The default Inno wizard is 2005. Options, cheapest first: (a) keep Inno, `WizardStyle=modern` with custom `WizardImageFile` / `WizardSmallImageFile` (phosphor mark on black, 164x314 and 55x58), dark `WizardResizable=no`, a single-page flow (`DisableWelcomePage`, `DisableReadyPage`), and a custom finish page; (b) a bespoke installer window in Rust (the app itself with `--install`, copying files, writing the uninstall key and shortcuts) so the installer *is* the product's design; (c) MSIX for a Store-grade experience, which also removes the SmartScreen issue when signed. Recommendation: (a) now, (b) when the chrome work lands, since the two share the egui style.
-4. **First-run experience** (`ui-first-run`). Replace the one-line hint with a short in-app sequence: pick monitor, calibrate delay by tapping, choose the starting scene. Dismissable, never shown again, all three steps reachable later from the panel.
-5. **Icon and splash** (`brand`). The Lissajous mark is right; refine stroke weights at 16/32 px, add a monochrome variant for the title bar and tray, and render the installer wizard images from the same SVG via `cargo xtask icon`.
+Built and in `dist/audioviz-0.2.0-setup.exe`, waiting on Greg's hands.
+
+1. **Hand tests** that scripts cannot do (mouse paths never reach egui from posted messages):
+   - Panel: drag a stack row by its hue bar, the modifier chips, inline opacity, dropdowns, typing into a value, double-click reset, Esc out of a modifier page, the 108 px label column (does anything truncate that matters?).
+   - Blend modes: set a layer to *over*, move it between slots 1 and 2 with the arrows.
+   - Neon look on a scene you know well; it changes how every bright pixel renders.
+   - Casting (experimental): Display › Cast to a TV against the Roku, with Spotify playing on the PC.
+   - Still owed from earlier: the portrait-monitor fullscreen cut-off (not reproduced here; needs a screenshot), tray menu, strip controls against Spotify, the installer wizard interactively, Win+arrow and Snap Layouts on the portrait monitor.
+2. **Look feedback** on the Sigil (drips, centre, colours) and the colour plumbing (ribbons colour spread, luminescence in the picture's colours).
+3. **README screenshots for 0.2.0**: `docs/img/scene-*.png` are still 0.1.0's; add the sigil and the new panel.
+4. **Release notes** for 0.2.0 from the phase6 log; `cargo deny`; then push and tag when Greg says so.
+
+## Next: visuals and sound
+
+- **Director that fades layers** rather than dissolving whole scenes (from the composition-model round). Needs per-layer target opacities and a slew in the director; the UI already has the stack.
+- **Sigil second pass** after Greg's look: drip tuning, the centre, and whatever the hand test turns up. Candidates kept ready in the code: cardinal triangles per level, more polygram types, a music-written trace (last struck pitch classes instead of a seeded path).
+- **More colour plumbing**: edge modifier in palette colours; a per-layer "reacts to" band for modifiers; a blend-mode per modifier is *not* planned (Mix covers it).
+- **Scope**: beam colour by instantaneous frequency (a cheap zero-crossing estimate on the CPU) as an option beside key + speed.
+- **Microphone source** ("listen to the room") for setups where the music does not play on the PC. Not needed for Greg's room (Sonos on the TV's HDMI); worth doing before anyone else uses casting.
+- **Performance pass on the release build**: all numbers so far are debug builds at 1440x2560; measure release, and the cost of three layers each with six modifiers, before 0.2.0 ships.
+
+## Casting (experimental)
+
+- Current: Windows Miracast via the cast panel, auto-detect the new display, one click to fullscreen there. Roku takes no Google Cast.
+- Only if mirroring disappoints: a native Roku channel fed by an encoded live stream (Media Foundation H.264 → HLS, BrightScript player). Weeks of work and seconds of lag to compensate; not planned.
 
 ## Shipping
 
-- Code signing: Azure Artifact Signing, wired in `release.yml` behind `CODE_SIGNING`. Needs the account, a certificate profile, and the five secrets.
-- winget submission after the first public release (`wingetcreate submit` with the rendered manifests attached to the release).
-- Measured default audio delay: Greg's tap calibration result on the reference rig goes into `docs/phase1-spike.md` and becomes the shipped default if it is clearly non-zero.
+- **Bespoke installer** (issue #3): the app's own design instead of Inno, when there is time. Inno stays for 0.2.0.
+- **Code signing**: Azure Artifact Signing, wired in `release.yml` behind `CODE_SIGNING`; needs the account, a certificate profile and the five secrets. Ship unsigned until then (decided Phase 5).
+- **winget** submission after a signed public release; no winget mention anywhere user-facing until it is real.
+- **Measured default audio delay**: Greg's tap calibration on the reference rig becomes the shipped default if clearly non-zero.
+- **Settings file**: every schema change so far migrates (`config::migrate`, `Layer::normalize`, serde defaults and aliases). Keep it that way; a dev run must never clobber `%APPDATA%\audioviz\settings.json` (`config::save` refuses under `AUDIOVIZ_DEFAULTS`).
 
-## Phase 6: macOS
+## Later: macOS
 
 - Core Audio process tap (macOS 14.2+) behind `AudioSource`; MediaRemote / Now Playing behind `MetadataSource`.
-- `.app` bundle, notarization, Homebrew cask.
+- `.app` bundle, notarization, Homebrew cask. The MacBook Pro M4 Max is the target machine.
+- `platform/other.rs` already stubs the Windows-only entry points (open URL, launch Spotify, battery, update check, cast) so the macOS build compiles.
+
+## Done since v0.1.0 (for orientation)
+
+Phase 6 UI (chrome, panel, strip, overlays, tray, installer wizard), the composition model (visuals → layers → scenes, bands, per-layer tint, levelling, reorder), black hole v2, kaleidoscope visual, the modifier chain (ten kinds, Mix per modifier), the colour engine (OKLab palettes, presets, per-visual plumbing, neon tonemap), the Sigil visual (three passes), the Phase 7 inspector panel (stack, breadcrumb, tabs, one-line slider rows, groups, solo), blend modes, and the experimental cast flow. Details and dates in `docs/phase6-ui.md` and `docs/phase7-controls.md`.

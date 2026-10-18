@@ -16,7 +16,7 @@ use crate::engine::Engine;
 use crate::gpu::Gpu;
 use crate::hittest;
 use crate::overlays::{self, CALIBRATION_MIN_TAPS, CalibrationView, FirstRun};
-use crate::panel::{self, MonitorInfo, PanelState, Stats, UpdateStatus};
+use crate::panel::{self, CastView, MonitorInfo, PanelState, Stats, UpdateStatus};
 use crate::platform;
 use crate::post::{Post, PostParams};
 use crate::scene_store::{self, SceneDef};
@@ -142,6 +142,9 @@ struct Running {
     occluded: bool,
     battery: Option<bool>,
     last_battery_check: Instant,
+    /// Casting: when the Windows cast panel was opened, how many displays
+    /// there were, and the display that appeared since (if any).
+    cast: Option<CastWatch>,
     spotify_installed: bool,
     quit: bool,
     tray: Option<Tray>,
@@ -173,6 +176,17 @@ impl App {
     pub fn new(start_in_tray: bool) -> Self {
         Self { state: None, start_in_tray }
     }
+}
+
+/// Seconds to watch for a cast display before giving up.
+const CAST_WAIT_S: u32 = 120;
+
+struct CastWatch {
+    started: Instant,
+    before: usize,
+    found: Option<usize>,
+    last_poll: Instant,
+    error: Option<String>,
 }
 
 impl Running {
@@ -275,6 +289,7 @@ impl Running {
             occluded: false,
             battery: platform::on_battery(),
             last_battery_check: Instant::now(),
+            cast: None,
             spotify_installed: platform::spotify_installed(),
             quit: false,
             tray: None,
@@ -296,6 +311,40 @@ impl Running {
             running.occluded = true;
         }
         Ok(running)
+    }
+
+    /// Open the Windows cast panel and remember how many displays there are,
+    /// so the TV can be recognised when it appears.
+    fn start_cast(&mut self) {
+        let before = self.gpu.window.available_monitors().count();
+        let error = platform::open_cast_picker().err().map(|e| e.to_string());
+        if let Some(e) = &error {
+            tracing::warn!("cast panel: {e}");
+        }
+        self.cast = Some(CastWatch { started: Instant::now(), before, found: None, last_poll: Instant::now(), error });
+    }
+
+    /// While waiting for a cast, look for a new display once a second; give
+    /// up quietly after CAST_WAIT_S.
+    fn poll_cast(&mut self) {
+        let Some(c) = &mut self.cast else { return };
+        if c.found.is_some() || c.error.is_some() {
+            return;
+        }
+        if c.started.elapsed().as_secs() as u32 >= CAST_WAIT_S {
+            self.cast = None;
+            return;
+        }
+        if c.last_poll.elapsed() < Duration::from_secs(1) {
+            return;
+        }
+        c.last_poll = Instant::now();
+        let n = self.gpu.window.available_monitors().count();
+        if n > c.before {
+            // The new display is the one not matching the window's current monitor; take the last.
+            c.found = Some(n - 1);
+            tracing::info!("cast: a new display appeared ({} -> {})", c.before, n);
+        }
     }
 
     fn monitors(&self) -> Vec<MonitorInfo> {
@@ -505,6 +554,7 @@ impl Running {
             self.last_battery_check = Instant::now();
             self.battery = platform::on_battery();
         }
+        self.poll_cast();
 
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f32().clamp(1e-4, 0.25);
@@ -638,6 +688,11 @@ impl Running {
             shader_error,
             sample_rate: self.engine.sample_rate,
             monitors: self.monitors(),
+            cast: self.cast.as_ref().map(|c| match (&c.error, c.found) {
+                (Some(e), _) => CastView::Failed(e.clone()),
+                (None, Some(m)) => CastView::Found { monitor: m },
+                (None, None) => CastView::Waiting { secs: CAST_WAIT_S.saturating_sub(c.started.elapsed().as_secs() as u32) },
+            }),
             fullscreen,
             settings_path: config::path().map(|p| p.display().to_string()).unwrap_or_default(),
             fading: self.director.is_fading(),
@@ -840,6 +895,17 @@ impl Running {
                 tracing::warn!("delete scene: {e}");
             }
             self.scenes = scene_store::all();
+        }
+        if panel_actions.cast {
+            self.start_cast();
+        }
+        if panel_actions.cast_cancel {
+            self.cast = None;
+        }
+        if let Some(i) = panel_actions.fullscreen_on {
+            self.settings.monitor = i;
+            self.set_fullscreen(true);
+            self.cast = None;
         }
         if let Some(url) = panel_actions.open_url {
             if let Err(e) = platform::open_url(&url) {

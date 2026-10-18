@@ -14,12 +14,12 @@
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use self::windows::{diagnostics_header, latest_release, launch_spotify, on_battery, open_url, spotify_installed};
+pub use self::windows::{diagnostics_header, latest_release, launch_spotify, on_battery, open_cast_picker, open_url, spotify_installed};
 
 #[cfg(not(windows))]
 mod other;
 #[cfg(not(windows))]
-pub use self::other::{diagnostics_header, latest_release, launch_spotify, on_battery, open_url, spotify_installed};
+pub use self::other::{diagnostics_header, latest_release, launch_spotify, on_battery, open_cast_picker, open_url, spotify_installed};
 
 /// The newest published GitHub release, as returned by [`latest_release`].
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -38,6 +38,8 @@ Press **Tab** for the settings panel: a docked sheet with an icon rail. Scenes; 
 
 The tray icon menu shows the window, switches scene, toggles the director, goes fullscreen on a chosen monitor, and quits. `audioviz --tray` starts hidden in the tray (what "start when I sign in" uses).
 
+**On a TV.** Display › Cast to a TV opens the Windows cast panel (Win+K) for a Roku or any Miracast television; when the TV appears as a display, one click puts the visualizer fullscreen on it. Play Spotify on the PC rather than through Spotify Connect: the sound travels with the picture, so a soundbar wired to the TV gets it, and the visualizer keeps hearing the music.
+
 Loopback captures audio before it reaches your ears, so the visuals lead the sound by your output latency (wired headphones ~10-40 ms, Bluetooth 100-250 ms). Press **C** and tap along for ten beats; the app measures the offset and offers to apply it.
 
 **Reduce flashing** (Display) is on by default: it caps how fast the picture may brighten between frames, for photosensitive viewers. Turn it off or raise the allowed rise if you want harder strobes.

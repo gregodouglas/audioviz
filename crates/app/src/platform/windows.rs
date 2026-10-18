@@ -71,6 +71,13 @@ pub fn open_url(url: &str) -> anyhow::Result<()> {
     shell_open(url)
 }
 
+/// Open the Windows "Cast" panel (the same one Win+K shows) so the user can
+/// pick a Miracast receiver such as a Roku TV. The TV then appears as a
+/// wireless display; Windows carries the audio with it.
+pub fn open_cast_picker() -> anyhow::Result<()> {
+    shell_open("ms-settings-connectabledevices:devicediscovery")
+}
+
 /// Candidate Spotify executables, in the order we try them: the desktop
 /// installer's `%APPDATA%\Spotify\Spotify.exe`, then the Microsoft Store
 /// app-execution alias under `%LOCALAPPDATA%\Microsoft\WindowsApps`.

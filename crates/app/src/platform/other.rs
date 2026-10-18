@@ -9,6 +9,11 @@ pub fn open_url(url: &str) -> anyhow::Result<()> {
 }
 
 /// Not supported off Windows; always returns an error.
+pub fn open_cast_picker() -> anyhow::Result<()> {
+    anyhow::bail!("casting is only supported on Windows")
+}
+
+/// Not supported off Windows; always returns an error.
 pub fn launch_spotify() -> anyhow::Result<()> {
     anyhow::bail!("launching Spotify is only supported on Windows")
 }

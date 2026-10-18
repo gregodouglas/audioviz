@@ -41,6 +41,17 @@ pub enum UpdateStatus {
     Failed(String),
 }
 
+/// Casting flow, as the panel sees it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CastView {
+    /// The Windows cast panel was opened; waiting for a new display.
+    Waiting { secs: u32 },
+    /// A display appeared after casting began: its monitor index.
+    Found { monitor: usize },
+    /// Opening the cast panel failed.
+    Failed(String),
+}
+
 pub struct Stats {
     pub fps: f32,
     pub points_per_sec: f32,
@@ -58,6 +69,7 @@ pub struct Stats {
     pub update: UpdateStatus,
     pub diagnostics: String,
     pub on_battery: Option<bool>,
+    pub cast: Option<CastView>,
 }
 
 #[derive(Default)]
@@ -84,6 +96,11 @@ pub struct Actions {
     pub show_shortcuts: bool,
     pub rerun_first_run: bool,
     pub hide_ui: bool,
+    /// Open the Windows cast panel and watch for a new display.
+    pub cast: bool,
+    pub cast_cancel: bool,
+    /// Go fullscreen on this monitor (the TV that just appeared).
+    pub fullscreen_on: Option<usize>,
 }
 
 /// Scratch UI state that is not a setting.
@@ -865,8 +882,8 @@ fn picture_section(ui: &mut egui::Ui, settings: &mut Settings) {
 
 fn sync_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, a: &mut Actions) {
     section_header(ui, "Sync", None, None);
-    slider_row(ui, "Audio delay", &mut settings.audio_delay_ms, 0.0..=300.0, |v| format!("{v:.0} ms"), false);
-    hint(ui, "Loopback hears the music before you do. Raise this until the beam lands on the beat, or calibrate by tapping.");
+    slider_row(ui, "Audio delay", &mut settings.audio_delay_ms, 0.0..=1000.0, |v| format!("{v:.0} ms"), false);
+    hint(ui, "Loopback hears the music before you do. Raise this until the beam lands on the beat, or calibrate by tapping. Bluetooth is 100–250 ms, a cast TV 100–300 ms more.");
     ui.add_space(6.0);
     match &stats.calibration {
         None => {
@@ -967,6 +984,50 @@ fn display_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, a:
         }
     });
     toggle_row(ui, "Start fullscreen on it", &mut settings.start_fullscreen);
+
+    ui.add_space(8.0);
+    small_caps(ui, "Cast to a TV");
+    match &stats.cast {
+        None => {
+            if ghost_button(ui, "Cast to a TV…", false).clicked() {
+                a.cast = true;
+            }
+            hint(ui, "Mirrors this PC to a Roku or any Miracast TV through Windows (Win+K). Play Spotify on this PC, not with Spotify Connect: the sound travels with the picture, and a soundbar on the TV gets it too.");
+        }
+        Some(CastView::Waiting { secs }) => {
+            ui.label(egui::RichText::new("Pick the TV in the Windows panel…").color(theme::WARN));
+            hint(ui, "If the TV shows the same picture as this screen, press Win+P and choose Extend so it becomes its own display. It will appear in the monitor list above.");
+            ui.horizontal(|ui| {
+                if ghost_button(ui, "Open the panel again", false).clicked() {
+                    a.cast = true;
+                }
+                if ui.add(egui::Button::new(egui::RichText::new(format!("stop waiting ({secs} s)")).size(11.0).color(TEXT_2)).frame(false)).clicked() {
+                    a.cast_cancel = true;
+                }
+            });
+        }
+        Some(CastView::Found { monitor }) => {
+            let name = stats.monitors.get(*monitor).map(|m| format!("{} · {}x{}", m.name, m.w, m.h)).unwrap_or_default();
+            ui.label(egui::RichText::new(format!("TV connected as display {}", monitor + 1)).color(ACCENT));
+            hint(ui, &name);
+            ui.horizontal(|ui| {
+                if ghost_button(ui, "Fullscreen on the TV", true).clicked() {
+                    a.fullscreen_on = Some(*monitor);
+                }
+                if ui.add(egui::Button::new(egui::RichText::new("done").size(11.0).color(TEXT_2)).frame(false)).clicked() {
+                    a.cast_cancel = true;
+                }
+            });
+            hint(ui, "Wireless displays run 100–300 ms behind. If the beat lands late on the TV, raise Audio delay in Sync.");
+        }
+        Some(CastView::Failed(e)) => {
+            ui.label(egui::RichText::new("Could not open the Windows cast panel").color(ERROR));
+            hint(ui, &format!("{e}. Press Win+K instead, then pick the TV."));
+            if ghost_button(ui, "Try again", false).clicked() {
+                a.cast = true;
+            }
+        }
+    }
 
     ui.add_space(8.0);
     small_caps(ui, "Motion");

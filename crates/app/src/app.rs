@@ -11,7 +11,7 @@ use winit::window::{Fullscreen, Window, WindowId};
 
 use crate::chrome::{Chrome, ChromeInput};
 use crate::config;
-use crate::director::{Director, FADE_AUTO_S, FADE_MANUAL_S};
+use crate::director::{Director, FADE_AUTO, FADE_MANUAL};
 use crate::engine::Engine;
 use crate::gpu::Gpu;
 use crate::hittest;
@@ -466,15 +466,15 @@ impl Running {
         }
     }
 
-    fn apply_scene_named(&mut self, name: &str, fade: f32) {
+    fn apply_scene_named(&mut self, name: &str, fade: (f32, f32)) {
         let Some(def) = self.scenes.iter().find(|d| d.name == name).cloned() else { return };
         self.settings.apply_scene(&def.settings);
-        self.director.begin_dissolve(fade);
+        self.director.begin_fade(fade);
         self.calibration_result = Some((format!("Scene: {}", def.name), Instant::now()));
     }
 
     /// Space / the director: the next scene in the list after the current one.
-    fn next_scene(&mut self, fade: f32) {
+    fn next_scene(&mut self, fade: (f32, f32)) {
         if self.scenes.is_empty() {
             return;
         }
@@ -575,7 +575,7 @@ impl Running {
         let target = if features.peak > 0.0005 { (0.9 / features.peak).clamp(0.3, 200.0) } else { self.auto_gain_value };
         self.auto_gain_value += (target - self.auto_gain_value) * (1.0 - (-dt / 1.5).exp());
         if self.director.consider(&features, now_playing.as_ref().map(|n| n.track_id), dt, self.settings.auto_scenes).is_some() {
-            self.next_scene(FADE_AUTO_S);
+            self.next_scene(FADE_AUTO);
         }
 
         // Track change: toast and art tint.
@@ -617,7 +617,7 @@ impl Running {
                 TrayAction::Show => self.show_window(),
                 TrayAction::Scene(name) => {
                     self.show_window();
-                    self.apply_scene_named(&name, FADE_MANUAL_S);
+                    self.apply_scene_named(&name, FADE_MANUAL);
                 }
                 TrayAction::ToggleAuto => self.settings.auto_scenes = !self.settings.auto_scenes,
                 TrayAction::Fullscreen(i) => {
@@ -878,7 +878,7 @@ impl Running {
             self.apply_calibration();
         }
         if let Some(name) = panel_actions.apply_scene {
-            self.apply_scene_named(&name, FADE_MANUAL_S);
+            self.apply_scene_named(&name, FADE_MANUAL);
         }
         if let Some(name) = panel_actions.save_scene {
             match scene_store::save(&name, &self.settings) {
@@ -956,7 +956,7 @@ impl Running {
             self.settings.start_fullscreen = sf;
         }
         if let Some(name) = fr_actions.scene {
-            self.apply_scene_named(&name, FADE_MANUAL_S);
+            self.apply_scene_named(&name, FADE_MANUAL);
         }
         if fr_actions.calibrate {
             self.first_run = None;
@@ -1062,7 +1062,7 @@ impl Running {
             }
             KeyCode::Space => match &mut self.calibration {
                 Some(c) => c.tap(),
-                None => self.next_scene(FADE_MANUAL_S),
+                None => self.next_scene(FADE_MANUAL),
             },
             KeyCode::Enter | KeyCode::NumpadEnter => self.apply_calibration(),
             KeyCode::KeyC => self.toggle_calibration(),

@@ -21,7 +21,7 @@ eleaseudioviz.exe` or builds the installer himself when he wants one. A tagged 
 
 ## Next: visuals and sound
 
-- **Director that fades layers** rather than dissolving whole scenes (from the composition-model round). Needs per-layer target opacities and a slew in the director; the UI already has the stack.
+- ~~Director that fades layers~~ **done 2026-10-18**: per-slot eased opacity ramps, a replaced visual fades out under its successor, the auto director staggers the slots bottom first (`docs/phase6-ui.md` log).
 - **Sigil second pass** after Greg's look: drip tuning, the centre, and whatever the hand test turns up. Candidates kept ready in the code: cardinal triangles per level, more polygram types, a music-written trace (last struck pitch classes instead of a seeded path).
 - **More colour plumbing**: edge modifier in palette colours; a per-layer "reacts to" band for modifiers; a blend-mode per modifier is *not* planned (Mix covers it).
 - **Scope**: beam colour by instantaneous frequency (a cheap zero-crossing estimate on the CPU) as an option beside key + speed.

@@ -1,9 +1,11 @@
-//! Owns the layer instances (one visual per layer slot), renders the enabled
+//! Owns the layer instances (one visual per layer slot), renders the visible
 //! ones with their own parameters and audio band, runs each layer's modifier
-//! chain, levels it, and adds it into the composite. Scene switches dissolve
-//! the previous picture into the new one (a frozen snapshot, cheap). In auto
-//! mode it raises cues (track change, drops, long quiet, dwell) and the app
-//! picks the next scene.
+//! chain, levels it, and blends it into the composite. Every slot's opacity is
+//! an eased ramp toward its target, so a scene switch fades layer by layer: a
+//! slot that keeps its visual retunes in place, a slot whose visual changes
+//! keeps the old one rendering underneath while it fades out. In auto mode it
+//! raises cues (track change, drops, long quiet, dwell) and the app picks the
+//! next scene.
 
 use std::time::Instant;
 
@@ -19,7 +21,7 @@ use crate::scenes::ribbons::Ribbons;
 use crate::scenes::scope::Scope;
 use crate::scenes::sigil::Sigil;
 use crate::scenes::starfield::Starfield;
-use crate::settings::{FoldMode, FractalMode, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
+use crate::settings::{FoldMode, FractalMode, Layer, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
 use crate::shaders::ShaderSet;
 
 #[repr(C)]
@@ -174,42 +176,153 @@ struct MixParams {
     _pad: [f32; 3],
 }
 
-/// Manual scene switches dissolve fast; the auto director takes its time.
+/// Manual scene switches and layer switches fade fast; the auto director
+/// takes its time and brings the layers in one after another, bottom first.
 pub const FADE_MANUAL_S: f32 = 0.5;
-pub const FADE_AUTO_S: f32 = 4.0;
+/// (seconds, stagger per slot) for a manual scene switch.
+pub const FADE_MANUAL: (f32, f32) = (FADE_MANUAL_S, 0.0);
+/// (seconds, stagger per slot) for the auto director.
+pub const FADE_AUTO: (f32, f32) = (4.0, 0.8);
+/// Opacity changes that do not switch a layer on or off (slider drags) follow closely.
+const FADE_SLIDER_S: f32 = 0.08;
 const MIN_DWELL_S: f32 = 90.0;
 const MAX_DWELL_S: f32 = 360.0;
 const QUIET_FOR_S: f32 = 6.0;
 
-pub struct Director {
-    pub layers: Vec<Box<dyn Scene>>,
-    filters: Vec<BandPass>,
-    meters: Vec<Meter>,
-    chains: Vec<Chain>,
-    palettes: Vec<PaletteState>,
+/// An eased ramp of a layer's opacity from one value to another, after an
+/// optional delay.
+#[derive(Clone, Copy, Debug)]
+struct Fade {
+    from: f32,
+    to: f32,
+    t: f32,
+    secs: f32,
+    delay: f32,
+}
+
+impl Fade {
+    /// A finished ramp sitting at `v`.
+    fn at(v: f32) -> Self {
+        Self { from: v, to: v, t: 1.0, secs: 1.0, delay: 0.0 }
+    }
+
+    fn level(&self) -> f32 {
+        self.from + (self.to - self.from) * smoothstep(self.t)
+    }
+
+    fn done(&self) -> bool {
+        self.t >= 1.0
+    }
+
+    /// Head for `to` over `secs` seconds, starting after `delay`. A ramp
+    /// already aimed there is left alone; otherwise the new one starts from
+    /// wherever the current level is.
+    fn aim(&mut self, to: f32, secs: f32, delay: f32) {
+        if (to - self.to).abs() < 1e-4 {
+            return;
+        }
+        *self = Self { from: self.level(), to, t: 0.0, secs: secs.max(0.02), delay: delay.max(0.0) };
+    }
+
+    /// Advance by `dt` and return the level for this frame.
+    fn step(&mut self, dt: f32) -> f32 {
+        if self.delay > 0.0 {
+            self.delay -= dt;
+        } else if self.t < 1.0 {
+            self.t = (self.t + dt / self.secs).min(1.0);
+        }
+        self.level()
+    }
+}
+
+/// Everything a layer slot carries besides its visual instance: band filter,
+/// levelling meter, modifier chain, palette, slewed tint, compositor uniform
+/// and the opacity ramp.
+struct Slot {
+    filter: BandPass,
+    meter: Meter,
+    chain: Chain,
+    palette: PaletteState,
+    tint: [f32; 3],
+    buf: wgpu::Buffer,
+    fade: Fade,
+}
+
+impl Slot {
+    fn new(device: &wgpu::Device, i: usize, width: u32, height: u32, layer: &Layer, level: f32) -> Self {
+        Self {
+            filter: BandPass::new(20.0, 400.0, 48_000.0),
+            meter: Meter::new(device, i, width, height),
+            chain: Chain::new(device, i, width, height),
+            palette: PaletteState { key: 0, table: color::bake(color::preset("phosphor").unwrap().stops, true), shift: 0.0, last_beat: 0.0 },
+            tint: layer.tint.color,
+            buf: scene::uniform_buffer(device, &format!("layer {i}"), std::mem::size_of::<LayerParams>() as u64),
+            fade: Fade::at(level),
+        }
+    }
+
+    fn resize(&mut self, device: &wgpu::Device, i: usize, width: u32, height: u32) {
+        self.meter.down = hdr_texture(device, &format!("layer {i} down"), width / 8, height / 8);
+        self.chain.resize(device, i, width, height);
+    }
+}
+
+/// A visual that was replaced in its slot. It keeps rendering with the layer
+/// settings it had while its opacity ramps to zero, then it is dropped.
+struct Outgoing {
+    scene: Box<dyn Scene>,
+    slot: Slot,
+    layer: Layer,
+}
+
+/// GPU resources shared by every layer pass.
+struct Pipes {
     mod_layout: wgpu::BindGroupLayout,
     mod_pipelines: Vec<wgpu::RenderPipeline>,
     mirror_sampler: wgpu::Sampler,
-    /// Smoothed effective tint per layer.
-    tints: Vec<[f32; 3]>,
-    layer_bufs: Vec<wgpu::Buffer>,
     sampler: wgpu::Sampler,
     layer_layout: wgpu::BindGroupLayout,
     layer_pipelines: LayerPipelines,
     mix_layout: wgpu::BindGroupLayout,
     mix_pipeline: wgpu::RenderPipeline,
-    mix_buf: wgpu::Buffer,
+    blend_layout: wgpu::BindGroupLayout,
+}
+
+/// Per-frame inputs every layer pass reads.
+struct Frame<'a> {
+    features: &'a FeatureFrame,
+    points: &'a [[f32; 2]],
+    sample_rate: u32,
+    tint: [f32; 3],
+    art: Option<[f32; 3]>,
+    art_image: Option<&'a ArtImage>,
+    art_id: u64,
+    photos_folder: &'a str,
+    dt: f32,
+    time: f32,
+    auto_gain: f32,
+    width: u32,
+    height: u32,
+    /// Levelling on (auto exposure).
+    level: bool,
+}
+
+pub struct Director {
+    pub layers: Vec<Box<dyn Scene>>,
+    slots: Vec<Slot>,
+    /// Per slot, a replaced visual still fading out under the new one.
+    outgoing: Vec<Option<Outgoing>>,
+    /// Last frame's layer settings, frozen for a visual on its way out.
+    last_layers: Vec<Layer>,
+    pipes: Pipes,
     one_buf: wgpu::Buffer,
     composite: wgpu::TextureView,
     /// The other half of the composite ping-pong (blend passes read one, write the other).
     composite_b: wgpu::TextureView,
-    blend_layout: wgpu::BindGroupLayout,
-    prev: wgpu::TextureView,
     width: u32,
     height: u32,
-    /// (progress 0..1, seconds)
-    dissolve: Option<(f32, f32)>,
-    pending_dissolve: Option<f32>,
+    /// (seconds, stagger per slot) for whatever changes next frame.
+    pending: Option<(f32, f32)>,
     last_switch: Instant,
     // Auto-mode state.
     last_track: Option<u64>,
@@ -227,6 +340,18 @@ fn make(kind: VisualKind, device: &wgpu::Device, w: u32, h: u32, shaders: &Shade
         VisualKind::Kaleido => Box::new(Kaleido::new(device, w, h, shaders)?),
         VisualKind::Sigil => Box::new(Sigil::new(device, w, h, shaders)?),
     })
+}
+
+/// The opacity a slot is heading for: its own when it is on (and not
+/// soloed out), else zero.
+fn target_of(settings: &Settings, i: usize) -> f32 {
+    let l = settings.layer(i);
+    if l.enabled && !settings.solo.is_some_and(|k| k != i) { l.opacity.max(0.0) } else { 0.0 }
+}
+
+/// Bottom slots lead a staggered fade; slot 1 (on top) comes last.
+fn stagger_delay(stagger: f32, i: usize) -> f32 {
+    stagger * (MAX_LAYERS - 1 - i) as f32
 }
 
 fn energy_of(f: &FeatureFrame) -> f32 {
@@ -366,17 +491,13 @@ impl Director {
         let layer_pipelines = build_layer(device, shaders, &layer_layout, &blend_layout)?;
         let mix_layout = scene::tex_layout(device, "mix", 1);
         let mix_pipeline = build_mix(device, shaders, &mix_layout)?;
-        let mix_buf = scene::uniform_buffer(device, "mix params", std::mem::size_of::<MixParams>() as u64);
         let one_buf = scene::uniform_buffer(device, "layer one", std::mem::size_of::<LayerParams>() as u64);
         let mut layers = Vec::new();
+        let mut slots = Vec::new();
         for i in 0..MAX_LAYERS {
             layers.push(make(settings.layer(i).visual, device, width, height, shaders)?);
+            slots.push(Slot::new(device, i, width, height, &settings.layer(i), target_of(settings, i)));
         }
-        let filters = (0..MAX_LAYERS).map(|_| BandPass::new(20.0, 400.0, 48_000.0)).collect();
-        let meters = (0..MAX_LAYERS).map(|i| Meter::new(device, i, width, height)).collect();
-        let tints = (0..MAX_LAYERS).map(|i| settings.layer(i).tint.color).collect();
-        let chains = (0..MAX_LAYERS).map(|i| Chain::new(device, i, width, height)).collect();
-        let palettes = (0..MAX_LAYERS).map(|_| PaletteState { key: 0, table: color::bake(color::preset("phosphor").unwrap().stops, true), shift: 0.0, last_beat: 0.0 }).collect();
         let mod_layout = scene::tex_layout(device, "mod", 1);
         let mod_pipelines = build_mods(device, shaders, &mod_layout)?;
         let mirror_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -387,33 +508,18 @@ impl Director {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
-        let layer_bufs = (0..MAX_LAYERS).map(|i| scene::uniform_buffer(device, &format!("layer {i}"), std::mem::size_of::<LayerParams>() as u64)).collect();
         Ok(Self {
             layers,
-            filters,
-            meters,
-            chains,
-            palettes,
-            mod_layout,
-            mod_pipelines,
-            mirror_sampler,
-            tints,
-            layer_bufs,
-            sampler,
-            layer_layout,
-            layer_pipelines,
-            mix_layout,
-            mix_pipeline,
-            mix_buf,
+            slots,
+            outgoing: (0..MAX_LAYERS).map(|_| None).collect(),
+            last_layers: (0..MAX_LAYERS).map(|i| settings.layer(i)).collect(),
+            pipes: Pipes { mod_layout, mod_pipelines, mirror_sampler, sampler, layer_layout, layer_pipelines, mix_layout, mix_pipeline, blend_layout },
             one_buf,
             composite: hdr_texture(device, "composite", width, height),
             composite_b: hdr_texture(device, "composite b", width, height),
-            blend_layout,
-            prev: hdr_texture(device, "composite prev", width, height),
             width,
             height,
-            dissolve: None,
-            pending_dissolve: None,
+            pending: None,
             last_switch: Instant::now(),
             last_track: None,
             quiet_for: 0.0,
@@ -423,21 +529,30 @@ impl Director {
         })
     }
 
-    /// Rebuild any layer whose visual kind changed in the settings.
+    /// Rebuild any layer whose visual kind changed in the settings. The old
+    /// visual moves to the slot's outgoing seat and fades out, with the
+    /// settings it had, while the new one fades in.
     pub fn sync(&mut self, device: &wgpu::Device, shaders: &ShaderSet, settings: &Settings) {
+        let (secs, stagger) = self.pending.unwrap_or((FADE_MANUAL_S, 0.0));
         for i in 0..MAX_LAYERS {
             let want = settings.layer(i).visual;
-            if self.layers[i].kind() != want {
-                match make(want, device, self.width, self.height, shaders) {
-                    Ok(s) => self.layers[i] = s,
-                    Err(e) => self.last_error = Some(format!("{}: {e}", want.name())),
+            if self.layers[i].kind() == want {
+                continue;
+            }
+            match make(want, device, self.width, self.height, shaders) {
+                Ok(s) => {
+                    let old = std::mem::replace(&mut self.layers[i], s);
+                    let mut slot = std::mem::replace(&mut self.slots[i], Slot::new(device, i, self.width, self.height, &settings.layer(i), 0.0));
+                    slot.fade.aim(0.0, secs, stagger_delay(stagger, i));
+                    self.outgoing[i] = Some(Outgoing { scene: old, slot, layer: self.last_layers[i].clone() });
                 }
+                Err(e) => self.last_error = Some(format!("{}: {e}", want.name())),
             }
         }
     }
 
     /// Move layer `from` to position `to`, carrying its live state (particles,
-    /// persistence, meter, modifier chain) with it. The caller reorders
+    /// persistence, meter, modifier chain, fade) with it. The caller reorders
     /// `settings.layers` the same way.
     pub fn move_layer(&mut self, from: usize, to: usize) {
         let n = self.layers.len().min(MAX_LAYERS);
@@ -446,21 +561,17 @@ impl Director {
         }
         let l = self.layers.remove(from);
         self.layers.insert(to, l);
-        let f = self.filters.remove(from);
-        self.filters.insert(to, f);
-        let m = self.meters.remove(from);
-        self.meters.insert(to, m);
-        let t = self.tints.remove(from);
-        self.tints.insert(to, t);
-        let c = self.chains.remove(from);
-        self.chains.insert(to, c);
-        let p = self.palettes.remove(from);
-        self.palettes.insert(to, p);
+        let s = self.slots.remove(from);
+        self.slots.insert(to, s);
+        let o = self.outgoing.remove(from);
+        self.outgoing.insert(to, o);
+        let p = self.last_layers.remove(from);
+        self.last_layers.insert(to, p);
     }
 
     /// Move a modifier within layer `layer`'s chain so its live state follows it.
     pub fn move_modifier(&mut self, layer: usize, from: usize, to: usize) {
-        if let Some(c) = self.chains.get_mut(layer) {
+        if let Some(c) = self.slots.get_mut(layer).map(|s| &mut s.chain) {
             if from < c.states.len() && to < c.states.len() && from != to {
                 let s = c.states.remove(from);
                 c.states.insert(to, s);
@@ -470,7 +581,7 @@ impl Director {
 
     /// Drop a modifier's live state when it is removed from the chain.
     pub fn remove_modifier(&mut self, layer: usize, at: usize) {
-        if let Some(c) = self.chains.get_mut(layer) {
+        if let Some(c) = self.slots.get_mut(layer).map(|s| &mut s.chain) {
             if at < c.states.len() {
                 c.states.remove(at);
                 c.states.push(ModState::default());
@@ -482,14 +593,16 @@ impl Director {
         self.last_switch.elapsed().as_secs_f32()
     }
 
-    /// Dissolve the current picture into whatever renders next.
-    pub fn begin_dissolve(&mut self, seconds: f32) {
-        self.pending_dissolve = Some(seconds.max(0.05));
+    /// Fade whatever the next frame changes (layers switching on, off, to a
+    /// new opacity or a new visual) over `seconds`, each slot starting
+    /// `stagger` seconds after the one below it.
+    pub fn begin_fade(&mut self, (seconds, stagger): (f32, f32)) {
+        self.pending = Some((seconds.max(0.05), stagger.max(0.0)));
         self.last_switch = Instant::now();
     }
 
     pub fn is_fading(&self) -> bool {
-        self.dissolve.is_some() || self.pending_dissolve.is_some()
+        self.pending.is_some() || self.outgoing.iter().any(Option::is_some) || self.slots.iter().any(|s| !s.fade.done())
     }
 
     /// Auto-mode cue evaluation. Call once per frame; returns a cue when the
@@ -533,30 +646,31 @@ impl Director {
         }
         self.composite = hdr_texture(device, "composite", width, height);
         self.composite_b = hdr_texture(device, "composite b", width, height);
-        self.prev = hdr_texture(device, "composite prev", width, height);
-        for (i, m) in self.meters.iter_mut().enumerate() {
-            m.down = hdr_texture(device, &format!("layer {i} down"), width / 8, height / 8);
+        for (i, s) in self.slots.iter_mut().enumerate() {
+            s.resize(device, i, width, height);
         }
-        for (i, c) in self.chains.iter_mut().enumerate() {
-            c.resize(device, i, width, height);
+        for (i, o) in self.outgoing.iter_mut().enumerate() {
+            if let Some(o) = o {
+                o.scene.resize(device, width, height);
+                o.slot.resize(device, i, width, height);
+            }
         }
-        self.dissolve = None;
     }
 
     pub fn reload_shaders(&mut self, device: &wgpu::Device, shaders: &ShaderSet) {
         let mut errors = Vec::new();
-        match build_layer(device, shaders, &self.layer_layout, &self.blend_layout) {
-            Ok(p) => self.layer_pipelines = p,
+        match build_layer(device, shaders, &self.pipes.layer_layout, &self.pipes.blend_layout) {
+            Ok(p) => self.pipes.layer_pipelines = p,
             Err(e) => errors.push(format!("layer: {e}")),
         }
-        match build_mods(device, shaders, &self.mod_layout) {
-            Ok(p) => self.mod_pipelines = p,
+        match build_mods(device, shaders, &self.pipes.mod_layout) {
+            Ok(p) => self.pipes.mod_pipelines = p,
             Err(e) => errors.push(format!("modifiers: {e}")),
         }
-        if let Err(e) = build_mix(device, shaders, &self.mix_layout).map(|p| self.mix_pipeline = p) {
+        if let Err(e) = build_mix(device, shaders, &self.pipes.mix_layout).map(|p| self.pipes.mix_pipeline = p) {
             errors.push(format!("mix: {e}"));
         }
-        for s in &mut self.layers {
+        for s in self.layers.iter_mut().chain(self.outgoing.iter_mut().flatten().map(|o| &mut o.scene)) {
             if let Err(e) = s.reload_shaders(device, shaders) {
                 errors.push(format!("{}: {e}", s.name()));
             }
@@ -564,179 +678,201 @@ impl Director {
         self.last_error = (!errors.is_empty()).then(|| errors.join("\n"));
     }
 
-    /// Render every enabled layer and composite into `target`.
+    /// Render every visible layer (and any visual still fading out) and
+    /// composite into `target`.
     #[allow(clippy::too_many_arguments)]
     pub fn render(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, settings: &Settings, features: &FeatureFrame, points: &[[f32; 2]], sample_rate: u32, tint: [f32; 3], art: Option<[f32; 3]>, art_image: Option<&ArtImage>, art_id: u64, dt: f32, time: f32, auto_gain: f32, target: &wgpu::TextureView) {
         queue.write_buffer(&self.one_buf, 0, bytemuck::bytes_of(&LayerParams { opacity: 1.0, dt, flags: 0, blend: 0 }));
         // Levelling: with auto exposure on, each layer is brought to its own
         // dark-field mean before mixing, so opacity is the mix ratio and a dim
         // layer is not lost under a bright one.
-        let level = settings.post.auto_exposure;
-        // Snapshot last frame's composite before anything renders over it.
-        if let Some(secs) = self.pending_dissolve.take() {
-            let group = scene::tex_group(device, &self.layer_layout, &[&self.composite, &self.meters[0].state[0]], &self.sampler, &self.one_buf);
-            fullscreen_pass(encoder, "dissolve snapshot", &self.prev, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.layer_pipelines.copy, &group);
-            self.dissolve = Some((0.0, secs));
+        let frame = Frame { features, points, sample_rate, tint, art, art_image, art_id, photos_folder: &settings.photos_folder, dt, time, auto_gain, width: self.width, height: self.height, level: settings.post.auto_exposure };
+
+        // Aim every slot's ramp at its target and advance it. A scene switch
+        // fades over its own time (staggered for the auto director); a layer
+        // switching on or off takes the manual time; a slider drag follows
+        // closely. Entries are bottom to top, so slot 1 ends on top, with a
+        // slot's outgoing visual just under its new one.
+        let pending = self.pending.take();
+        let mut entries: Vec<(bool, usize, f32)> = Vec::new(); // (outgoing, slot, level)
+        for i in (0..MAX_LAYERS.min(self.layers.len())).rev() {
+            if let Some(o) = self.outgoing[i].as_mut() {
+                let level = o.slot.fade.step(dt);
+                if level > 0.0 {
+                    entries.push((true, i, level));
+                }
+            }
+            let to = target_of(settings, i);
+            let slot = &mut self.slots[i];
+            let (secs, delay) = match pending {
+                Some((secs, stagger)) => (secs, stagger_delay(stagger, i)),
+                None if (slot.fade.to > 0.0) != (to > 0.0) => (FADE_MANUAL_S, 0.0),
+                None => (FADE_SLIDER_S, 0.0),
+            };
+            slot.fade.aim(to, secs, delay);
+            let level = slot.fade.step(dt);
+            if level > 0.0 {
+                entries.push((false, i, level));
+            }
         }
 
-        // Layers meet the composite bottom to top, so slot 1 ends on top. The
-        // composite ping-pongs between two textures; the last pass lands in
-        // `composite`.
-        let active: Vec<usize> = (0..MAX_LAYERS.min(self.layers.len()))
-            .rev()
-            .filter(|&i| {
-                let l = settings.layer(i);
-                l.enabled && l.opacity > 0.0 && !settings.solo.is_some_and(|k| k != i)
-            })
-            .collect();
-        let n_active = active.len();
-        for (pass, &i) in active.iter().enumerate() {
-            let layer = settings.layer(i);
+        // The composite ping-pongs between two textures; the last pass lands
+        // in `composite`.
+        let n = entries.len();
+        for (pass, &(out, i, level)) in entries.iter().enumerate() {
             let first = pass == 0;
-            let band = layer.band;
-            let filtered_features;
-            let feats: &FeatureFrame = if band.enabled {
-                filtered_features = band_features(features, band.lo_hz, band.hi_hz);
-                &filtered_features
+            let (dst_read, dst_write) = if (n - 1 - pass) % 2 == 0 { (&self.composite_b, &self.composite) } else { (&self.composite, &self.composite_b) };
+            if out {
+                let o = self.outgoing[i].as_mut().expect("outgoing entry");
+                render_layer(device, queue, encoder, &self.pipes, &frame, o.scene.as_mut(), &mut o.slot, &o.layer, level, first, dst_read, dst_write);
             } else {
-                features
-            };
-            let filtered_points;
-            let pts: &[[f32; 2]] = if band.enabled && layer.visual == VisualKind::Scope {
-                self.filters[i].retune(band.lo_hz, band.hi_hz, sample_rate as f32);
-                filtered_points = self.filters[i].process(points);
-                &filtered_points
-            } else {
-                points
-            };
-            // Per-layer tint: the scene's, the art's, or its own, slewed like the scene tint.
-            let want = match layer.tint.mode {
-                TintMode::Scene => tint,
-                TintMode::Art => art.unwrap_or(tint),
-                TintMode::Custom => layer.tint.color,
-            };
-            let k = 1.0 - (-dt / 0.8).exp();
-            for c in 0..3 {
-                self.tints[i][c] += (want[c] - self.tints[i][c]) * k;
-            }
-            // Palette: rebake when the selection changed; shift it with the music.
-            {
-                let ps = &mut self.palettes[i];
-                let key = color::key(&layer.palette.name, &layer.palette.custom, layer.palette.cyclic);
-                if key != ps.key {
-                    ps.key = key;
-                    ps.table = color::bake(&layer.palette.stops(), layer.palette.cyclic);
-                }
-                let energy = energy_of(feats);
-                let beat = feats.beat_pulse * feats.beat_confidence;
-                if beat > ps.last_beat + 0.4 && layer.palette.cycle != 0.0 {
-                    ps.shift += 0.04 * layer.palette.react * layer.palette.cycle.signum();
-                }
-                ps.last_beat = beat;
-                ps.shift = (ps.shift + dt * layer.palette.cycle * (0.5 + 0.5 * energy * layer.palette.react)).rem_euclid(1.0);
-            }
-            let pal_active = layer.palette.active();
-            let (pal_table, pal_shift, pal_amount) = (&self.palettes[i].table, self.palettes[i].shift, if pal_active { layer.palette.amount } else { 0.0 });
-            let ctx = FrameCtx { features: feats, tint: self.tints[i], dt, time, width: self.width, height: self.height, points: pts, auto_gain, art: art_image, art_id, photos_folder: &settings.photos_folder, palette: pal_active.then_some(pal_table), palette_shift: pal_shift, palette_amount: pal_amount };
-            self.layers[i].render(queue, encoder, &ctx, &layer);
-            queue.write_buffer(&self.layer_bufs[i], 0, bytemuck::bytes_of(&LayerParams { opacity: layer.opacity, dt, flags: level as u32 | if first { 2 } else { 0 }, blend: layer.blend as u32 }));
-
-            // Modifier chain: advance every slot's state and write its uniform
-            // first (mutable), then run the passes (immutable borrows only).
-            let mut passes: Vec<(usize, usize, f32)> = Vec::new(); // (slot, pipeline index, wet/dry)
-            {
-                let chain = &mut self.chains[i];
-                for (j, m) in layer.modifiers.iter().enumerate().take(MAX_MODS) {
-                    if !m.enabled() {
-                        continue;
-                    }
-                    let mut p = mod_params(m, &mut chain.states[j], feats, self.tints[i], dt, time, self.width, self.height);
-                    if matches!(m, Modifier::Grade(_)) {
-                        p.p0[2] = pal_shift;
-                        queue.write_buffer(&chain.bufs[j], 0, bytemuck::bytes_of(&GradeParams { m: p, pal: *pal_table }));
-                    } else {
-                        queue.write_buffer(&chain.bufs[j], 0, bytemuck::bytes_of(&p));
-                    }
-                    let mix = m.mix().clamp(0.0, 1.0);
-                    if mix < 0.999 {
-                        queue.write_buffer(&chain.mix_bufs[j], 0, bytemuck::bytes_of(&MixParams { t: mix, _pad: [0.0; 3] }));
-                    }
-                    passes.push((j, mod_index(m), mix));
-                }
-            }
-            let chain = &self.chains[i];
-            let mut src: &wgpu::TextureView = self.layers[i].output();
-            let mut pp = 0usize;
-            let mut hist_flip = false;
-            for (j, pi, mix) in passes {
-                let (hist_prev, hist_cur) = (chain.hist_cur, 1 - chain.hist_cur);
-                let input = src;
-                let g = scene::tex_group(device, &self.mod_layout, &[src, &chain.hist[hist_prev]], &self.mirror_sampler, &chain.bufs[j]);
-                if pi == MOD_FEEDBACK {
-                    // Feedback's output is its own history.
-                    fullscreen_pass(encoder, "modifier", &chain.hist[hist_cur], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.mod_pipelines[pi], &g);
-                    src = &chain.hist[hist_cur];
-                    hist_flip = true;
-                } else if pi == MOD_LUMI {
-                    // Luminescence writes its picture and, beside it, its pool state.
-                    fullscreen_pass2(encoder, "luminescence", &chain.ping[pp], &chain.hist[hist_cur], &self.mod_pipelines[pi], &g);
-                    src = &chain.ping[pp];
-                    pp = (pp + 1) % 3;
-                    hist_flip = true;
-                } else {
-                    fullscreen_pass(encoder, "modifier", &chain.ping[pp], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.mod_pipelines[pi], &g);
-                    src = &chain.ping[pp];
-                    pp = (pp + 1) % 3;
-                }
-                // Wet/dry: blend the pass's output back toward its input. Three
-                // ping textures guarantee the input is not the one being written.
-                if mix < 0.999 {
-                    let g = scene::tex_group(device, &self.mix_layout, &[input, src], &self.sampler, &chain.mix_bufs[j]);
-                    fullscreen_pass(encoder, "modifier mix", &chain.ping[pp], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.mix_pipeline, &g);
-                    src = &chain.ping[pp];
-                    pp = (pp + 1) % 3;
-                }
-            }
-            let out = src;
-            let m = &self.meters[i];
-            let (prev_s, cur_s) = (m.cur, 1 - m.cur);
-            if level {
-                let g = scene::tex_group(device, &self.layer_layout, &[out, &m.state[prev_s]], &self.sampler, &self.layer_bufs[i]);
-                fullscreen_pass(encoder, "layer down", &m.down, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.layer_pipelines.down, &g);
-                let g = scene::tex_group(device, &self.layer_layout, &[&m.down, &m.state[prev_s]], &self.sampler, &self.layer_bufs[i]);
-                fullscreen_pass(encoder, "layer meter", &m.state[cur_s], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.layer_pipelines.meter, &g);
-            }
-            let (dst_read, dst_write) = if (n_active - 1 - pass) % 2 == 0 { (&self.composite_b, &self.composite) } else { (&self.composite, &self.composite_b) };
-            let group = scene::tex_group(device, &self.blend_layout, &[out, &m.state[cur_s], dst_read], &self.sampler, &self.layer_bufs[i]);
-            fullscreen_pass(encoder, "layer", dst_write, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.layer_pipelines.blend, &group);
-            if level {
-                self.meters[i].cur = cur_s;
-            }
-            if hist_flip {
-                self.chains[i].hist_cur = 1 - self.chains[i].hist_cur;
+                let layer = settings.layer(i);
+                render_layer(device, queue, encoder, &self.pipes, &frame, self.layers[i].as_mut(), &mut self.slots[i], &layer, level, first, dst_read, dst_write);
             }
         }
-        if n_active == 0 {
+        if n == 0 {
             scene::clear_pass(encoder, "layers (none)", &self.composite);
         }
-
-        // Composite → target, through the dissolve when one is running.
-        match &mut self.dissolve {
-            Some((t, secs)) => {
-                *t += dt / *secs;
-                let k = smoothstep(*t);
-                queue.write_buffer(&self.mix_buf, 0, bytemuck::bytes_of(&MixParams { t: k, _pad: [0.0; 3] }));
-                let group = scene::tex_group(device, &self.mix_layout, &[&self.prev, &self.composite], &self.sampler, &self.mix_buf);
-                fullscreen_pass(encoder, "dissolve", target, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.mix_pipeline, &group);
-                if *t >= 1.0 {
-                    self.dissolve = None;
-                }
-            }
-            None => {
-                let group = scene::tex_group(device, &self.layer_layout, &[&self.composite, &self.meters[0].state[0]], &self.sampler, &self.one_buf);
-                fullscreen_pass(encoder, "composite", target, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.layer_pipelines.copy, &group);
+        for o in &mut self.outgoing {
+            if o.as_ref().is_some_and(|o| o.slot.fade.done()) {
+                *o = None;
             }
         }
+        for i in 0..MAX_LAYERS.min(self.last_layers.len()) {
+            self.last_layers[i] = settings.layer(i);
+        }
+
+        let group = scene::tex_group(device, &self.pipes.layer_layout, &[&self.composite, &self.slots[0].meter.state[0]], &self.pipes.sampler, &self.one_buf);
+        fullscreen_pass(encoder, "composite", target, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.pipes.layer_pipelines.copy, &group);
+    }
+}
+
+/// One layer's frame: filter its audio, slew its tint, shift its palette,
+/// render the visual, run the modifier chain, meter it, and blend it onto
+/// the composite at `level` opacity.
+#[allow(clippy::too_many_arguments)]
+fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, pipes: &Pipes, fr: &Frame, visual: &mut dyn Scene, slot: &mut Slot, layer: &Layer, level: f32, first: bool, dst_read: &wgpu::TextureView, dst_write: &wgpu::TextureView) {
+    let (dt, time) = (fr.dt, fr.time);
+    let band = layer.band;
+    let filtered_features;
+    let feats: &FeatureFrame = if band.enabled {
+        filtered_features = band_features(fr.features, band.lo_hz, band.hi_hz);
+        &filtered_features
+    } else {
+        fr.features
+    };
+    let filtered_points;
+    let pts: &[[f32; 2]] = if band.enabled && layer.visual == VisualKind::Scope {
+        slot.filter.retune(band.lo_hz, band.hi_hz, fr.sample_rate as f32);
+        filtered_points = slot.filter.process(fr.points);
+        &filtered_points
+    } else {
+        fr.points
+    };
+    // Per-layer tint: the scene's, the art's, or its own, slewed like the scene tint.
+    let want = match layer.tint.mode {
+        TintMode::Scene => fr.tint,
+        TintMode::Art => fr.art.unwrap_or(fr.tint),
+        TintMode::Custom => layer.tint.color,
+    };
+    let k = 1.0 - (-dt / 0.8).exp();
+    for c in 0..3 {
+        slot.tint[c] += (want[c] - slot.tint[c]) * k;
+    }
+    // Palette: rebake when the selection changed; shift it with the music.
+    {
+        let ps = &mut slot.palette;
+        let key = color::key(&layer.palette.name, &layer.palette.custom, layer.palette.cyclic);
+        if key != ps.key {
+            ps.key = key;
+            ps.table = color::bake(&layer.palette.stops(), layer.palette.cyclic);
+        }
+        let energy = energy_of(feats);
+        let beat = feats.beat_pulse * feats.beat_confidence;
+        if beat > ps.last_beat + 0.4 && layer.palette.cycle != 0.0 {
+            ps.shift += 0.04 * layer.palette.react * layer.palette.cycle.signum();
+        }
+        ps.last_beat = beat;
+        ps.shift = (ps.shift + dt * layer.palette.cycle * (0.5 + 0.5 * energy * layer.palette.react)).rem_euclid(1.0);
+    }
+    let pal_active = layer.palette.active();
+    let (pal_table, pal_shift, pal_amount) = (&slot.palette.table, slot.palette.shift, if pal_active { layer.palette.amount } else { 0.0 });
+    let ctx = FrameCtx { features: feats, tint: slot.tint, dt, time, width: fr.width, height: fr.height, points: pts, auto_gain: fr.auto_gain, art: fr.art_image, art_id: fr.art_id, photos_folder: fr.photos_folder, palette: pal_active.then_some(pal_table), palette_shift: pal_shift, palette_amount: pal_amount };
+    visual.render(queue, encoder, &ctx, layer);
+    queue.write_buffer(&slot.buf, 0, bytemuck::bytes_of(&LayerParams { opacity: level, dt, flags: fr.level as u32 | if first { 2 } else { 0 }, blend: layer.blend as u32 }));
+
+    // Modifier chain: advance every slot's state and write its uniform
+    // first (mutable), then run the passes (immutable borrows only).
+    let mut passes: Vec<(usize, usize, f32)> = Vec::new(); // (slot, pipeline index, wet/dry)
+    {
+        let chain = &mut slot.chain;
+        for (j, m) in layer.modifiers.iter().enumerate().take(MAX_MODS) {
+            if !m.enabled() {
+                continue;
+            }
+            let mut p = mod_params(m, &mut chain.states[j], feats, slot.tint, dt, time, fr.width, fr.height);
+            if matches!(m, Modifier::Grade(_)) {
+                p.p0[2] = pal_shift;
+                queue.write_buffer(&chain.bufs[j], 0, bytemuck::bytes_of(&GradeParams { m: p, pal: *pal_table }));
+            } else {
+                queue.write_buffer(&chain.bufs[j], 0, bytemuck::bytes_of(&p));
+            }
+            let mix = m.mix().clamp(0.0, 1.0);
+            if mix < 0.999 {
+                queue.write_buffer(&chain.mix_bufs[j], 0, bytemuck::bytes_of(&MixParams { t: mix, _pad: [0.0; 3] }));
+            }
+            passes.push((j, mod_index(m), mix));
+        }
+    }
+    let chain = &slot.chain;
+    let mut src: &wgpu::TextureView = visual.output();
+    let mut pp = 0usize;
+    let mut hist_flip = false;
+    for (j, pi, mix) in passes {
+        let (hist_prev, hist_cur) = (chain.hist_cur, 1 - chain.hist_cur);
+        let input = src;
+        let g = scene::tex_group(device, &pipes.mod_layout, &[src, &chain.hist[hist_prev]], &pipes.mirror_sampler, &chain.bufs[j]);
+        if pi == MOD_FEEDBACK {
+            // Feedback's output is its own history.
+            fullscreen_pass(encoder, "modifier", &chain.hist[hist_cur], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.mod_pipelines[pi], &g);
+            src = &chain.hist[hist_cur];
+            hist_flip = true;
+        } else if pi == MOD_LUMI {
+            // Luminescence writes its picture and, beside it, its pool state.
+            fullscreen_pass2(encoder, "luminescence", &chain.ping[pp], &chain.hist[hist_cur], &pipes.mod_pipelines[pi], &g);
+            src = &chain.ping[pp];
+            pp = (pp + 1) % 3;
+            hist_flip = true;
+        } else {
+            fullscreen_pass(encoder, "modifier", &chain.ping[pp], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.mod_pipelines[pi], &g);
+            src = &chain.ping[pp];
+            pp = (pp + 1) % 3;
+        }
+        // Wet/dry: blend the pass's output back toward its input. Three
+        // ping textures guarantee the input is not the one being written.
+        if mix < 0.999 {
+            let g = scene::tex_group(device, &pipes.mix_layout, &[input, src], &pipes.sampler, &chain.mix_bufs[j]);
+            fullscreen_pass(encoder, "modifier mix", &chain.ping[pp], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.mix_pipeline, &g);
+            src = &chain.ping[pp];
+            pp = (pp + 1) % 3;
+        }
+    }
+    let out = src;
+    let m = &slot.meter;
+    let (prev_s, cur_s) = (m.cur, 1 - m.cur);
+    if fr.level {
+        let g = scene::tex_group(device, &pipes.layer_layout, &[out, &m.state[prev_s]], &pipes.sampler, &slot.buf);
+        fullscreen_pass(encoder, "layer down", &m.down, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.layer_pipelines.down, &g);
+        let g = scene::tex_group(device, &pipes.layer_layout, &[&m.down, &m.state[prev_s]], &pipes.sampler, &slot.buf);
+        fullscreen_pass(encoder, "layer meter", &m.state[cur_s], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.layer_pipelines.meter, &g);
+    }
+    let group = scene::tex_group(device, &pipes.blend_layout, &[out, &m.state[cur_s], dst_read], &pipes.sampler, &slot.buf);
+    fullscreen_pass(encoder, "layer", dst_write, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.layer_pipelines.blend, &group);
+    if fr.level {
+        slot.meter.cur = cur_s;
+    }
+    if hist_flip {
+        slot.chain.hist_cur = 1 - slot.chain.hist_cur;
     }
 }
 
@@ -793,6 +929,32 @@ mod tests {
         assert_eq!(std::mem::size_of::<ModParams>(), 80);
         assert_eq!(std::mem::offset_of!(ModParams, p0), 16);
         assert_eq!(std::mem::offset_of!(ModParams, p3), 64);
+    }
+
+    #[test]
+    fn fade_eases_to_its_target_after_the_delay() {
+        let mut f = Fade::at(1.0);
+        assert!(f.done());
+        f.aim(0.0, 1.0, 0.5);
+        assert_eq!(f.step(0.25), 1.0, "holds during the delay");
+        assert_eq!(f.step(0.25), 1.0);
+        let mid = f.step(0.5);
+        assert!((mid - 0.5).abs() < 1e-5, "{mid}");
+        assert!(!f.done());
+        assert_eq!(f.step(0.5), 0.0);
+        assert!(f.done());
+    }
+
+    #[test]
+    fn aim_restarts_from_the_current_level_and_ignores_repeats() {
+        let mut f = Fade::at(0.0);
+        f.aim(1.0, 1.0, 0.0);
+        f.step(0.5);
+        let before = f;
+        f.aim(1.0, 0.1, 0.0);
+        assert_eq!(f.t, before.t, "same target: left alone");
+        f.aim(0.2, 1.0, 0.0);
+        assert!((f.from - 0.5).abs() < 1e-5 && f.t == 0.0 && f.to == 0.2);
     }
 
     #[test]

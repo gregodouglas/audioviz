@@ -213,7 +213,7 @@ fn scenes_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
     hint(ui, "A scene is a mix of up to three layers plus the picture settings. Space cycles; A lets the director pick on track changes and drops.");
     ui.add_space(8.0);
     toggle_row(ui, "Auto director (A)", &mut settings.auto_scenes);
-    hint(ui, &format!("Last cue: {}{}", stats.last_cue, if stats.fading { " · dissolving" } else { "" }));
+    hint(ui, &format!("Last cue: {}{}", stats.last_cue, if stats.fading { " · fading" } else { "" }));
     if let Some(np) = &stats.now_playing {
         hint(ui, np);
     }

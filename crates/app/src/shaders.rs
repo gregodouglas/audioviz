@@ -48,6 +48,7 @@ shader_table!(
     "halftone.wgsl",
     "warp.wgsl",
     "lines.wgsl",
+    "mirror.wgsl",
     "ribbons_params.wgsl",
     "ribbons_update.wgsl",
     "ribbons_draw.wgsl",

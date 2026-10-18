@@ -426,13 +426,14 @@ pub enum Modifier {
     Halftone(Halftone),
     Warp(Warp),
     Lines(Lines),
+    Mirror(Mirror),
 }
 
 pub const MAX_MODS: usize = 6;
 
 impl Modifier {
     /// Every kind with a constructor, in the order the panel offers them.
-    pub const KINDS: [(&'static str, fn() -> Modifier); 13] = [
+    pub const KINDS: [(&'static str, fn() -> Modifier); 14] = [
         ("Palette", || Modifier::Grade(Grade::default())),
         ("Kaleidoscope", || Modifier::Fold(Fold::default())),
         ("Fractal", || Modifier::Fractal(Fractal::default())),
@@ -446,6 +447,7 @@ impl Modifier {
         ("Halftone", || Modifier::Halftone(Halftone::default())),
         ("Warp", || Modifier::Warp(Warp::default())),
         ("Scanlines", || Modifier::Lines(Lines::default())),
+        ("Mirror", || Modifier::Mirror(Mirror::default())),
     ];
 
     pub fn name(&self) -> &'static str {
@@ -463,6 +465,7 @@ impl Modifier {
             Modifier::Halftone(_) => "Halftone",
             Modifier::Warp(_) => "Warp",
             Modifier::Lines(_) => "Scanlines",
+            Modifier::Mirror(_) => "Mirror",
         }
     }
 
@@ -485,6 +488,7 @@ impl Modifier {
             Modifier::Halftone(k) => k.mix,
             Modifier::Warp(k) => k.mix,
             Modifier::Lines(k) => k.mix,
+            Modifier::Mirror(k) => k.mix,
         }
     }
 
@@ -504,6 +508,7 @@ impl Modifier {
             Modifier::Halftone(k) => k.band,
             Modifier::Warp(k) => k.band,
             Modifier::Lines(k) => k.band,
+            Modifier::Mirror(k) => k.band,
         }
     }
 
@@ -522,6 +527,7 @@ impl Modifier {
             Modifier::Halftone(k) => &mut k.band,
             Modifier::Warp(k) => &mut k.band,
             Modifier::Lines(k) => &mut k.band,
+            Modifier::Mirror(k) => &mut k.band,
         }
     }
 
@@ -550,6 +556,7 @@ impl Modifier {
             Modifier::Halftone(k) => &mut k.mix,
             Modifier::Warp(k) => &mut k.mix,
             Modifier::Lines(k) => &mut k.mix,
+            Modifier::Mirror(k) => &mut k.mix,
         }
     }
 
@@ -570,6 +577,7 @@ impl Modifier {
             Modifier::Halftone(_) => Modifier::Halftone(Halftone::default()),
             Modifier::Warp(_) => Modifier::Warp(Warp::default()),
             Modifier::Lines(_) => Modifier::Lines(Lines::default()),
+            Modifier::Mirror(_) => Modifier::Mirror(Mirror::default()),
         };
         *self.enabled_mut() = enabled;
     }
@@ -589,6 +597,7 @@ impl Modifier {
             Modifier::Halftone(m) => &m.enabled,
             Modifier::Warp(m) => &m.enabled,
             Modifier::Lines(m) => &m.enabled,
+            Modifier::Mirror(m) => &m.enabled,
         }
     }
 
@@ -607,6 +616,7 @@ impl Modifier {
             Modifier::Halftone(m) => &mut m.enabled,
             Modifier::Warp(m) => &mut m.enabled,
             Modifier::Lines(m) => &mut m.enabled,
+            Modifier::Mirror(m) => &mut m.enabled,
         }
     }
 }
@@ -721,6 +731,59 @@ pub struct Lines {
 impl Default for Lines {
     fn default() -> Self {
         Self { enabled: true, mix: 1.0, band: None, pitch: 3.0, angle: 45.0, cut: 0.35, glow: 0.04, react: 0.5 }
+    }
+}
+
+/// Which half of the picture a mirror keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum MirrorSide {
+    /// The left half, reflected to the right.
+    #[default]
+    Left,
+    Right,
+    Top,
+    Bottom,
+    /// The top-left quarter, reflected both ways.
+    Quad,
+}
+
+impl MirrorSide {
+    pub const ALL: [MirrorSide; 5] = [MirrorSide::Left, MirrorSide::Right, MirrorSide::Top, MirrorSide::Bottom, MirrorSide::Quad];
+    pub fn name(self) -> &'static str {
+        match self {
+            MirrorSide::Left => "Left",
+            MirrorSide::Right => "Right",
+            MirrorSide::Top => "Top",
+            MirrorSide::Bottom => "Bottom",
+            MirrorSide::Quad => "Quad",
+        }
+    }
+}
+
+/// Mirror modifier: one side of the picture reflected across the middle (a
+/// plain axis mirror; the kaleidoscope is the angular one). Optionally the
+/// reflection adds to the picture instead of replacing the other side, and
+/// beats can flip which side is kept.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Mirror {
+    pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
+    pub side: MirrorSide,
+    /// Add the reflection to the picture instead of replacing the far side.
+    pub additive: bool,
+    /// Chance that a beat flips the kept side.
+    pub flip: f32,
+    pub react: f32,
+}
+
+impl Default for Mirror {
+    fn default() -> Self {
+        Self { enabled: true, mix: 1.0, band: None, side: MirrorSide::Left, additive: false, flip: 0.0, react: 1.0 }
     }
 }
 
@@ -978,9 +1041,9 @@ impl Default for WavesParams {
 #[serde(rename_all = "lowercase")]
 pub enum CrystalStyle {
     /// Covering, flat-shaded facets, like cut stone.
-    #[default]
     Solid,
-    /// Thin additive facets that sum where they cross.
+    /// Additive facets that burn toward white where they cross.
+    #[default]
     Glass,
 }
 
@@ -1010,7 +1073,7 @@ pub struct CrystalParams {
 
 impl Default for CrystalParams {
     fn default() -> Self {
-        Self { style: CrystalStyle::Solid, count: 5, size: 0.6, stretch: 2.0, spin: 1.0, scatter: 0.0, every: 1, facets: 1.0, edges: 0.5, width: 1.5, react: 1.0 }
+        Self { style: CrystalStyle::Glass, count: 6, size: 0.9, stretch: 1.6, spin: 1.0, scatter: 0.0, every: 1, facets: 2.2, edges: 0.0, width: 1.5, react: 1.0 }
     }
 }
 

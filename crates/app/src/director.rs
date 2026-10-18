@@ -24,7 +24,7 @@ use crate::scenes::starfield::Starfield;
 use crate::scenes::waves::Waves;
 use crate::scenes::crystal::Crystal;
 use crate::scenes::wheel::Wheel;
-use crate::settings::{EdgeColour, FoldMode, FractalMode, HalftoneShape, Layer, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
+use crate::settings::{EdgeColour, FoldMode, FractalMode, HalftoneShape, Layer, MirrorSide, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
 use crate::shaders::ShaderSet;
 
 #[repr(C)]
@@ -166,7 +166,7 @@ impl Chain {
 }
 
 /// One pipeline per modifier kind, in `MOD_SHADERS` order.
-const MOD_SHADERS: [&str; 13] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl", "fractal.wgsl", "lumi.wgsl", "grade.wgsl", "halftone.wgsl", "warp.wgsl", "lines.wgsl"];
+const MOD_SHADERS: [&str; 14] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl", "fractal.wgsl", "lumi.wgsl", "grade.wgsl", "halftone.wgsl", "warp.wgsl", "lines.wgsl", "mirror.wgsl"];
 /// Pipeline indices with special plumbing: both keep a history pair.
 const MOD_FEEDBACK: usize = 1;
 const MOD_LUMI: usize = 8;
@@ -194,6 +194,7 @@ fn mod_index(m: &Modifier) -> usize {
         Modifier::Halftone(_) => 10,
         Modifier::Warp(_) => 11,
         Modifier::Lines(_) => 12,
+        Modifier::Mirror(_) => 13,
     }
 }
 
@@ -553,6 +554,25 @@ fn mod_params(m: &Modifier, st: &mut ModState, f: &FeatureFrame, tint: [f32; 3],
             st.angle += dt * k.react * (0.4 + 2.0 * energy) + 3.0 * k.react * onset * dt;
             p.p0 = [k.pitch.max(1.0), k.angle.to_radians(), k.cut, k.glow];
             p.p1 = [tint[0], tint[1], tint[2], st.angle];
+        }
+        Modifier::Mirror(k) => {
+            // `beats` counts flips; `wander` holds the flipped state.
+            if beat_hit && k.flip > 0.0 && k.react > 0.0 {
+                st.beats = st.beats.wrapping_add(1);
+                // A cheap hash of the beat count decides the flip.
+                let h = (st.beats.wrapping_mul(2654435761) >> 8) as f32 / (1u32 << 24) as f32;
+                if h < k.flip {
+                    st.wander = 1.0 - st.wander;
+                }
+            }
+            let side = match k.side {
+                MirrorSide::Left => 0.0,
+                MirrorSide::Right => 1.0,
+                MirrorSide::Top => 2.0,
+                MirrorSide::Bottom => 3.0,
+                MirrorSide::Quad => 4.0,
+            };
+            p.p0 = [side, k.additive as u32 as f32, st.wander, 0.0];
         }
         Modifier::Mask(k) => {
             let radius = (k.radius * (1.0 + 0.1 * k.react * bass)).max(0.01);

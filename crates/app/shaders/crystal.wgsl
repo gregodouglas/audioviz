@@ -63,7 +63,8 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
     let b = (s.model * vec4<f32>(corner(face_corner(face, 1u)), 1.0)).xyz;
     let c = (s.model * vec4<f32>(corner(face_corner(face, 2u)), 1.0)).xyz;
     let n = normalize(cross(b - a, c - a));
-    let shade = 0.45 + 0.55 * abs(dot(n, normalize(vec3<f32>(0.35, 0.7, 1.0))));
+    var shade = 0.45 + 0.55 * abs(dot(n, normalize(vec3<f32>(0.35, 0.7, 1.0))));
+    if (C.style < 0.5) { shade = 0.75 + 0.25 * shade; }   // glass: vivid, lightly cut
     var out: FaceOut;
     out.pos = C.view_proj * s.model * vec4<f32>(p, 1.0);
     out.bary = vec3<f32>(f32(vi == 0u), f32(vi == 1u), f32(vi == 2u));

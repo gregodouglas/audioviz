@@ -87,7 +87,7 @@ impl Rng {
 }
 
 fn random_pose(rng: &mut Rng) -> Pose {
-    Pose { rot: rng.quat(), scale: Vec3::new(rng.range(0.5, 3.0), rng.range(0.5, 3.0), rng.range(0.5, 3.0)), opacity: rng.range(0.1, 0.6), hue: rng.next() }
+    Pose { rot: rng.quat(), scale: Vec3::new(rng.range(0.8, 2.2), rng.range(0.8, 2.2), rng.range(0.8, 2.2)), opacity: rng.range(0.25, 0.7), hue: rng.next() }
 }
 
 fn ease_in_expo(t: f32) -> f32 {
@@ -131,7 +131,7 @@ impl Crystal {
         let shards = (0..MAX_SHARDS)
             .map(|_| {
                 let p = random_pose(&mut rng);
-                Shard { from: p, to: p, t: 1.0, rest: Vec3::new(rng.range(-0.3, 0.3), rng.range(-0.3, 0.3), rng.range(-0.3, 0.3)), far: Vec3::new(rng.range(-2.0, 2.0), rng.range(-2.0, 2.0), rng.range(-2.0, 2.0)) }
+                Shard { from: p, to: p, t: 1.0, rest: Vec3::new(rng.range(-0.15, 0.15), rng.range(-0.15, 0.15), rng.range(-0.15, 0.15)), far: Vec3::new(rng.range(-2.0, 2.0), rng.range(-2.0, 2.0), rng.range(-2.0, 2.0)) }
             })
             .collect();
         Ok(Self { hdr: scene::hdr_texture(device, "crystal hdr", width, height), uniform, shards_buf, layout, group, faces, faces_solid, edges, shards, rng, tumble: Vec3::ZERO, tilt: Quat::IDENTITY, tilt_to: Quat::IDENTITY, last_beat: 0.0, beats: 0, energy: 1.0, gpu: vec![ShardGpu::default(); MAX_SHARDS] })

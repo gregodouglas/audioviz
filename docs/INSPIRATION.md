@@ -15,6 +15,7 @@ audioviz borrows ideas, never code, unless a licence says otherwise and the entr
 | Crystal visual | the Crystal visualizer in Uberviz (Lantern) | Felix Turner | none | the idea: translucent additive tetrahedra tumbling as a cluster, loudness-scaled, one shard re-posed per beat, a flung-apart mode. Written fresh: palette facets, glowing edges, eased poses, bar-phase scatter. |
 | Scanlines modifier | the "Lines" pass in Uberviz | Felix Turner | none | the idea: a sine stripe over the frame. Written fresh: pitch, angle, cut and glow, crawling with the music. |
 | Wheel visual | the Wheel in Uberviz (Lantern) | Felix Turner | none | the idea: a disc of spectrum wedges, brightness by level squared, hue round the wheel, beat jumps and a walking band mapping. Written fresh: rays past the rim, soft edges, centre hole, palette span. |
+| Mirror modifier | the Mirror pass in Uberviz | Felix Turner | none | the idea: one side reflected across the middle, picked per beat. Written fresh: five sides, additive mode, beat flips. |
 | Waves visual | the stacked-waveform landscape made famous by the *Unknown Pleasures* cover (Peter Saville, after a pulsar plot by Harold Craft) | | | the look only |
 
 ## Queued ports (from the 2026-10-18 research), with what each takes

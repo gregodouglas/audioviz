@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::settings::{Blend, Fold, Layer, Lines, Modifier, Settings, VisualKind};
+use crate::settings::{Fold, Layer, Lines, Mirror, Modifier, Settings, VisualKind};
 
 #[derive(Clone)]
 pub struct SceneDef {
@@ -202,16 +202,18 @@ pub fn builtin() -> Vec<SceneDef> {
         vec![
             {
                 let mut l = Layer::new(VisualKind::Crystal, true, 1.0);
-                l.blend = Blend::Over;
                 l.palette.name = "neon".into();
+                l.modifiers.push(Modifier::Mirror(Mirror { flip: 0.3, ..Default::default() }));
                 l.modifiers.push(Modifier::Lines(Lines::default()));
                 l.modifiers.push(Modifier::Chroma(crate::settings::ChromaSplit { amount: 0.004, ..Default::default() }));
                 l
             },
             {
-                let mut l = Layer::new(VisualKind::Wheel, true, 0.6);
+                let mut l = Layer::new(VisualKind::Wheel, true, 0.8);
                 l.palette.name = "neon".into();
                 l.palette.cycle = 0.02;
+                l.wheel.gain = 1.6;
+                l.wheel.curve = 1.5;
                 l.modifiers.push(Modifier::Lines(Lines::default()));
                 l
             },
@@ -219,8 +221,8 @@ pub fn builtin() -> Vec<SceneDef> {
         ],
         |s| {
             s.tint = [1.0, 0.35, 0.8];
-            s.post.bloom = 0.3;
-            s.post.look = crate::settings::Look::Neon;
+            s.post.bloom = 0.4;
+            s.post.look = crate::settings::Look::Film;
         },
     ));
     v

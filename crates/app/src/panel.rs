@@ -12,7 +12,7 @@ use crate::overlays::CalibrationView;
 use crate::scene::Scene;
 use crate::scene_store::SceneDef;
 use crate::color;
-use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
+use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
 use crate::widgets::{self, chip, dropdown, ghost_button, group, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
@@ -680,6 +680,17 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             slider_def(ui, "Glow", &mut k.glow, Some(d.glow), 0.0..=0.5, |v| format!("{v:.3}"), false);
             slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Fine stripes over the picture: cut darkens, glow adds a faint stripe in the tint even over black. They crawl with the music.");
+        }
+        Modifier::Mirror(k) => {
+            let d = Mirror::default();
+            let names: Vec<&str> = MirrorSide::ALL.iter().map(|s| s.name()).collect();
+            if let Some(i) = dropdown(ui, "Keep", &names, Some(MirrorSide::ALL.iter().position(|s| *s == k.side).unwrap_or(0))) {
+                k.side = MirrorSide::ALL[i];
+            }
+            toggle_row(ui, "Add the reflection", &mut k.additive);
+            slider_def(ui, "Flip on beats", &mut k.flip, Some(d.flip), 0.0..=1.0, |v| format!("{:.0}%", v * 100.0), false);
+            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "One side reflected across the middle: instant symmetry on anything. Add keeps both sides and lays the reflection over them.");
         }
         Modifier::Mask(k) => {
             let d = Mask::default();

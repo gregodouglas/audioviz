@@ -164,6 +164,22 @@ pub fn builtin() -> Vec<SceneDef> {
             s.post.look = crate::settings::Look::Neon;
         },
     ));
+    v.push(scene(
+        "Waves",
+        vec![
+            {
+                let mut l = Layer::new(VisualKind::Waves, true, 1.0);
+                l.palette.name = "ice".into();
+                l
+            },
+            Layer::new(VisualKind::Ribbons, false, 0.4),
+            Layer::new(VisualKind::Scope, false, 0.5),
+        ],
+        |s| {
+            s.tint = [0.75, 0.85, 1.0];
+            s.post.bloom = 0.12;
+        },
+    ));
     v
 }
 

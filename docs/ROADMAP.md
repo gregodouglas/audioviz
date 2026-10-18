@@ -25,7 +25,7 @@ Greg: "I want to focus on adding visuals." Shipping is deferred (below) except t
 
 Visual candidates, in the order to try:
 
-- **Waves**: a landscape of waveform history, stacked rows in perspective, each row hiding the ones behind it (the Unknown Pleasures look), rows coloured by age or pitch through the palette, height by band energy.
+- ~~Waves~~ **built 2026-10-18** (waveform or spectrum rows in perspective, hidden-line fill, palette by age or level; built-in scene). Awaiting Greg's look.
 - **Tunnel**: a wireframe tunnel of rings flown through, each ring's radius the spectrum at the moment it was born; lines only.
 - **Strings**: chords of the chroma drawn as taut lines between points on a circle (string art); a chord change re-strings it.
 - **Harmonograph**: damped Lissajous of the two strongest pitch classes, drawn as one long line.

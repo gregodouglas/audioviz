@@ -21,6 +21,7 @@ use crate::scenes::ribbons::Ribbons;
 use crate::scenes::scope::Scope;
 use crate::scenes::sigil::Sigil;
 use crate::scenes::starfield::Starfield;
+use crate::scenes::waves::Waves;
 use crate::settings::{EdgeColour, FoldMode, FractalMode, Layer, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
 use crate::shaders::ShaderSet;
 
@@ -381,6 +382,7 @@ fn make(kind: VisualKind, device: &wgpu::Device, w: u32, h: u32, shaders: &Shade
         VisualKind::Starfield => Box::new(Starfield::new(device, w, h, shaders)?),
         VisualKind::Kaleido => Box::new(Kaleido::new(device, w, h, shaders)?),
         VisualKind::Sigil => Box::new(Sigil::new(device, w, h, shaders)?),
+        VisualKind::Waves => Box::new(Waves::new(device, w, h, shaders)?),
     })
 }
 

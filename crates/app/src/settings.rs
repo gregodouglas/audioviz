@@ -20,10 +20,11 @@ pub enum VisualKind {
     Starfield,
     Kaleido,
     Sigil,
+    Waves,
 }
 
 impl VisualKind {
-    pub const ALL: [VisualKind; 5] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield, VisualKind::Kaleido, VisualKind::Sigil];
+    pub const ALL: [VisualKind; 6] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield, VisualKind::Kaleido, VisualKind::Sigil, VisualKind::Waves];
     pub fn name(self) -> &'static str {
         match self {
             VisualKind::Scope => "Phosphor scope",
@@ -31,6 +32,7 @@ impl VisualKind {
             VisualKind::Starfield => "Black hole",
             VisualKind::Kaleido => "Kaleidoscope",
             VisualKind::Sigil => "Sigil",
+            VisualKind::Waves => "Waves",
         }
     }
     /// Short display name (bar pips, stack rows, breadcrumb).
@@ -41,6 +43,7 @@ impl VisualKind {
             VisualKind::Starfield => "Black hole",
             VisualKind::Kaleido => "Kaleidoscope",
             VisualKind::Sigil => "Sigil",
+            VisualKind::Waves => "Waves",
         }
     }
 }
@@ -766,6 +769,61 @@ impl Default for SigilParams {
     }
 }
 
+/// What a Waves row shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum WavesSource {
+    #[default]
+    Waveform,
+    Spectrum,
+}
+
+/// What picks a Waves row's palette position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum WavesColour {
+    /// Front to back through the palette.
+    #[default]
+    Age,
+    /// The row's loudness.
+    Level,
+}
+
+/// Waves: a landscape of signal rows in perspective (`scenes/waves.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WavesParams {
+    pub source: WavesSource,
+    pub colour: WavesColour,
+    /// Rows on screen (the depth of the landscape).
+    pub rows: u32,
+    /// New rows per second.
+    pub rate: f32,
+    /// Amplitude of the near row, in screen halves.
+    pub height: f32,
+    /// Half width of the near row, in screen halves.
+    pub spread: f32,
+    /// 0 = a flat stack, 1 = strong foreshortening toward the horizon.
+    pub perspective: f32,
+    /// Baseline of the farthest row, 0 bottom .. 1 top.
+    pub horizon: f32,
+    /// Baseline of the nearest row.
+    pub near: f32,
+    /// Line width, pixels.
+    pub width: f32,
+    pub gain: f32,
+    /// Box-smoothing passes over each row.
+    pub smooth: u32,
+    /// How dim the far rows get.
+    pub fade: f32,
+}
+
+impl Default for WavesParams {
+    fn default() -> Self {
+        Self { source: WavesSource::Waveform, colour: WavesColour::Age, rows: 48, rate: 24.0, height: 0.35, spread: 0.7, perspective: 0.6, horizon: 0.72, near: 0.2, width: 1.5, gain: 1.0, smooth: 2, fade: 0.7 }
+    }
+}
+
 /// Where a layer takes its colour from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -875,11 +933,12 @@ pub struct Layer {
     pub starfield: StarfieldParams,
     pub kaleido: KaleidoParams,
     pub sigil: SigilParams,
+    pub waves: WavesParams,
 }
 
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default() }
+        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default(), waves: WavesParams::default() }
     }
 }
 

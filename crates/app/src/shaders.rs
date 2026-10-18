@@ -17,6 +17,8 @@ macro_rules! shader_table {
 shader_table!(
     "params.wgsl",
     "scope_params.wgsl",
+    "waves_params.wgsl",
+    "waves.wgsl",
     "decay.wgsl",
     "beam.wgsl",
     "bloom_down.wgsl",

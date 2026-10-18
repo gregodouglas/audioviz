@@ -246,6 +246,10 @@ impl Running {
         }
         let app_filter = settings.target_process.trim_end_matches(".exe").to_lowercase();
         let metadata = audioviz_metadata::default_source().start(&app_filter)?;
+        for (i, m) in window.available_monitors().enumerate() {
+            let (size, pos) = (m.size(), m.position());
+            tracing::info!("monitor {i}: {} {}x{} at ({}, {}){}", m.name().unwrap_or_else(|| "Display".into()), size.width, size.height, pos.x, pos.y, m.refresh_rate_millihertz().map(|r| format!(" @ {} Hz", r / 1000)).unwrap_or_default());
+        }
         hittest::install_on(&window);
 
         let first_run = (!settings.onboarded).then(FirstRun::default);

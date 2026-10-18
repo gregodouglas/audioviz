@@ -22,7 +22,7 @@ use crate::post::{Post, PostParams};
 use crate::preset_store::{self, PresetDef};
 use crate::scene_store::{self, SceneDef};
 use crate::scenes::scope::MAX_POINTS;
-use crate::settings::{AudioSourceKind, Layer, MAX_LAYERS, Section, Settings};
+use crate::settings::{AudioSourceKind, MAX_LAYERS, Section, Settings};
 use crate::shaders::ShaderSet;
 use crate::strip::Strip;
 use crate::theme::{self, PANEL_W, STRIP_H};
@@ -912,9 +912,7 @@ impl Running {
         if let Some((i, name)) = panel_actions.apply_preset {
             if name.is_empty() {
                 // "Defaults": the visual's own defaults, the layer otherwise untouched.
-                let kind = self.settings.layer(i).visual;
-                let fresh = Layer::new(kind, true, 1.0);
-                let def = PresetDef { name: String::new(), visual: kind, params: preset_store::params_of(&fresh), builtin: true };
+                let def = preset_store::defaults(self.settings.layer(i).visual);
                 let _ = preset_store::apply(self.settings.layer_mut(i), &def);
             } else if let Some(p) = self.presets.iter().find(|p| p.name == name && p.visual == self.settings.layer(i).visual).cloned() {
                 if let Err(e) = preset_store::apply(self.settings.layer_mut(i), &p) {
@@ -930,6 +928,24 @@ impl Running {
                     self.calibration_result = Some((format!("Preset saved: {n}"), Instant::now()));
                 }
                 Err(e) => self.calibration_result = Some((format!("Could not save preset: {e}"), Instant::now())),
+            }
+        }
+        if let Some(kind) = panel_actions.restore_presets {
+            match preset_store::restore_factory(kind) {
+                Ok(n) => {
+                    self.presets = preset_store::all();
+                    self.calibration_result = Some((format!("Restored {n} factory preset{}", if n == 1 { "" } else { "s" }), Instant::now()));
+                }
+                Err(e) => self.calibration_result = Some((format!("Could not restore presets: {e}"), Instant::now())),
+            }
+        }
+        if panel_actions.restore_scenes {
+            match scene_store::restore_factory() {
+                Ok(n) => {
+                    self.scenes = scene_store::all();
+                    self.calibration_result = Some((format!("Restored {n} factory scene{}", if n == 1 { "" } else { "s" }), Instant::now()));
+                }
+                Err(e) => self.calibration_result = Some((format!("Could not restore scenes: {e}"), Instant::now())),
             }
         }
         if let Some(name) = panel_actions.save_scene {

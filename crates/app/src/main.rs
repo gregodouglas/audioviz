@@ -9,6 +9,7 @@ mod config;
 mod director;
 mod rng;
 mod engine;
+mod factory;
 mod gpu;
 mod hittest;
 mod overlays;

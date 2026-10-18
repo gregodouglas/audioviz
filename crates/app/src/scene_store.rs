@@ -5,230 +5,38 @@
 
 use std::path::PathBuf;
 
-use crate::settings::{DirectorMode, Fold, Halftone, Layer, Lines, Mirror, Modifier, Settings, VisualKind, Warp};
+use crate::factory;
+use crate::settings::Settings;
 
 #[derive(Clone)]
 pub struct SceneDef {
     pub name: String,
     pub settings: Settings,
-    pub builtin: bool,
+    /// Shipped with the app (a factory file).
+    pub factory: bool,
+    /// A factory file the user has changed.
+    pub edited: bool,
 }
 
 pub fn dir() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("audioviz").join("scenes"))
+    factory::dir("scenes")
 }
 
 fn legacy_dir() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("audioviz").join("looks"))
 }
 
-fn scene(name: &str, layers: Vec<Layer>, f: impl FnOnce(&mut Settings)) -> SceneDef {
-    let mut s = Settings::default();
-    s.layers = layers;
-    s.scene_name = name.into();
-    f(&mut s);
-    SceneDef { name: name.into(), settings: s, builtin: true }
+fn parse(rel: &str, text: &str) -> Option<SceneDef> {
+    let mut settings = crate::config::parse(text).ok()?;
+    let name = factory::stem(rel).to_string();
+    settings.scene_name = name.clone();
+    let (fac, same) = factory::status(rel, text);
+    Some(SceneDef { name, settings, factory: fac, edited: fac && !same })
 }
 
+/// The factory scenes alone (a dev run, or for tests).
 pub fn builtin() -> Vec<SceneDef> {
-    let mut v = vec![
-        scene("Scope", vec![Layer::new(VisualKind::Scope, true, 1.0), Layer::new(VisualKind::Ribbons, false, 0.5), Layer::new(VisualKind::Starfield, false, 0.5)], |_| {}),
-        scene("Ribbons", vec![Layer::new(VisualKind::Ribbons, true, 1.0), Layer::new(VisualKind::Scope, false, 0.5), Layer::new(VisualKind::Starfield, false, 0.5)], |_| {}),
-        scene("Starfield", vec![Layer::new(VisualKind::Starfield, true, 1.0), Layer::new(VisualKind::Ribbons, false, 0.5), Layer::new(VisualKind::Scope, false, 0.5)], |s| s.post.bloom = 0.12),
-        scene(
-            "Deep field",
-            vec![
-                {
-                    let mut l = Layer::new(VisualKind::Ribbons, true, 1.0);
-                    l.ribbons.speed = 0.08;
-                    l.ribbons.count = 3000;
-                    l.ribbons.intensity = 0.5;
-                    l.ribbons.persistence = 0.6;
-                    l.ribbons.saturation = 0.2;
-                    l
-                },
-                {
-                    let mut l = Layer::new(VisualKind::Ribbons, true, 0.35);
-                    l.ribbons.speed = 0.6;
-                    l.ribbons.count = 1200;
-                    l.ribbons.intensity = 1.6;
-                    l.ribbons.persistence = 0.05;
-                    l.ribbons.width = 0.6;
-                    l.band.enabled = true;
-                    l.band.lo_hz = 2000.0;
-                    l.band.hi_hz = 16000.0;
-                    l
-                },
-                Layer::new(VisualKind::Starfield, false, 0.3),
-            ],
-            |s| {
-                s.post.bloom = 0.2;
-                s.tint = [0.75, 0.85, 1.0];
-            },
-        ),
-        scene(
-            "Night",
-            vec![
-                {
-                    let mut l = Layer::new(VisualKind::Starfield, true, 0.8);
-                    l.starfield.density = 0.8;
-                    l.starfield.twinkle = 0.4;
-                    l
-                },
-                {
-                    let mut l = Layer::new(VisualKind::Ribbons, true, 0.3);
-                    l.ribbons.intensity = 0.7;
-                    l.ribbons.speed = 0.2;
-                    l
-                },
-                Layer::new(VisualKind::Scope, false, 0.5),
-            ],
-            |s| {
-                s.post.bloom = 0.08;
-                s.post.exposure = 0.8;
-            },
-        ),
-        scene(
-            "Party",
-            vec![
-                {
-                    let mut l = Layer::new(VisualKind::Ribbons, true, 1.0);
-                    l.ribbons.speed = 0.45;
-                    l.ribbons.saturation = 0.7;
-                    l.ribbons.intensity = 1.3;
-                    l
-                },
-                {
-                    let mut l = Layer::new(VisualKind::Scope, true, 0.8);
-                    l.scope.beat_pulse = 0.6;
-                    l.scope.beam_intensity = 1.4;
-                    l.band.enabled = true;
-                    l.band.lo_hz = 20.0;
-                    l.band.hi_hz = 250.0;
-                    l
-                },
-                Layer::new(VisualKind::Starfield, false, 0.5),
-            ],
-            |s| {
-                s.post.bloom = 0.5;
-                s.tint_from_art = true;
-            },
-        ),
-        scene(
-            "Studio",
-            vec![
-                {
-                    let mut l = Layer::new(VisualKind::Scope, true, 1.0);
-                    l.scope.beam_width = 0.9;
-                    l.scope.persistence = 0.02;
-                    l.scope.beat_pulse = 0.0;
-                    l
-                },
-                Layer::new(VisualKind::Ribbons, false, 0.5),
-                Layer::new(VisualKind::Starfield, false, 0.5),
-            ],
-            |s| {
-                s.tint = [0.85, 0.9, 1.0];
-                s.post.bloom = 0.12;
-                s.post.grain = 0.05;
-            },
-        ),
-    ];
-    v.push(scene(
-        "Kaleidoscope",
-        vec![
-            {
-                let mut l = Layer::new(VisualKind::Kaleido, true, 1.0);
-                l.modifiers.push(Modifier::Fold(Fold::default()));
-                l
-            },
-            Layer::new(VisualKind::Ribbons, false, 0.4),
-            Layer::new(VisualKind::Scope, false, 0.5),
-        ],
-        |s| s.post.bloom = 0.1,
-    ));
-    v.push(scene(
-        "Sigil",
-        vec![
-            {
-                let mut l = Layer::new(VisualKind::Sigil, true, 1.0);
-                l.palette.name = "neon".into();
-                l
-            },
-            Layer::new(VisualKind::Ribbons, false, 0.4),
-            Layer::new(VisualKind::Scope, false, 0.5),
-        ],
-        |s| {
-            s.tint = [0.55, 0.35, 1.0];
-            s.post.bloom = 0.16;
-            s.post.look = crate::settings::Look::Neon;
-        },
-    ));
-    v.push(scene(
-        "Waves",
-        vec![
-            {
-                let mut l = Layer::new(VisualKind::Waves, true, 1.0);
-                l.palette.name = "ice".into();
-                l
-            },
-            Layer::new(VisualKind::Ribbons, false, 0.4),
-            Layer::new(VisualKind::Scope, false, 0.5),
-        ],
-        |s| {
-            s.tint = [0.75, 0.85, 1.0];
-            s.post.bloom = 0.12;
-        },
-    ));
-    v.push(scene(
-        "Crystal",
-        vec![
-            {
-                let mut l = Layer::new(VisualKind::Crystal, true, 1.0);
-                l.palette.name = "neon".into();
-                l
-            },
-            Layer::new(VisualKind::Ribbons, false, 0.4),
-            Layer::new(VisualKind::Scope, false, 0.5),
-        ],
-        |s| {
-            s.tint = [0.55, 0.35, 1.0];
-            s.post.bloom = 0.18;
-            s.post.look = crate::settings::Look::Neon;
-        },
-    ));
-    v.push(scene(
-        "Lantern",
-        vec![
-            {
-                let mut l = Layer::new(VisualKind::Crystal, true, 1.0);
-                l.palette.name = "neon".into();
-                l.modifiers.push(Modifier::Mirror(Mirror { flip: 0.3, pinned: true, ..Default::default() }));
-                l.modifiers.push(Modifier::Halftone(Halftone { mono: 0.8, ..Default::default() }));
-                l.modifiers.push(Modifier::Warp(Warp { amount: 30.0, ..Default::default() }));
-                l.modifiers.push(Modifier::Lines(Lines { pinned: true, ..Default::default() }));
-                l.modifiers.push(Modifier::Chroma(crate::settings::ChromaSplit { amount: 0.004, pinned: true, ..Default::default() }));
-                l.director.mode = DirectorMode::Auto;
-                l
-            },
-            {
-                let mut l = Layer::new(VisualKind::Wheel, true, 0.8);
-                l.palette.name = "neon".into();
-                l.palette.cycle = 0.02;
-                l.wheel.gain = 1.6;
-                l.wheel.curve = 1.5;
-                l.modifiers.push(Modifier::Lines(Lines::default()));
-                l
-            },
-            Layer::new(VisualKind::Scope, false, 0.5),
-        ],
-        |s| {
-            s.tint = [1.0, 0.35, 0.8];
-            s.post.bloom = 0.4;
-            s.post.look = crate::settings::Look::Film;
-        },
-    ));
-    v
+    factory::embedded("scenes/").filter_map(|(rel, text)| parse(rel, text)).collect()
 }
 
 fn read_dir(d: Option<PathBuf>, out: &mut Vec<SceneDef>) {
@@ -243,11 +51,8 @@ fn read_dir(d: Option<PathBuf>, out: &mut Vec<SceneDef>) {
         if out.iter().any(|s| s.name == name) {
             continue;
         }
-        match std::fs::read_to_string(&p).ok().and_then(|t| crate::config::parse(&t).ok()) {
-            Some(mut settings) => {
-                settings.scene_name = name.clone();
-                out.push(SceneDef { name, settings, builtin: false });
-            }
+        match std::fs::read_to_string(&p).ok().and_then(|t| parse(&format!("scenes/{name}.json"), &t)) {
+            Some(def) => out.push(def),
             None => tracing::warn!("scene unreadable: {}", p.display()),
         }
     }
@@ -261,10 +66,24 @@ pub fn load_user() -> Vec<SceneDef> {
     out
 }
 
+/// Every scene: the factory set alone on a dev run, else the user's folder
+/// (with the factory files written into it first if they are missing),
+/// factory ones first.
 pub fn all() -> Vec<SceneDef> {
-    let mut v = builtin();
-    v.extend(load_user());
+    if factory::embedded_only() {
+        return builtin();
+    }
+    if let Err(e) = factory::install("scenes/", false) {
+        tracing::warn!("could not install factory scenes: {e}");
+    }
+    let mut v = load_user();
+    v.sort_by(|a, b| b.factory.cmp(&a.factory).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
     v
+}
+
+/// Write the factory scenes back over the folder.
+pub fn restore_factory() -> anyhow::Result<usize> {
+    factory::install("scenes/", true)
 }
 
 fn safe_name(name: &str) -> String {
@@ -274,6 +93,7 @@ fn safe_name(name: &str) -> String {
 pub fn save(name: &str, settings: &Settings) -> anyhow::Result<String> {
     let name = safe_name(name);
     anyhow::ensure!(!name.is_empty(), "name is empty");
+    anyhow::ensure!(!factory::embedded_only(), "a dev run does not write scenes");
     let d = dir().ok_or_else(|| anyhow::anyhow!("no config dir"))?;
     std::fs::create_dir_all(&d)?;
     let mut s = settings.clone();

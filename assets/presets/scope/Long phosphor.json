@@ -1,0 +1,10 @@
+{
+  "auto_gain": true,
+  "beam_intensity": 1.0,
+  "beam_width": 1.600000023841858,
+  "beat_pulse": 0.30000001192092896,
+  "colour": "key",
+  "gain": 0.8500000238418579,
+  "persistence": 0.5,
+  "rotation_deg": 45.0
+}

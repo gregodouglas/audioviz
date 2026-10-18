@@ -89,6 +89,8 @@ pub struct Actions {
     /// (layer, preset name) to apply; (layer, name) to save the layer's visual parameters as.
     pub apply_preset: Option<(usize, String)>,
     pub save_preset: Option<(usize, String)>,
+    pub restore_presets: Option<VisualKind>,
+    pub restore_scenes: bool,
     pub delete_scene: Option<String>,
     pub calibrate_toggle: bool,
     pub calibrate_apply: bool,
@@ -229,13 +231,17 @@ fn scenes_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
     }
     ui.add_space(8.0);
     small_caps(ui, "Built in");
-    for def in stats.scenes.iter().filter(|s| s.builtin) {
+    for def in stats.scenes.iter().filter(|s| s.factory) {
         let active = settings.scene_name == def.name;
-        if scene_row(ui, &def.name, active, ui.available_width()) {
+        let label = if def.edited { format!("{} (edited)", def.name) } else { def.name.clone() };
+        if scene_row(ui, &label, active, ui.available_width()) {
             a.apply_scene = Some(def.name.clone());
         }
     }
-    let user: Vec<&SceneDef> = stats.scenes.iter().filter(|s| !s.builtin).collect();
+    if stats.scenes.iter().any(|s| s.edited) && ghost_button(ui, "Restore factory scenes", false).on_hover_text("Write the shipped versions back over the ones you changed").clicked() {
+        a.restore_scenes = true;
+    }
+    let user: Vec<&SceneDef> = stats.scenes.iter().filter(|s| !s.factory).collect();
     if !user.is_empty() {
         small_caps(ui, "Yours");
         for def in user {
@@ -261,7 +267,7 @@ fn scenes_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
             a.save_scene = Some(state.scene_name.trim().to_string());
         }
     });
-    if !settings.scene_name.is_empty() && stats.scenes.iter().any(|s| s.name == settings.scene_name && !s.builtin) {
+    if !settings.scene_name.is_empty() && stats.scenes.iter().any(|s| s.name == settings.scene_name) {
         let name = settings.scene_name.clone();
         if ghost_button(ui, &format!("Update '{name}'"), false).clicked() {
             a.save_scene = Some(name);
@@ -900,7 +906,7 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState
     {
         let kind = l.visual;
         let mine: Vec<&PresetDef> = stats.presets.iter().filter(|p| p.visual == kind).collect();
-        let mut items: Vec<String> = mine.iter().map(|p| if p.builtin { p.name.clone() } else { format!("{} (mine)", p.name) }).collect();
+        let mut items: Vec<String> = mine.iter().map(|p| if p.edited { format!("{} (edited)", p.name) } else if p.factory { p.name.clone() } else { format!("{} (mine)", p.name) }).collect();
         items.push("Defaults".into());
         let refs: Vec<&str> = items.iter().map(String::as_str).collect();
         if let Some(i) = dropdown(ui, "Preset", &refs, None) {
@@ -915,7 +921,10 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState
                 a.save_preset = Some((editing, state.preset_name.trim().to_string()));
             }
         });
-        hint(ui, "A preset is this visual's own controls, nothing else: the palette, band, blend and effects stay as they are.");
+        if mine.iter().any(|p| p.edited) && ghost_button(ui, "Restore factory presets", false).on_hover_text("Write the shipped versions back over the ones you changed").clicked() {
+            a.restore_presets = Some(kind);
+        }
+        hint(ui, "A preset is this visual's own controls, nothing else: the palette, band, blend and effects stay as they are. Presets are files in your audioviz folder, the shipped ones too: save over one to change it, Restore brings the shipped version back.");
     }
     // Audio band: full mix, a preset, or a custom range.
     let mut items: Vec<&str> = vec!["Full mix"];

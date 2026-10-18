@@ -354,7 +354,7 @@ impl Running {
             .map(|m| {
                 let size = m.size();
                 let pos = m.position();
-                MonitorInfo { name: m.name().unwrap_or_else(|| "display".into()), x: pos.x, y: pos.y, w: size.width, h: size.height, hz: m.refresh_rate_millihertz().map(|r| r / 1000) }
+                MonitorInfo { name: m.name().unwrap_or_else(|| "Display".into()), x: pos.x, y: pos.y, w: size.width, h: size.height, hz: m.refresh_rate_millihertz().map(|r| r / 1000) }
             })
             .collect()
     }
@@ -715,7 +715,7 @@ impl Running {
         }
         let toast_on = !self.zen && self.settings.show_now_playing && self.settings.toast && self.toast.as_ref().is_some_and(|(_, _, t)| t.elapsed().as_secs_f32() < TOAST_SECONDS);
         let accent = crate::chrome::accent(self.tint_current);
-        let target_short = self.settings.target_process.trim_end_matches(".exe").to_lowercase();
+        let target_short = crate::widgets::title(&self.settings.target_process.trim_end_matches(".exe").to_lowercase());
 
         let mut chrome_actions = crate::chrome::ChromeActions::default();
         let mut panel_actions = panel::Actions::default();

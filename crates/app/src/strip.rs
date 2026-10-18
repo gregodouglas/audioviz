@@ -58,8 +58,8 @@ impl Strip {
             // Art + text (only when the user wants to see what is playing).
             let art_r = Rect::from_min_size(pos2(rect.min.x + 16.0, rect.min.y + 12.0), vec2(48.0, 48.0));
             if !identity {
-                p.text(pos2(rect.min.x + 16.0, rect.min.y + 31.0), Align2::LEFT_CENTER, "now playing hidden", theme::sans(12.0), TEXT_3);
-                p.text(pos2(rect.min.x + 16.0, rect.min.y + 49.0), Align2::LEFT_CENTER, "N to show", theme::sans(11.0), TEXT_3);
+                p.text(pos2(rect.min.x + 16.0, rect.min.y + 31.0), Align2::LEFT_CENTER, "Now playing hidden", theme::sans(12.0), TEXT_3);
+                p.text(pos2(rect.min.x + 16.0, rect.min.y + 49.0), Align2::LEFT_CENTER, "Press N to show", theme::sans(11.0), TEXT_3);
             }
             match art_id.filter(|_| identity) {
                 Some(id) => {
@@ -139,9 +139,9 @@ impl Strip {
             let tt = ctx.animate_bool_with_time(sw_resp.id, *tint_from_art, theme::ANIM_S);
             p.rect_filled(sw, 8.0, crate::widgets::lerp_color(HAIRLINE, accent, tt));
             p.circle_filled(pos2(sw.min.x + 8.0 + 12.0 * tt, sw.center().y), 6.0, crate::widgets::lerp_color(TEXT_2, BG, tt));
-            p.text(pos2(rx, rect.min.y + 27.0), Align2::RIGHT_CENTER, "tint from album art", theme::sans(11.0), TEXT_2);
+            p.text(pos2(rx, rect.min.y + 27.0), Align2::RIGHT_CENTER, "Tint from album art", theme::sans(11.0), TEXT_2);
             let sc = ui.interact(Rect::from_min_size(pos2(rx - 80.0, rect.min.y + 40.0), vec2(80.0, 18.0)), egui::Id::unique("strip-shortcuts"), Sense::click());
-            p.text(pos2(rx, rect.min.y + 49.0), Align2::RIGHT_CENTER, "?  shortcuts", theme::sans(11.0), if sc.hovered() { TEXT_2 } else { TEXT_3 });
+            p.text(pos2(rx, rect.min.y + 49.0), Align2::RIGHT_CENTER, "?  Shortcuts", theme::sans(11.0), if sc.hovered() { TEXT_2 } else { TEXT_3 });
             if sc.clicked() {
                 a.shortcuts = true;
             }

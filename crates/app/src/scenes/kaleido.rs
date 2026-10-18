@@ -343,7 +343,7 @@ impl Scene for Kaleido {
         let k = &mut layer.kaleido;
         let d = crate::settings::KaleidoParams::default();
         use crate::widgets::{ghost_button, hint, segmented, slider_def};
-        if let Some(i) = segmented(ui, &["album art", "my photos"], (k.source == ImageSource::Photos) as usize) {
+        if let Some(i) = segmented(ui, &["Album art", "My photos"], (k.source == ImageSource::Photos) as usize) {
             k.source = if i == 1 { ImageSource::Photos } else { ImageSource::Art };
         }
         if k.source == ImageSource::Photos {

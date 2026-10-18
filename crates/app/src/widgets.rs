@@ -212,6 +212,15 @@ pub fn groups_store(saved: &mut BTreeMap<String, bool>) -> bool {
     }
 }
 
+/// First letter up, for keys that double as display names ("neon" → "Neon").
+pub fn title(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => String::new(),
+    }
+}
+
 /// A small rounded tag in a colour; returns the response (clickable).
 pub fn chip(ui: &mut Ui, text: &str, color: Color32, clickable: bool) -> Response {
     let galley = ui.painter().layout_no_wrap(text.to_string(), theme::mono(10.5), color);

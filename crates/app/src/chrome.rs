@@ -120,7 +120,7 @@ impl Chrome {
             painter.text(pos2(bar.min.x + 36.0, bar.center().y), Align2::LEFT_CENTER, "audioviz", theme::bold(13.0), TEXT);
 
             // Scene name, then one pip per layer (dot = on, underline = editing), centred.
-            let scene_label = if input.scene_name.is_empty() { "unsaved scene".to_string() } else { input.scene_name.to_string() };
+            let scene_label = if input.scene_name.is_empty() { "Unsaved scene".to_string() } else { input.scene_name.to_string() };
             let scene_w = painter.layout_no_wrap(scene_label.clone(), theme::sans(12.0), TEXT).size().x + 26.0;
             let widths: Vec<f32> = input.layers.iter().map(|(l, _)| painter.layout_no_wrap(l.clone(), theme::bold(12.0), TEXT).size().x + 30.0).collect();
             let total: f32 = widths.iter().sum::<f32>() + scene_w + 64.0;
@@ -157,7 +157,7 @@ impl Chrome {
             if resp.clicked() {
                 actions.toggle_auto = true;
             }
-            painter.text(ra.center(), Align2::CENTER_CENTER, "A  auto", theme::sans(12.0), if input.auto { input.accent } else if resp.hovered() { TEXT_2 } else { TEXT_3 });
+            painter.text(ra.center(), Align2::CENTER_CENTER, "A  Auto", theme::sans(12.0), if input.auto { input.accent } else if resp.hovered() { TEXT_2 } else { TEXT_3 });
             self.regions.interactive.push(ra);
 
             // Window controls, right.
@@ -189,14 +189,14 @@ impl Chrome {
             // Status chips, right of centre, left of the controls.
             let chips_right = bar.max.x - cw * 3.0 - 12.0;
             let (cap_text, cap_color, cap_section) = match input.capture {
-                CaptureMode::Starting => ("starting".to_string(), TEXT_3, Section::Sync),
+                CaptureMode::Starting => ("Starting".to_string(), TEXT_3, Section::Sync),
                 CaptureMode::Process { .. } => (input.target_short.to_string(), input.accent, Section::Sync),
-                CaptureMode::Endpoint { .. } => ("system audio".to_string(), TEXT_2, Section::Sync),
-                CaptureMode::Failed(_) => ("no audio".to_string(), ERROR, Section::Sync),
+                CaptureMode::Endpoint { .. } => ("System audio".to_string(), TEXT_2, Section::Sync),
+                CaptureMode::Failed(_) => ("No audio".to_string(), ERROR, Section::Sync),
             };
             let chips: [(String, Color32, Section); 3] = [
                 (format!("M{} {:.0} fps", input.monitor_index + 1, input.fps), TEXT_2, Section::Display),
-                (format!("sync {:.0} ms", input.sync_ms), TEXT_2, Section::Sync),
+                (format!("Sync {:.0} ms", input.sync_ms), TEXT_2, Section::Sync),
                 (cap_text, cap_color, cap_section),
             ];
             let mut x = chips_right;

@@ -577,7 +577,7 @@ impl Scene for Sigil {
         let s = &mut layer.sigil;
         let d = crate::settings::SigilParams::default();
         use crate::widgets::{ghost_button, group, hint, slider_def, toggle_row};
-        let by_track = |v: f64| if v < 0.5 { "by track".to_string() } else { format!("{v:.0}") };
+        let by_track = |v: f64| if v < 0.5 { "By track".to_string() } else { format!("{v:.0}") };
         group(ui, "sigil.look", "Look", true, 6, |ui| {
             slider_def(ui, "Size", &mut s.scale, Some(d.scale), 0.3..=1.6, |v| format!("{v:.2}"), false);
             slider_def(ui, "Spread", &mut s.spread, Some(d.spread), 0.2..=2.2, |v| format!("{v:.2}"), false);
@@ -598,7 +598,7 @@ impl Scene for Sigil {
         });
         let mut new_arrangement = false;
         group(ui, "sigil.structure", "Structure", true, 4, |ui| {
-            slider_def(ui, "Star sides", &mut s.sides, Some(d.sides), 0..=8, |v| if v < 0.5 { "by track".to_string() } else if v < 3.0 { "3".to_string() } else { format!("{v:.0}") }, false);
+            slider_def(ui, "Star sides", &mut s.sides, Some(d.sides), 0..=8, |v| if v < 0.5 { "By track".to_string() } else if v < 3.0 { "3".to_string() } else { format!("{v:.0}") }, false);
             if s.sides != 0 {
                 s.sides = s.sides.max(3);
             }

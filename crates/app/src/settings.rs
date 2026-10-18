@@ -33,13 +33,14 @@ impl VisualKind {
             VisualKind::Sigil => "Sigil",
         }
     }
+    /// Short display name (bar pips, stack rows, breadcrumb).
     pub fn short(self) -> &'static str {
         match self {
-            VisualKind::Scope => "scope",
-            VisualKind::Ribbons => "ribbons",
-            VisualKind::Starfield => "starfield",
-            VisualKind::Kaleido => "kaleido",
-            VisualKind::Sigil => "sigil",
+            VisualKind::Scope => "Scope",
+            VisualKind::Ribbons => "Ribbons",
+            VisualKind::Starfield => "Black hole",
+            VisualKind::Kaleido => "Kaleidoscope",
+            VisualKind::Sigil => "Sigil",
         }
     }
 }
@@ -373,30 +374,30 @@ pub const MAX_MODS: usize = 6;
 impl Modifier {
     /// Every kind with a constructor, in the order the panel offers them.
     pub const KINDS: [(&'static str, fn() -> Modifier); 10] = [
-        ("palette", || Modifier::Grade(Grade::default())),
-        ("kaleidoscope", || Modifier::Fold(Fold::default())),
-        ("fractal", || Modifier::Fractal(Fractal::default())),
-        ("luminescence", || Modifier::Lumi(Luminescence::default())),
-        ("feedback", || Modifier::Feedback(Feedback::default())),
-        ("polar", || Modifier::Polar(Polar::default())),
-        ("ripple", || Modifier::Ripple(Ripple::default())),
-        ("edge", || Modifier::Edge(Edge::default())),
-        ("chroma split", || Modifier::Chroma(ChromaSplit::default())),
-        ("mask", || Modifier::Mask(Mask::default())),
+        ("Palette", || Modifier::Grade(Grade::default())),
+        ("Kaleidoscope", || Modifier::Fold(Fold::default())),
+        ("Fractal", || Modifier::Fractal(Fractal::default())),
+        ("Luminescence", || Modifier::Lumi(Luminescence::default())),
+        ("Feedback", || Modifier::Feedback(Feedback::default())),
+        ("Polar", || Modifier::Polar(Polar::default())),
+        ("Ripple", || Modifier::Ripple(Ripple::default())),
+        ("Edge", || Modifier::Edge(Edge::default())),
+        ("Chroma split", || Modifier::Chroma(ChromaSplit::default())),
+        ("Mask", || Modifier::Mask(Mask::default())),
     ];
 
     pub fn name(&self) -> &'static str {
         match self {
-            Modifier::Fold(_) => "kaleidoscope",
-            Modifier::Feedback(_) => "feedback",
-            Modifier::Polar(_) => "polar",
-            Modifier::Ripple(_) => "ripple",
-            Modifier::Edge(_) => "edge",
-            Modifier::Chroma(_) => "chroma split",
-            Modifier::Mask(_) => "mask",
-            Modifier::Fractal(_) => "fractal",
-            Modifier::Lumi(_) => "luminescence",
-            Modifier::Grade(_) => "palette",
+            Modifier::Fold(_) => "Kaleidoscope",
+            Modifier::Feedback(_) => "Feedback",
+            Modifier::Polar(_) => "Polar",
+            Modifier::Ripple(_) => "Ripple",
+            Modifier::Edge(_) => "Edge",
+            Modifier::Chroma(_) => "Chroma split",
+            Modifier::Mask(_) => "Mask",
+            Modifier::Fractal(_) => "Fractal",
+            Modifier::Lumi(_) => "Luminescence",
+            Modifier::Grade(_) => "Palette",
         }
     }
 
@@ -698,10 +699,10 @@ impl Blend {
     pub const ALL: [Blend; 4] = [Blend::Add, Blend::Over, Blend::Screen, Blend::Multiply];
     pub fn name(self) -> &'static str {
         match self {
-            Blend::Add => "add",
-            Blend::Over => "over",
-            Blend::Screen => "screen",
-            Blend::Multiply => "multiply",
+            Blend::Add => "Add",
+            Blend::Over => "Over",
+            Blend::Screen => "Screen",
+            Blend::Multiply => "Multiply",
         }
     }
 }
@@ -724,10 +725,10 @@ impl Default for AudioBand {
 
 impl AudioBand {
     /// Named presets: (label, lo, hi).
-    pub const PRESETS: [(&'static str, f32, f32); 6] = [("sub", 20.0, 60.0), ("bass", 60.0, 250.0), ("low mid", 250.0, 500.0), ("mid", 500.0, 2000.0), ("presence", 2000.0, 4000.0), ("air", 4000.0, 16000.0)];
+    pub const PRESETS: [(&'static str, f32, f32); 6] = [("Sub", 20.0, 60.0), ("Bass", 60.0, 250.0), ("Low mid", 250.0, 500.0), ("Mid", 500.0, 2000.0), ("Presence", 2000.0, 4000.0), ("Air", 4000.0, 16000.0)];
     pub fn label(&self) -> String {
         if !self.enabled {
-            return "full mix".into();
+            return "Full mix".into();
         }
         for (name, lo, hi) in Self::PRESETS {
             if (self.lo_hz - lo).abs() < 1.0 && (self.hi_hz - hi).abs() < 1.0 {

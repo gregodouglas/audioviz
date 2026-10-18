@@ -183,8 +183,8 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState
         // Footer.
         let fy = rect.max.y - 44.0;
         p.hline((rect.min.x + RAIL_W + 20.0)..=(rect.max.x - 20.0), fy, egui::Stroke::new(1.0, HAIRLINE));
-        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 14.0), Align2::LEFT_CENTER, "H hide all   N now playing   ? keys", theme::mono(10.5), TEXT_3);
-        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 30.0), Align2::LEFT_CENTER, "1-3 layer   Space scene", theme::mono(10.5), TEXT_3);
+        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 14.0), Align2::LEFT_CENTER, "H Hide all   N Now playing   ? Keys", theme::mono(10.5), TEXT_3);
+        p.text(pos2(rect.min.x + RAIL_W + 20.0, fy + 30.0), Align2::LEFT_CENTER, "1-3 Layer   Space Scene", theme::mono(10.5), TEXT_3);
         p.text(pos2(rect.max.x - 20.0, fy + 30.0), Align2::RIGHT_CENTER, crate::VERSION, theme::mono(10.0), TEXT_3);
         let sc = ui.interact(Rect::from_min_size(pos2(rect.min.x + RAIL_W + 20.0, fy + 6.0), vec2(220.0, 16.0)), egui::Id::unique("footer-shortcuts"), Sense::click());
         if sc.clicked() {
@@ -234,7 +234,7 @@ fn scenes_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
                 if scene_row(ui, &def.name, active, ui.available_width() - 56.0) {
                     a.apply_scene = Some(def.name.clone());
                 }
-                if ui.add(egui::Button::new(egui::RichText::new("delete").size(11.0).color(TEXT_3)).frame(false)).clicked() {
+                if ui.add(egui::Button::new(egui::RichText::new("Delete").size(11.0).color(TEXT_3)).frame(false)).clicked() {
                     a.delete_scene = Some(def.name.clone());
                 }
             });
@@ -246,7 +246,7 @@ fn scenes_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
     ui.add_space(10.0);
     small_caps(ui, "Save current as");
     ui.horizontal(|ui| {
-        ui.add(egui::TextEdit::singleline(&mut state.scene_name).desired_width(150.0).hint_text("name"));
+        ui.add(egui::TextEdit::singleline(&mut state.scene_name).desired_width(150.0).hint_text("Name"));
         if ui.add_enabled(!state.scene_name.trim().is_empty(), egui::Button::new("Save")).clicked() {
             a.save_scene = Some(state.scene_name.trim().to_string());
         }
@@ -342,8 +342,10 @@ fn palette_section(ui: &mut egui::Ui, settings: &mut Settings, editing: usize) {
     let mut items: Vec<&str> = vec!["none"];
     items.extend(color::PRESETS.iter().map(|p| p.name));
     items.push("custom");
+    let shown: Vec<String> = items.iter().map(|n| widgets::title(n)).collect();
+    let shown_ref: Vec<&str> = shown.iter().map(|s| s.as_str()).collect();
     let sel = items.iter().position(|n| *n == ps.name);
-    if let Some(i) = dropdown(ui, "Palette", &items, sel) {
+    if let Some(i) = dropdown(ui, "Palette", &shown_ref, sel) {
         ps.name = items[i].into();
     }
     if !ps.active() {
@@ -377,12 +379,13 @@ fn palette_section(ui: &mut egui::Ui, settings: &mut Settings, editing: usize) {
                 ps.custom.remove(i);
             }
             ui.horizontal_wrapped(|ui| {
-                if n < 8 && ui.add(egui::Button::new(egui::RichText::new("add stop").size(11.0)).frame(false)).clicked() {
+                if n < 8 && ui.add(egui::Button::new(egui::RichText::new("Add stop").size(11.0)).frame(false)).clicked() {
                     let t = ps.custom.iter().map(|s| s.t).fold(0.0f32, f32::max);
                     ps.custom.push(color::Stop { t: (t + 0.2).min(1.0), rgb: [1.0, 1.0, 1.0] });
                 }
-                let names: Vec<&str> = color::PRESETS.iter().map(|p| p.name).collect();
-                if let Some(i) = dropdown(ui, "Start from", &names, None) {
+                let names: Vec<String> = color::PRESETS.iter().map(|p| widgets::title(p.name)).collect();
+                let names_ref: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+                if let Some(i) = dropdown(ui, "Start from", &names_ref, None) {
                     ps.custom = color::PRESETS[i].stops.to_vec();
                 }
             });
@@ -408,12 +411,12 @@ fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelStat
             let m = &mut l.modifiers[j];
             mini_switch(ui, m.enabled_mut());
             let label = egui::RichText::new(m.name()).color(if m.enabled() { TEXT } else { TEXT_2 });
-            if ui.add(egui::Button::new(label).frame(false)).on_hover_text("open its controls").clicked() {
+            if ui.add(egui::Button::new(label).frame(false)).on_hover_text("Open its controls").clicked() {
                 state.editing_mod = j;
                 state.mod_open = true;
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add(egui::Button::new(egui::RichText::new("×").color(TEXT_3)).frame(false)).on_hover_text("remove").clicked() {
+                if ui.add(egui::Button::new(egui::RichText::new("×").color(TEXT_3)).frame(false)).on_hover_text("Remove").clicked() {
                     remove = Some(j);
                 }
                 if arrow_button(ui, false, j + 1 < n) {
@@ -500,7 +503,7 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             let d = Fold::default();
             small_caps(ui, "Mirrors");
             let modes = [FoldMode::Radial, FoldMode::Pinwheel, FoldMode::Tiled];
-            if let Some(i) = segmented(ui, &["radial", "pinwheel", "tiled"], modes.iter().position(|m| *m == k.mode).unwrap_or(0)) {
+            if let Some(i) = segmented(ui, &["Radial", "Pinwheel", "Tiled"], modes.iter().position(|m| *m == k.mode).unwrap_or(0)) {
                 k.mode = modes[i];
             }
             if k.mode != FoldMode::Tiled {
@@ -525,7 +528,7 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
         Modifier::Polar(k) => {
             let d = Polar::default();
             small_caps(ui, "Direction");
-            if let Some(i) = segmented(ui, &["wrap", "unwrap"], k.unwrap as usize) {
+            if let Some(i) = segmented(ui, &["Wrap", "Unwrap"], k.unwrap as usize) {
                 k.unwrap = i == 1;
             }
             slider_def(ui, "Radius", &mut k.radius, Some(d.radius), 0.2..=2.0, |v| format!("{v:.2}"), false);
@@ -559,7 +562,7 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
         Modifier::Fractal(k) => {
             let d = Fractal::default();
             small_caps(ui, "Recursion");
-            if let Some(i) = segmented(ui, &["kaleidoscopic IFS", "julia"], (k.mode == FractalMode::Julia) as usize) {
+            if let Some(i) = segmented(ui, &["Kaleidoscopic IFS", "Julia"], (k.mode == FractalMode::Julia) as usize) {
                 k.mode = if i == 1 { FractalMode::Julia } else { FractalMode::Kifs };
             }
             slider_def(ui, "Depth", &mut k.iterations, Some(d.iterations), 1..=8, |v| format!("{v:.0}"), false);
@@ -593,7 +596,7 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
         Modifier::Grade(k) => {
             let d = Grade::default();
             small_caps(ui, "Map");
-            if let Some(i) = segmented(ui, &["by brightness", "by hue"], k.by_hue as usize) {
+            if let Some(i) = segmented(ui, &["By brightness", "By hue"], k.by_hue as usize) {
                 k.by_hue = i == 1;
             }
             slider_def(ui, "Amount", &mut k.amount, Some(d.amount), 0.0..=1.0, |v| format!("{v:.2}"), false);
@@ -604,7 +607,7 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             let d = Mask::default();
             small_caps(ui, "Shape");
             let shapes = [MaskShape::Circle, MaskShape::Band, MaskShape::Hex];
-            if let Some(i) = segmented(ui, &["circle", "band", "hex"], shapes.iter().position(|m| *m == k.shape).unwrap_or(0)) {
+            if let Some(i) = segmented(ui, &["Circle", "Band", "Hex"], shapes.iter().position(|m| *m == k.shape).unwrap_or(0)) {
                 k.shape = shapes[i];
             }
             slider_def(ui, "Size", &mut k.radius, Some(d.radius), 0.05..=2.0, |v| format!("{v:.2}"), false);
@@ -718,9 +721,9 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
                     ui.spacing_mut().interact_size.y = 16.0;
                     ui.label(egui::RichText::new(format!("{:.2}", l.opacity)).font(theme::mono(10.5)).color(TEXT_2));
                     ui.spacing_mut().slider_width = 56.0;
-                    ui.add(egui::Slider::new(&mut l.opacity, 0.0..=2.0).show_value(false)).on_hover_text("opacity: this layer's share of the mix");
+                    ui.add(egui::Slider::new(&mut l.opacity, 0.0..=2.0).show_value(false)).on_hover_text("Opacity: this layer's share of the mix");
                 }
-                if chip(ui, "S", if solo { WARN_C } else { TEXT_3 }, true).on_hover_text("solo: show only this layer while tuning").clicked() {
+                if chip(ui, "S", if solo { WARN_C } else { TEXT_3 }, true).on_hover_text("Solo: show only this layer while tuning").clicked() {
                     solo_click = true;
                 }
             });
@@ -734,7 +737,7 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
                 let l = settings.layer(i);
                 for (j, m) in l.modifiers.iter().enumerate() {
                     let c = if m.enabled() { hue } else { TEXT_3 };
-                    if chip(ui, m.name(), c, true).on_hover_text("open its controls").clicked() {
+                    if chip(ui, m.name(), c, true).on_hover_text("Open its controls").clicked() {
                         a.select_layer = Some(i);
                         state.editing_mod = j;
                         state.mod_open = true;
@@ -755,8 +758,8 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
     }
     if settings.solo.is_some() {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("solo on: only that layer is drawn").size(11.0).color(WARN_C));
-            if ui.add(egui::Button::new(egui::RichText::new("clear").size(11.0).color(TEXT_2)).frame(false)).clicked() {
+            ui.label(egui::RichText::new("Solo on: only that layer is drawn").size(11.0).color(WARN_C));
+            if ui.add(egui::Button::new(egui::RichText::new("Clear").size(11.0).color(TEXT_2)).frame(false)).clicked() {
                 settings.solo = None;
             }
         });
@@ -775,9 +778,9 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, layers: &mut [Box<dyn 
         }
     }
     // Audio band: full mix, a preset, or a custom range.
-    let mut items: Vec<&str> = vec!["full mix"];
+    let mut items: Vec<&str> = vec!["Full mix"];
     items.extend(AudioBand::PRESETS.iter().map(|(n, _, _)| *n));
-    items.push("custom range");
+    items.push("Custom range");
     let custom = items.len() - 1;
     let sel = if !l.band.enabled { 0 } else { AudioBand::PRESETS.iter().position(|(_, lo, hi)| (l.band.lo_hz - lo).abs() < 1.0 && (l.band.hi_hz - hi).abs() < 1.0).map(|p| p + 1).unwrap_or(custom) };
     if let Some(i) = dropdown(ui, "Reacts to", &items, Some(sel)) {
@@ -816,7 +819,7 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, layers: &mut [Box<dyn 
         if scene.kind() == kind {
             scene.ui(ui, l);
         } else {
-            hint(ui, "switching visual…");
+            hint(ui, "Switching visual…");
         }
     }
     if kind == VisualKind::Kaleido && settings.layer(editing).kaleido.source == ImageSource::Photos {
@@ -831,9 +834,9 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, layers: &mut [Box<dyn 
             }
             let n = std::fs::read_dir(settings.photos_folder.trim()).map(|rd| rd.filter_map(|e| e.ok()).filter(|e| e.path().extension().and_then(|x| x.to_str()).is_some_and(|x| matches!(x.to_ascii_lowercase().as_str(), "jpg" | "jpeg" | "png"))).count()).ok();
             let msg = match n {
-                Some(0) => "no jpg/png files there".to_string(),
+                Some(0) => "No JPG or PNG files there".to_string(),
                 Some(n) => format!("{n} pictures"),
-                None => "folder not found".to_string(),
+                None => "Folder not found".to_string(),
             };
             ui.label(egui::RichText::new(msg).size(11.0).color(TEXT_3));
         });
@@ -845,13 +848,13 @@ fn colour_tab(ui: &mut egui::Ui, settings: &mut Settings, editing: usize) {
     let l = settings.layer_mut(editing);
     small_caps(ui, "Tint");
     let modes = [TintMode::Scene, TintMode::Art, TintMode::Custom];
-    if let Some(i) = segmented(ui, &["scene tint", "album art", "own colour"], modes.iter().position(|m| *m == l.tint.mode).unwrap_or(0)) {
+    if let Some(i) = segmented(ui, &["Scene tint", "Album art", "Own colour"], modes.iter().position(|m| *m == l.tint.mode).unwrap_or(0)) {
         l.tint.mode = modes[i];
     }
     if l.tint.mode == TintMode::Custom {
         ui.horizontal(|ui| {
             ui.color_edit_button_rgb(&mut l.tint.color);
-            for (name, tint) in [("green", [0.40, 1.0, 0.55]), ("white", [0.85, 0.9, 1.0]), ("amber", [1.0, 0.65, 0.2]), ("ice", [0.55, 0.8, 1.0]), ("violet", [0.55, 0.35, 1.0])] {
+            for (name, tint) in [("Green", [0.40, 1.0, 0.55]), ("White", [0.85, 0.9, 1.0]), ("Amber", [1.0, 0.65, 0.2]), ("Ice", [0.55, 0.8, 1.0]), ("Violet", [0.55, 0.35, 1.0])] {
                 if ui.add(egui::Button::new(egui::RichText::new(name).size(11.0)).frame(false)).clicked() {
                     l.tint.color = tint;
                 }
@@ -881,7 +884,7 @@ fn picture_section(ui: &mut egui::Ui, settings: &mut Settings) {
     slider_def(ui, "Grain", &mut p.grain, Some(d.grain), 0.0..=1.0, |v| format!("{v:.2}"), false);
     ui.add_space(8.0);
     small_caps(ui, "Look");
-    if let Some(i) = segmented(ui, &["film", "neon"], (p.look == Look::Neon) as usize) {
+    if let Some(i) = segmented(ui, &["Film", "Neon"], (p.look == Look::Neon) as usize) {
         p.look = if i == 1 { Look::Neon } else { Look::Film };
     }
     slider_def(ui, "Saturation", &mut p.saturation, Some(d.saturation), 0.0..=2.0, |v| format!("{v:.2}"), false);
@@ -893,7 +896,7 @@ fn picture_section(ui: &mut egui::Ui, settings: &mut Settings) {
     small_caps(ui, "Scene tint");
     ui.horizontal(|ui| {
         ui.color_edit_button_rgb(&mut settings.tint);
-        for (name, tint) in [("green", [0.40, 1.0, 0.55]), ("white", [0.85, 0.9, 1.0]), ("amber", [1.0, 0.65, 0.2]), ("ice", [0.55, 0.8, 1.0]), ("violet", [0.55, 0.35, 1.0])] {
+        for (name, tint) in [("Green", [0.40, 1.0, 0.55]), ("White", [0.85, 0.9, 1.0]), ("Amber", [1.0, 0.65, 0.2]), ("Ice", [0.55, 0.8, 1.0]), ("Violet", [0.55, 0.35, 1.0])] {
             if ui.add(egui::Button::new(egui::RichText::new(name).size(11.0)).frame(false)).clicked() {
                 settings.tint = tint;
             }
@@ -931,7 +934,7 @@ fn sync_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelSta
     ui.add_space(12.0);
     small_caps(ui, "Source");
     let cap = match &stats.capture {
-        CaptureMode::Starting => ("starting…".to_string(), TEXT_3),
+        CaptureMode::Starting => ("Starting…".to_string(), TEXT_3),
         CaptureMode::Process { name, pid } => (format!("{name} (pid {pid})"), ACCENT),
         CaptureMode::Endpoint { device } => (format!("{} not running · listening to '{device}'", settings.target_process), TEXT_2),
         CaptureMode::Failed(e) => (format!("no audio: {e}"), ERROR),
@@ -950,8 +953,8 @@ fn sync_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelSta
         }
     });
     ui.horizontal_wrapped(|ui| {
-        for app in ["Spotify.exe", "chrome.exe", "msedge.exe", "vlc.exe", "foobar2000.exe"] {
-            if ui.add(egui::Button::new(egui::RichText::new(app.trim_end_matches(".exe")).size(11.0)).frame(false)).clicked() {
+        for (label, app) in [("Spotify", "Spotify.exe"), ("Chrome", "chrome.exe"), ("Edge", "msedge.exe"), ("VLC", "vlc.exe"), ("foobar2000", "foobar2000.exe")] {
+            if ui.add(egui::Button::new(egui::RichText::new(label).size(11.0)).frame(false)).on_hover_text(app).clicked() {
                 a.set_target = Some(app.to_string());
             }
         }
@@ -1024,7 +1027,7 @@ fn display_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, a:
                 if ghost_button(ui, "Open the panel again", false).clicked() {
                     a.cast = true;
                 }
-                if ui.add(egui::Button::new(egui::RichText::new(format!("stop waiting ({secs} s)")).size(11.0).color(TEXT_2)).frame(false)).clicked() {
+                if ui.add(egui::Button::new(egui::RichText::new(format!("Stop waiting ({secs} s)")).size(11.0).color(TEXT_2)).frame(false)).clicked() {
                     a.cast_cancel = true;
                 }
             });
@@ -1037,7 +1040,7 @@ fn display_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, a:
                 if ghost_button(ui, "Fullscreen on the TV", true).clicked() {
                     a.fullscreen_on = Some(*monitor);
                 }
-                if ui.add(egui::Button::new(egui::RichText::new("done").size(11.0).color(TEXT_2)).frame(false)).clicked() {
+                if ui.add(egui::Button::new(egui::RichText::new("Done").size(11.0).color(TEXT_2)).frame(false)).clicked() {
                     a.cast_cancel = true;
                 }
             });
@@ -1054,7 +1057,7 @@ fn display_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, a:
 
     ui.add_space(8.0);
     small_caps(ui, "Motion");
-    slider_row(ui, "Frame cap", &mut settings.fps_cap, 0..=240, |v| if v == 0.0 { "vsync".into() } else { format!("{v:.0} fps") }, false);
+    slider_row(ui, "Frame cap", &mut settings.fps_cap, 0..=240, |v| if v == 0.0 { "VSync".into() } else { format!("{v:.0} fps") }, false);
     toggle_row(ui, "Low power when hidden / on battery", &mut settings.low_power);
     if let Some(true) = stats.on_battery {
         hint(ui, "On battery now.");
@@ -1086,26 +1089,26 @@ fn meters_section(ui: &mut egui::Ui, f: &FeatureFrame, stats: &Stats) {
     hint(ui, &format!("{:.0} fps · {:.0}k pts/s · {} Hz · t={:.0}s", stats.fps, stats.points_per_sec / 1000.0, stats.sample_rate, f.time_s));
     ui.horizontal(|ui| {
         light(ui, f.beat_pulse, Color32::from_rgb(255, 220, 90));
-        ui.label(egui::RichText::new(format!("{:.1} bpm · beat {}", f.bpm, f.beat_count)).font(theme::mono(12.0)));
+        ui.label(egui::RichText::new(format!("{:.1} BPM · Beat {}", f.bpm, f.beat_count)).font(theme::mono(12.0)));
     });
-    meter(ui, "conf", f.beat_confidence);
-    meter(ui, "phase", f.beat_phase);
+    meter(ui, "Confidence", f.beat_confidence);
+    meter(ui, "Phase", f.beat_phase);
     ui.horizontal(|ui| {
-        ui.label("onsets");
-        for (g, name) in ["low", "mid", "high", "all"].iter().enumerate() {
+        ui.label("Onsets");
+        for (g, name) in ["Low", "Mid", "High", "All"].iter().enumerate() {
             light(ui, f.onset_pulse[g], Color32::from_rgb(120, 200, 255));
             ui.small(*name);
         }
     });
     ui.add_space(8.0);
-    ui.label(egui::RichText::new(format!("{:.1} LUFS-M · {:.1} LUFS-S{}{}", f.lufs_m, f.lufs_s, if f.quiet { " · quiet" } else { "" }, if f.silent { " · silent" } else { "" })).font(theme::mono(12.0)));
-    meter(ui, "rms", f.rms * 4.0);
-    meter(ui, "bass", f.bass * 0.5);
-    meter(ui, "mid", f.mid * 0.5);
-    meter(ui, "treb", f.treb * 0.5);
-    meter(ui, "width", f.stereo_width);
-    meter(ui, "trend", f.energy_trend * 0.5 + 0.5);
-    ui.label(egui::RichText::new(format!("centroid {:.0} Hz · peak {:.2}", f.centroid_hz, f.peak)).font(theme::mono(12.0)));
+    ui.label(egui::RichText::new(format!("{:.1} LUFS-M · {:.1} LUFS-S{}{}", f.lufs_m, f.lufs_s, if f.quiet { " · Quiet" } else { "" }, if f.silent { " · Silent" } else { "" })).font(theme::mono(12.0)));
+    meter(ui, "RMS", f.rms * 4.0);
+    meter(ui, "Bass", f.bass * 0.5);
+    meter(ui, "Mid", f.mid * 0.5);
+    meter(ui, "Treble", f.treb * 0.5);
+    meter(ui, "Width", f.stereo_width);
+    meter(ui, "Trend", f.energy_trend * 0.5 + 0.5);
+    ui.label(egui::RichText::new(format!("Centroid {:.0} Hz · Peak {:.2}", f.centroid_hz, f.peak)).font(theme::mono(12.0)));
     bars(ui, &f.bands, 40.0, Color32::from_rgb(110, 220, 150), None);
     ui.add_space(8.0);
     ui.label(egui::RichText::new(format!("dominant {}", NOTE_NAMES[f.key_class as usize % 12])).font(theme::mono(12.0)));
@@ -1176,7 +1179,7 @@ fn about_section(ui: &mut egui::Ui, stats: &Stats, a: &mut Actions) {
 
 fn meter(ui: &mut egui::Ui, label: &str, v: f32) {
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(format!("{label:>5}")).font(theme::mono(11.0)).color(TEXT_2));
+        ui.label(egui::RichText::new(format!("{label:>10}")).font(theme::mono(11.0)).color(TEXT_2));
         ui.add(egui::ProgressBar::new(v.clamp(0.0, 1.0)).desired_width(180.0).desired_height(6.0));
     });
 }

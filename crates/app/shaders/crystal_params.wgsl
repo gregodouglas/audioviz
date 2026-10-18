@@ -10,6 +10,10 @@ struct CrystalParams {
     palette_shift: f32,
     facets: f32,          // facet opacity gain
     edges: f32,           // edge brightness gain
+    style: f32,           // 0 glass (additive), 1 solid (covering, flat shaded)
+    _pad0: f32,
+    _pad1: f32,
+    _pad2: f32,
     palette: array<vec4<f32>, 32>,
 };
 

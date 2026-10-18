@@ -165,7 +165,7 @@ impl Chain {
 }
 
 /// One pipeline per modifier kind, in `MOD_SHADERS` order.
-const MOD_SHADERS: [&str; 12] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl", "fractal.wgsl", "lumi.wgsl", "grade.wgsl", "halftone.wgsl", "warp.wgsl"];
+const MOD_SHADERS: [&str; 13] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl", "fractal.wgsl", "lumi.wgsl", "grade.wgsl", "halftone.wgsl", "warp.wgsl", "lines.wgsl"];
 /// Pipeline indices with special plumbing: both keep a history pair.
 const MOD_FEEDBACK: usize = 1;
 const MOD_LUMI: usize = 8;
@@ -192,6 +192,7 @@ fn mod_index(m: &Modifier) -> usize {
         Modifier::Grade(_) => 9,
         Modifier::Halftone(_) => 10,
         Modifier::Warp(_) => 11,
+        Modifier::Lines(_) => 12,
     }
 }
 
@@ -545,6 +546,11 @@ fn mod_params(m: &Modifier, st: &mut ModState, f: &FeatureFrame, tint: [f32; 3],
             let amount = k.amount * (1.0 + 0.6 * k.react * bass.max(0.0));
             p.p0 = [amount, k.scale.max(0.1), st.angle, k.twist];
             p.p1 = [k.octaves.clamp(1, 5) as f32, 0.0, 0.0, 0.0];
+        }
+        Modifier::Lines(k) => {
+            st.angle += dt * k.react * (0.4 + 2.0 * energy) + 3.0 * k.react * onset * dt;
+            p.p0 = [k.pitch.max(1.0), k.angle.to_radians(), k.cut, k.glow];
+            p.p1 = [tint[0], tint[1], tint[2], st.angle];
         }
         Modifier::Mask(k) => {
             let radius = (k.radius * (1.0 + 0.1 * k.react * bass)).max(0.01);

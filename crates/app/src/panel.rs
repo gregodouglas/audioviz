@@ -12,7 +12,7 @@ use crate::overlays::CalibrationView;
 use crate::scene::Scene;
 use crate::scene_store::SceneDef;
 use crate::color;
-use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
+use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
 use crate::widgets::{self, chip, dropdown, ghost_button, group, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
@@ -671,6 +671,15 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             slider_def(ui, "Detail", &mut k.octaves, Some(d.octaves), 1..=5, |v| format!("{v:.0}"), false);
             slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Pulls the picture through a flowing field: small amounts are heat haze, large ones liquid. The bass swells it; onsets kick the flow.");
+        }
+        Modifier::Lines(k) => {
+            let d = Lines::default();
+            slider_def(ui, "Pitch", &mut k.pitch, Some(d.pitch), 1.0..=24.0, |v| format!("{v:.1} px"), false);
+            slider_def(ui, "Angle", &mut k.angle, Some(d.angle), -90.0..=90.0, |v| format!("{v:.0}°"), false);
+            slider_def(ui, "Cut", &mut k.cut, Some(d.cut), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Glow", &mut k.glow, Some(d.glow), 0.0..=0.5, |v| format!("{v:.3}"), false);
+            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Fine stripes over the picture: cut darkens, glow adds a faint stripe in the tint even over black. They crawl with the music.");
         }
         Modifier::Mask(k) => {
             let d = Mask::default();

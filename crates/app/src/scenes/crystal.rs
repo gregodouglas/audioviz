@@ -12,7 +12,7 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, begin_pass};
 use crate::shaders::ShaderSet;
-use crate::settings::{Layer, VisualKind};
+use crate::settings::{CrystalStyle, Layer, VisualKind};
 
 pub const MAX_SHARDS: usize = 16;
 
@@ -28,8 +28,16 @@ struct Uniform {
     palette_shift: f32,
     facets: f32,
     edges: f32,
+    style: f32,
+    _pad: [f32; 3],
     palette: crate::color::Table,
 }
+
+/// Solid facets cover what is behind them (drawn far to near).
+const COVER: wgpu::BlendState = wgpu::BlendState {
+    color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
+    alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
+};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Default)]
@@ -93,6 +101,7 @@ pub struct Crystal {
     layout: wgpu::BindGroupLayout,
     group: wgpu::BindGroup,
     faces: wgpu::RenderPipeline,
+    faces_solid: wgpu::RenderPipeline,
     edges: wgpu::RenderPipeline,
     shards: Vec<Shard>,
     rng: Rng,
@@ -117,7 +126,7 @@ impl Crystal {
             layout: &layout,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniform.as_entire_binding() }, wgpu::BindGroupEntry { binding: 1, resource: shards_buf.as_entire_binding() }],
         });
-        let (faces, edges) = build(device, shaders, &layout)?;
+        let (faces, faces_solid, edges) = build(device, shaders, &layout)?;
         let mut rng = Rng(0x5EED_C0DE_0000_0001);
         let shards = (0..MAX_SHARDS)
             .map(|_| {
@@ -125,7 +134,7 @@ impl Crystal {
                 Shard { from: p, to: p, t: 1.0, rest: Vec3::new(rng.range(-0.3, 0.3), rng.range(-0.3, 0.3), rng.range(-0.3, 0.3)), far: Vec3::new(rng.range(-2.0, 2.0), rng.range(-2.0, 2.0), rng.range(-2.0, 2.0)) }
             })
             .collect();
-        Ok(Self { hdr: scene::hdr_texture(device, "crystal hdr", width, height), uniform, shards_buf, layout, group, faces, edges, shards, rng, tumble: Vec3::ZERO, tilt: Quat::IDENTITY, tilt_to: Quat::IDENTITY, last_beat: 0.0, beats: 0, energy: 1.0, gpu: vec![ShardGpu::default(); MAX_SHARDS] })
+        Ok(Self { hdr: scene::hdr_texture(device, "crystal hdr", width, height), uniform, shards_buf, layout, group, faces, faces_solid, edges, shards, rng, tumble: Vec3::ZERO, tilt: Quat::IDENTITY, tilt_to: Quat::IDENTITY, last_beat: 0.0, beats: 0, energy: 1.0, gpu: vec![ShardGpu::default(); MAX_SHARDS] })
     }
 }
 
@@ -139,8 +148,9 @@ impl Scene for Crystal {
     }
 
     fn reload_shaders(&mut self, device: &wgpu::Device, shaders: &ShaderSet) -> Result<(), String> {
-        let (f, e) = build(device, shaders, &self.layout)?;
+        let (f, s, e) = build(device, shaders, &self.layout)?;
         self.faces = f;
+        self.faces_solid = s;
         self.edges = e;
         Ok(())
     }
@@ -181,14 +191,27 @@ impl Scene for Crystal {
         let bar = ((f.beat_count % 4) as f32 + f.beat_phase.clamp(0.0, 1.0)) / 4.0;
         let fling = p.scatter * (bar * std::f32::consts::PI).sin().abs();
 
-        for (i, s) in self.shards.iter_mut().enumerate().take(count) {
+        let solid = p.style == CrystalStyle::Solid;
+        let group_m = Mat4::from_scale_rotation_translation(Vec3::splat(group_scale), group_rot, Vec3::ZERO);
+        let mut records: Vec<(f32, ShardGpu)> = Vec::with_capacity(count);
+        for s in self.shards.iter_mut().take(count) {
             s.t = (s.t + dt / (2.0 * beat_len)).min(1.0);
             let pose = current_pose(s);
             let pos = s.rest.lerp(s.far, fling);
-            let model = Mat4::from_scale_rotation_translation(Vec3::splat(group_scale), group_rot, Vec3::ZERO) * Mat4::from_scale_rotation_translation(pose.scale * Vec3::new(p.stretch, 1.0, 1.0), pose.rot, pos);
+            let model = group_m * Mat4::from_scale_rotation_translation(pose.scale * Vec3::new(p.stretch, 1.0, 1.0), pose.rot, pos);
             // Without a palette the shards vary the tint a little in brightness.
             let b = 0.7 + 0.6 * pose.hue;
-            self.gpu[i] = ShardGpu { model: model.to_cols_array_2d(), colour: [ctx.tint[0] * b, ctx.tint[1] * b, ctx.tint[2] * b, pose.opacity], extra: [1.0, pose.hue, 0.0, 0.0] };
+            // Solid shards are mostly opaque; glass ones thin.
+            let alpha = if solid { 0.6 + 0.4 * (pose.opacity - 0.1) / 0.5 } else { pose.opacity };
+            let depth = (model * glam::Vec4::new(0.0, 0.0, 0.0, 1.0)).z;
+            records.push((depth, ShardGpu { model: model.to_cols_array_2d(), colour: [ctx.tint[0] * b, ctx.tint[1] * b, ctx.tint[2] * b, alpha], extra: [1.0, pose.hue, 0.0, 0.0] }));
+        }
+        // Covering facets must be drawn far to near (the camera looks down -z).
+        if solid {
+            records.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        }
+        for (i, (_, r)) in records.into_iter().enumerate() {
+            self.gpu[i] = r;
         }
         queue.write_buffer(&self.shards_buf, 0, bytemuck::cast_slice(&self.gpu[..count]));
 
@@ -205,13 +228,15 @@ impl Scene for Crystal {
             palette_shift: ctx.palette_shift,
             facets: p.facets,
             edges: p.edges,
+            style: solid as u32 as f32,
+            _pad: [0.0; 3],
             palette: ctx.palette.copied().unwrap_or([[0.0; 4]; crate::color::ENTRIES]),
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
 
         let mut pass = begin_pass(encoder, "crystal", &self.hdr, wgpu::LoadOp::Clear(wgpu::Color::BLACK));
         pass.set_bind_group(0, &self.group, &[]);
-        pass.set_pipeline(&self.faces);
+        pass.set_pipeline(if solid { &self.faces_solid } else { &self.faces });
         pass.draw(0..3, 0..(count as u32 * 4));
         pass.set_pipeline(&self.edges);
         pass.draw(0..6, 0..(count as u32 * 6));
@@ -222,10 +247,14 @@ impl Scene for Crystal {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
-        use crate::widgets::{ghost_button, group, hint, slider_def};
+        use crate::widgets::{ghost_button, group, hint, segmented, slider_def, small_caps};
         let p = &mut layer.crystal;
         let d = crate::settings::CrystalParams::default();
-        group(ui, "crystal.shards", "Shards", true, 6, |ui| {
+        group(ui, "crystal.shards", "Shards", true, 7, |ui| {
+            small_caps(ui, "Style");
+            if let Some(i) = segmented(ui, &["Solid", "Glass"], (p.style == CrystalStyle::Glass) as usize) {
+                p.style = if i == 1 { CrystalStyle::Glass } else { CrystalStyle::Solid };
+            }
             slider_def(ui, "Count", &mut p.count, Some(d.count), 1..=MAX_SHARDS as u32, |v| format!("{v:.0}"), false);
             slider_def(ui, "Size", &mut p.size, Some(d.size), 0.2..=3.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Stretch", &mut p.stretch, Some(d.stretch), 0.3..=4.0, |v| format!("{v:.2}"), false);
@@ -238,7 +267,7 @@ impl Scene for Crystal {
             slider_def(ui, "Edges", &mut p.edges, Some(d.edges), 0.0..=3.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Edge width", &mut p.width, Some(d.width), 0.5..=6.0, |v| format!("{v:.1} px"), false);
             slider_def(ui, "Reacts", &mut p.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
-            hint(ui, "Glass shards tumbling as a cluster: loudness swells it, each beat eases one shard into a new pose, scatter flings them apart and back over the bar. After the Crystal in Uberviz.");
+            hint(ui, "Shards tumbling as a cluster: loudness swells it, each beat eases one shard into a new pose, scatter flings them apart and back over the bar. Solid shards cover each other like cut stone; glass ones add up. After the Crystal in Uberviz.");
         });
         ui.add_space(6.0);
         if ghost_button(ui, "Reset crystal", false).clicked() {
@@ -258,16 +287,16 @@ fn current_pose(s: &Shard) -> Pose {
     Pose { rot: s.from.rot.slerp(s.to.rot, k), scale: s.from.scale.lerp(s.to.scale, k), opacity: s.from.opacity + (s.to.opacity - s.from.opacity) * k, hue: if s.t >= 0.999 { s.to.hue } else { s.from.hue + (s.to.hue - s.from.hue) * k } }
 }
 
-fn build(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Result<(wgpu::RenderPipeline, wgpu::RenderPipeline), String> {
+fn build(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Result<(wgpu::RenderPipeline, wgpu::RenderPipeline, wgpu::RenderPipeline), String> {
     scene::guarded(device, || {
         let m = scene::shader(device, shaders, "crystal.wgsl");
         let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("crystal"), bind_group_layouts: &[Some(layout)], immediate_size: 0 });
-        let make = |label: &str, vs: &str, fs: &str| {
+        let make = |label: &str, vs: &str, fs: &str, blend: wgpu::BlendState| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(label),
                 layout: Some(&pl),
                 vertex: wgpu::VertexState { module: &m, entry_point: Some(vs), buffers: &[], compilation_options: Default::default() },
-                fragment: Some(wgpu::FragmentState { module: &m, entry_point: Some(fs), targets: &[Some(wgpu::ColorTargetState { format: HDR_FORMAT, blend: Some(scene::ADDITIVE), write_mask: wgpu::ColorWrites::ALL })], compilation_options: Default::default() }),
+                fragment: Some(wgpu::FragmentState { module: &m, entry_point: Some(fs), targets: &[Some(wgpu::ColorTargetState { format: HDR_FORMAT, blend: Some(blend), write_mask: wgpu::ColorWrites::ALL })], compilation_options: Default::default() }),
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState::default(),
@@ -275,7 +304,7 @@ fn build(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLay
                 cache: None,
             })
         };
-        (make("crystal facets", "vs_main", "fs_main"), make("crystal edges", "vs_edge", "fs_edge"))
+        (make("crystal facets", "vs_main", "fs_main", scene::ADDITIVE), make("crystal facets solid", "vs_main", "fs_main", COVER), make("crystal edges", "vs_edge", "fs_edge", scene::ADDITIVE))
     })
 }
 
@@ -287,7 +316,7 @@ mod tests {
     fn uniform_layout_matches_wgsl() {
         assert_eq!(std::mem::offset_of!(Uniform, resolution), 64);
         assert_eq!(std::mem::offset_of!(Uniform, tint), 80);
-        assert_eq!(std::mem::offset_of!(Uniform, palette), 112);
+        assert_eq!(std::mem::offset_of!(Uniform, palette), 128);
         assert_eq!(std::mem::size_of::<ShardGpu>(), 96);
     }
 

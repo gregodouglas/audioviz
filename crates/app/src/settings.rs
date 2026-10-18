@@ -422,13 +422,14 @@ pub enum Modifier {
     Grade(Grade),
     Halftone(Halftone),
     Warp(Warp),
+    Lines(Lines),
 }
 
 pub const MAX_MODS: usize = 6;
 
 impl Modifier {
     /// Every kind with a constructor, in the order the panel offers them.
-    pub const KINDS: [(&'static str, fn() -> Modifier); 12] = [
+    pub const KINDS: [(&'static str, fn() -> Modifier); 13] = [
         ("Palette", || Modifier::Grade(Grade::default())),
         ("Kaleidoscope", || Modifier::Fold(Fold::default())),
         ("Fractal", || Modifier::Fractal(Fractal::default())),
@@ -441,6 +442,7 @@ impl Modifier {
         ("Mask", || Modifier::Mask(Mask::default())),
         ("Halftone", || Modifier::Halftone(Halftone::default())),
         ("Warp", || Modifier::Warp(Warp::default())),
+        ("Scanlines", || Modifier::Lines(Lines::default())),
     ];
 
     pub fn name(&self) -> &'static str {
@@ -457,6 +459,7 @@ impl Modifier {
             Modifier::Grade(_) => "Palette",
             Modifier::Halftone(_) => "Halftone",
             Modifier::Warp(_) => "Warp",
+            Modifier::Lines(_) => "Scanlines",
         }
     }
 
@@ -478,6 +481,7 @@ impl Modifier {
             Modifier::Grade(k) => k.mix,
             Modifier::Halftone(k) => k.mix,
             Modifier::Warp(k) => k.mix,
+            Modifier::Lines(k) => k.mix,
         }
     }
 
@@ -496,6 +500,7 @@ impl Modifier {
             Modifier::Grade(k) => k.band,
             Modifier::Halftone(k) => k.band,
             Modifier::Warp(k) => k.band,
+            Modifier::Lines(k) => k.band,
         }
     }
 
@@ -513,6 +518,7 @@ impl Modifier {
             Modifier::Grade(k) => &mut k.band,
             Modifier::Halftone(k) => &mut k.band,
             Modifier::Warp(k) => &mut k.band,
+            Modifier::Lines(k) => &mut k.band,
         }
     }
 
@@ -540,6 +546,7 @@ impl Modifier {
             Modifier::Grade(k) => &mut k.mix,
             Modifier::Halftone(k) => &mut k.mix,
             Modifier::Warp(k) => &mut k.mix,
+            Modifier::Lines(k) => &mut k.mix,
         }
     }
 
@@ -559,6 +566,7 @@ impl Modifier {
             Modifier::Grade(_) => Modifier::Grade(Grade::default()),
             Modifier::Halftone(_) => Modifier::Halftone(Halftone::default()),
             Modifier::Warp(_) => Modifier::Warp(Warp::default()),
+            Modifier::Lines(_) => Modifier::Lines(Lines::default()),
         };
         *self.enabled_mut() = enabled;
     }
@@ -577,6 +585,7 @@ impl Modifier {
             Modifier::Grade(m) => &m.enabled,
             Modifier::Halftone(m) => &m.enabled,
             Modifier::Warp(m) => &m.enabled,
+            Modifier::Lines(m) => &m.enabled,
         }
     }
 
@@ -594,6 +603,7 @@ impl Modifier {
             Modifier::Grade(m) => &mut m.enabled,
             Modifier::Halftone(m) => &mut m.enabled,
             Modifier::Warp(m) => &mut m.enabled,
+            Modifier::Lines(m) => &mut m.enabled,
         }
     }
 }
@@ -680,6 +690,34 @@ pub struct Warp {
 impl Default for Warp {
     fn default() -> Self {
         Self { enabled: true, mix: 1.0, band: None, amount: 24.0, scale: 3.0, speed: 0.25, twist: 0.5, octaves: 2, react: 1.0 }
+    }
+}
+
+/// Scanlines modifier: fine stripes over the picture, the broadcast / print
+/// texture of Uberviz's "Lines" pass (written fresh).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Lines {
+    pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
+    /// Stripe pitch, pixels.
+    pub pitch: f32,
+    /// Stripe angle, degrees (0 = horizontal lines).
+    pub angle: f32,
+    /// How much the stripes darken the picture.
+    pub cut: f32,
+    /// Faint stripes added over everything, including black, in the tint.
+    pub glow: f32,
+    /// Stripes crawl with the music.
+    pub react: f32,
+}
+
+impl Default for Lines {
+    fn default() -> Self {
+        Self { enabled: true, mix: 1.0, band: None, pitch: 3.0, angle: 45.0, cut: 0.35, glow: 0.04, react: 0.5 }
     }
 }
 
@@ -932,10 +970,22 @@ impl Default for WavesParams {
     }
 }
 
-/// Crystal: tumbling glass shards (`scenes/crystal.rs`).
+/// How Crystal shards meet each other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CrystalStyle {
+    /// Covering, flat-shaded facets, like cut stone.
+    #[default]
+    Solid,
+    /// Thin additive facets that sum where they cross.
+    Glass,
+}
+
+/// Crystal: tumbling shards (`scenes/crystal.rs`).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CrystalParams {
+    pub style: CrystalStyle,
     pub count: u32,
     pub size: f32,
     /// Shards are stretched along their own x.
@@ -957,7 +1007,7 @@ pub struct CrystalParams {
 
 impl Default for CrystalParams {
     fn default() -> Self {
-        Self { count: 5, size: 1.0, stretch: 2.0, spin: 1.0, scatter: 0.0, every: 1, facets: 1.0, edges: 1.0, width: 1.5, react: 1.0 }
+        Self { style: CrystalStyle::Solid, count: 5, size: 0.6, stretch: 2.0, spin: 1.0, scatter: 0.0, every: 1, facets: 1.0, edges: 0.5, width: 1.5, react: 1.0 }
     }
 }
 

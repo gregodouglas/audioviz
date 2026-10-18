@@ -45,6 +45,7 @@ shader_table!(
     "grade.wgsl",
     "halftone.wgsl",
     "warp.wgsl",
+    "lines.wgsl",
     "ribbons_params.wgsl",
     "ribbons_update.wgsl",
     "ribbons_draw.wgsl",

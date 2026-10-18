@@ -13,6 +13,7 @@ audioviz borrows ideas, never code, unless a licence says otherwise and the entr
 |---|---|---|---|---|
 | Halftone modifier | the halftone pass in Uberviz (alteredq's dot screen) | Felix Turner; alteredq | none / MIT | the idea: a rotated dot screen that drifts between the picture's colours and one ink. Written fresh: luma-weighted, sized marks, three mark shapes, palette ink. |
 | Crystal visual | the Crystal visualizer in Uberviz (Lantern) | Felix Turner | none | the idea: translucent additive tetrahedra tumbling as a cluster, loudness-scaled, one shard re-posed per beat, a flung-apart mode. Written fresh: palette facets, glowing edges, eased poses, bar-phase scatter. |
+| Scanlines modifier | the "Lines" pass in Uberviz | Felix Turner | none | the idea: a sine stripe over the frame. Written fresh: pitch, angle, cut and glow, crawling with the music. |
 | Waves visual | the stacked-waveform landscape made famous by the *Unknown Pleasures* cover (Peter Saville, after a pulsar plot by Harold Craft) | | | the look only |
 
 ## Queued ports (from the 2026-10-18 research), with what each takes

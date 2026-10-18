@@ -48,6 +48,7 @@ struct FaceOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) colour: vec3<f32>,
     @location(1) bary: vec3<f32>,
+    @location(2) alpha: f32,
 };
 
 @vertex
@@ -56,10 +57,24 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
     let face = ii % 4u;
     let s = shards[shard];
     let p = corner(face_corner(face, vi));
+    // Flat shading: the face's world normal against a fixed key light, so
+    // every facet of a shard reads a different brightness, like cut stone.
+    let a = (s.model * vec4<f32>(corner(face_corner(face, 0u)), 1.0)).xyz;
+    let b = (s.model * vec4<f32>(corner(face_corner(face, 1u)), 1.0)).xyz;
+    let c = (s.model * vec4<f32>(corner(face_corner(face, 2u)), 1.0)).xyz;
+    let n = normalize(cross(b - a, c - a));
+    let shade = 0.45 + 0.55 * abs(dot(n, normalize(vec3<f32>(0.35, 0.7, 1.0))));
     var out: FaceOut;
     out.pos = C.view_proj * s.model * vec4<f32>(p, 1.0);
-    out.colour = shard_colour(s) * s.colour.a * C.facets;
     out.bary = vec3<f32>(f32(vi == 0u), f32(vi == 1u), f32(vi == 2u));
+    if (C.style > 0.5) {
+        // Solid: a covering facet, premultiplied by its opacity.
+        out.alpha = clamp(s.colour.a * C.facets, 0.0, 1.0);
+        out.colour = shard_colour(s) * shade * out.alpha;
+    } else {
+        out.alpha = 0.0;
+        out.colour = shard_colour(s) * shade * s.colour.a * C.facets;
+    }
     return out;
 }
 
@@ -67,8 +82,8 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
 fn fs_main(in: FaceOut) -> @location(0) vec4<f32> {
     // Facets glow a little toward their edges, like glass catching light.
     let e = min(in.bary.x, min(in.bary.y, in.bary.z));
-    let rim = 1.0 + 1.5 * exp(-e * 12.0);
-    return vec4<f32>(in.colour * rim, 1.0);
+    let rim = 1.0 + 1.2 * exp(-e * 12.0);
+    return vec4<f32>(in.colour * rim, in.alpha);
 }
 
 // ---- edges ----

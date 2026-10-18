@@ -24,10 +24,11 @@ pub enum VisualKind {
     Crystal,
     Wheel,
     Loop,
+    Eclipse,
 }
 
 impl VisualKind {
-    pub const ALL: [VisualKind; 9] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield, VisualKind::Kaleido, VisualKind::Sigil, VisualKind::Waves, VisualKind::Crystal, VisualKind::Wheel, VisualKind::Loop];
+    pub const ALL: [VisualKind; 10] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield, VisualKind::Kaleido, VisualKind::Sigil, VisualKind::Waves, VisualKind::Crystal, VisualKind::Wheel, VisualKind::Loop, VisualKind::Eclipse];
     pub fn name(self) -> &'static str {
         match self {
             VisualKind::Scope => "Phosphor scope",
@@ -39,6 +40,7 @@ impl VisualKind {
             VisualKind::Crystal => "Crystal",
             VisualKind::Wheel => "Spectrum wheel",
             VisualKind::Loop => "Loop",
+            VisualKind::Eclipse => "Eclipse",
         }
     }
     /// Short display name (bar pips, stack rows, breadcrumb).
@@ -53,6 +55,7 @@ impl VisualKind {
             VisualKind::Crystal => "Crystal",
             VisualKind::Wheel => "Wheel",
             VisualKind::Loop => "Loop",
+            VisualKind::Eclipse => "Eclipse",
         }
     }
 }
@@ -1339,6 +1342,41 @@ impl Default for LoopParams {
     }
 }
 
+/// Eclipse: a black disc ringed by glowing dots, one per spectrum band, with a
+/// corona at the rim (`scenes/eclipse.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EclipseParams {
+    pub count: u32,
+    /// Ring radius, fraction of the short half-side.
+    pub radius: f32,
+    /// Black disc radius, fraction of the ring.
+    pub disc: f32,
+    /// Dot size, fraction of the short half-side.
+    pub size: f32,
+    /// Halo strength round each dot.
+    pub glow: f32,
+    /// Glow at the disc's rim, flaring on the bass.
+    pub corona: f32,
+    pub gain: f32,
+    /// Brightness = level ^ curve.
+    pub curve: f32,
+    /// Fraction of the palette the ring spans.
+    pub range: f32,
+    /// Lows at the bottom on both sides instead of once round the ring.
+    pub mirror: bool,
+    /// Turn speed.
+    pub spin: f32,
+    /// Loud dots swell and push outward.
+    pub react: f32,
+}
+
+impl Default for EclipseParams {
+    fn default() -> Self {
+        Self { count: 16, radius: 0.5, disc: 0.88, size: 0.035, glow: 1.0, corona: 0.6, gain: 1.0, curve: 1.5, range: 1.0, mirror: true, spin: 0.05, react: 1.0 }
+    }
+}
+
 /// How a director runs: by hand, by the system, or by a saved sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -1501,11 +1539,12 @@ pub struct Layer {
     pub wheel: WheelParams,
     #[serde(rename = "loop")]
     pub loops: LoopParams,
+    pub eclipse: EclipseParams,
 }
 
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), director: EffectsDirector::default(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default(), waves: WavesParams::default(), crystal: CrystalParams::default(), wheel: WheelParams::default(), loops: LoopParams::default() }
+        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), director: EffectsDirector::default(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default(), waves: WavesParams::default(), crystal: CrystalParams::default(), wheel: WheelParams::default(), loops: LoopParams::default(), eclipse: EclipseParams::default() }
     }
 }
 

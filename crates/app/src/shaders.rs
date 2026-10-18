@@ -24,6 +24,8 @@ shader_table!(
     "wheel.wgsl",
     "loop_params.wgsl",
     "loop.wgsl",
+    "eclipse_params.wgsl",
+    "eclipse.wgsl",
     "waves.wgsl",
     "decay.wgsl",
     "beam.wgsl",

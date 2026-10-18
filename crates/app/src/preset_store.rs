@@ -39,6 +39,7 @@ pub fn field(kind: VisualKind) -> &'static str {
         VisualKind::Crystal => "crystal",
         VisualKind::Wheel => "wheel",
         VisualKind::Loop => "loop",
+        VisualKind::Eclipse => "eclipse",
     }
 }
 

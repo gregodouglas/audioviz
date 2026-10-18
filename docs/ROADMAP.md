@@ -35,7 +35,7 @@ Visual candidates, in the order to try (reordered 2026-10-18 late on the researc
 - ~~Eclipse~~ **built 2026-10-18** (after Uberviz): a black disc ringed by spectrum glow dots with a bass corona; one fragment pass; factory scene Eclipse. Awaiting Greg's look.
 - ~~Ripples~~ **built 2026-10-18** (after Uberviz): a flowing noise-displaced plane printed with contours, dots or a grid, rings on beats, depth-darkened; factory scene Ripples. Awaiting Greg's look.
 - ~~Wheel~~ **built 2026-10-18** (after Uberviz): spectrum wedges, rays, beat jumps, walking bands; backdrop of the built-in Lantern scene.
-- **Spiral** (after audible-visuals, Apache-2.0): parametric spirals, slow parameter drift, waveform displacement, drawn as a polyline.
+- ~~Spiral~~ **built 2026-10-18** (after audible-visuals, Apache-2.0, idea only): one polyline through drift-stepped points, Spiral or Rose, waveform displacement; factory scene Spiral. Awaiting Greg's look.
 - **Tunnel**: a wireframe tunnel of rings flown through, each ring's radius the spectrum at the moment it was born; lines only.
 - **Strings**: chords of the chroma drawn as taut lines between points on a circle (string art); a chord change re-strings it.
 - **Harmonograph**: damped Lissajous of the two strongest pitch classes, drawn as one long line.

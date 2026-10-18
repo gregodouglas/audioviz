@@ -27,6 +27,7 @@ use crate::scenes::wheel::Wheel;
 use crate::scenes::loops::Loop;
 use crate::scenes::eclipse::Eclipse;
 use crate::scenes::ripples::Ripples;
+use crate::scenes::spiral::Spiral;
 use crate::rng::Rng;
 use crate::settings::{DirectorMode, EdgeColour, FoldMode, FractalMode, HalftoneShape, Layer, MirrorSide, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
 use crate::shaders::ShaderSet;
@@ -457,6 +458,7 @@ fn make(kind: VisualKind, device: &wgpu::Device, w: u32, h: u32, shaders: &Shade
         VisualKind::Loop => Box::new(Loop::new(device, w, h, shaders)?),
         VisualKind::Eclipse => Box::new(Eclipse::new(device, w, h, shaders)?),
         VisualKind::Ripples => Box::new(Ripples::new(device, w, h, shaders)?),
+        VisualKind::Spiral => Box::new(Spiral::new(device, w, h, shaders)?),
     })
 }
 

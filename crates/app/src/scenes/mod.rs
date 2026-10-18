@@ -9,3 +9,4 @@ pub mod wheel;
 pub mod loops;
 pub mod eclipse;
 pub mod ripples;
+pub mod spiral;

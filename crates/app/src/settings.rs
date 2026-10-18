@@ -21,10 +21,11 @@ pub enum VisualKind {
     Kaleido,
     Sigil,
     Waves,
+    Crystal,
 }
 
 impl VisualKind {
-    pub const ALL: [VisualKind; 6] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield, VisualKind::Kaleido, VisualKind::Sigil, VisualKind::Waves];
+    pub const ALL: [VisualKind; 7] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield, VisualKind::Kaleido, VisualKind::Sigil, VisualKind::Waves, VisualKind::Crystal];
     pub fn name(self) -> &'static str {
         match self {
             VisualKind::Scope => "Phosphor scope",
@@ -33,6 +34,7 @@ impl VisualKind {
             VisualKind::Kaleido => "Kaleidoscope",
             VisualKind::Sigil => "Sigil",
             VisualKind::Waves => "Waves",
+            VisualKind::Crystal => "Crystal",
         }
     }
     /// Short display name (bar pips, stack rows, breadcrumb).
@@ -44,6 +46,7 @@ impl VisualKind {
             VisualKind::Kaleido => "Kaleidoscope",
             VisualKind::Sigil => "Sigil",
             VisualKind::Waves => "Waves",
+            VisualKind::Crystal => "Crystal",
         }
     }
 }
@@ -929,6 +932,35 @@ impl Default for WavesParams {
     }
 }
 
+/// Crystal: tumbling glass shards (`scenes/crystal.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CrystalParams {
+    pub count: u32,
+    pub size: f32,
+    /// Shards are stretched along their own x.
+    pub stretch: f32,
+    /// Tumble speed of the cluster.
+    pub spin: f32,
+    /// How far the shards fly apart over each bar (0 = a tight cluster).
+    pub scatter: f32,
+    /// A shard takes a new pose every this many beats.
+    pub every: u32,
+    /// Facet opacity gain.
+    pub facets: f32,
+    /// Edge brightness gain.
+    pub edges: f32,
+    /// Edge line width, pixels.
+    pub width: f32,
+    pub react: f32,
+}
+
+impl Default for CrystalParams {
+    fn default() -> Self {
+        Self { count: 5, size: 1.0, stretch: 2.0, spin: 1.0, scatter: 0.0, every: 1, facets: 1.0, edges: 1.0, width: 1.5, react: 1.0 }
+    }
+}
+
 /// Where a layer takes its colour from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1039,11 +1071,12 @@ pub struct Layer {
     pub kaleido: KaleidoParams,
     pub sigil: SigilParams,
     pub waves: WavesParams,
+    pub crystal: CrystalParams,
 }
 
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default(), waves: WavesParams::default() }
+        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default(), waves: WavesParams::default(), crystal: CrystalParams::default() }
     }
 }
 

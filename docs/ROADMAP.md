@@ -28,7 +28,7 @@ Inspiration Greg handed over (2026-10-18 late), credits kept in `docs/INSPIRATIO
 Visual candidates, in the order to try (reordered 2026-10-18 late on the research; details in `docs/INSPIRATION.md`):
 
 - ~~Waves~~ **built 2026-10-18** (waveform or spectrum rows in perspective, hidden-line fill, palette by age or level; built-in scene). Awaiting Greg's look.
-- **Crystal** (after Uberviz): tumbling translucent tetrahedra, loudness-scaled, beat-retargeted shards, a flung-out mode; palette facets with glowing edges. Greg named this one.
+- ~~Crystal~~ **built 2026-10-18** (after Uberviz, written fresh): tumbling glass shards, loudness-scaled, one shard eased to a new pose per beat, scatter over the bar, palette facets and glowing edges; built-in scene. Awaiting Greg's look.
 - **Loop** (after Uberviz): concentric waveform rings, each lagging the last; the most line-friendly of the lot.
 - **Eclipse** (after Uberviz): a black disc ringed by spectrum glow dots; one fragment pass.
 - **Ripples** (after Uberviz): a noise-displaced plane printed with contour lines or dots.

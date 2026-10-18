@@ -180,6 +180,23 @@ pub fn builtin() -> Vec<SceneDef> {
             s.post.bloom = 0.12;
         },
     ));
+    v.push(scene(
+        "Crystal",
+        vec![
+            {
+                let mut l = Layer::new(VisualKind::Crystal, true, 1.0);
+                l.palette.name = "neon".into();
+                l
+            },
+            Layer::new(VisualKind::Ribbons, false, 0.4),
+            Layer::new(VisualKind::Scope, false, 0.5),
+        ],
+        |s| {
+            s.tint = [0.55, 0.35, 1.0];
+            s.post.bloom = 0.18;
+            s.post.look = crate::settings::Look::Neon;
+        },
+    ));
     v
 }
 

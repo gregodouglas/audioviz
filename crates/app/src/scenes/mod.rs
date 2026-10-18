@@ -4,3 +4,4 @@ pub mod scope;
 pub mod sigil;
 pub mod starfield;
 pub mod waves;
+pub mod crystal;

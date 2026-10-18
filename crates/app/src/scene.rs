@@ -68,6 +68,30 @@ pub fn hdr_texture(device: &wgpu::Device, label: &str, width: u32, height: u32) 
 
 pub const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
+/// An HDR texture with a mip chain: one view per level to render into and a
+/// view of the whole chain to sample with an explicit level.
+pub struct Pyramid {
+    pub levels: Vec<wgpu::TextureView>,
+    pub all: wgpu::TextureView,
+}
+
+pub fn hdr_pyramid(device: &wgpu::Device, label: &str, width: u32, height: u32, max_levels: u32) -> Pyramid {
+    let (width, height) = (width.max(1), height.max(1));
+    let levels = (width.min(height).ilog2() + 1).min(max_levels).max(1);
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        mip_level_count: levels,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: HDR_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let level = |i: u32| tex.create_view(&wgpu::TextureViewDescriptor { base_mip_level: i, mip_level_count: Some(1), ..Default::default() });
+    Pyramid { levels: (0..levels).map(level).collect(), all: tex.create_view(&wgpu::TextureViewDescriptor::default()) }
+}
+
 pub fn linear_sampler(device: &wgpu::Device) -> wgpu::Sampler {
     device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("linear clamp"),

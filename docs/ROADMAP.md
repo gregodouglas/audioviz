@@ -27,7 +27,7 @@ eleaseudioviz.exe` or builds the installer himself when he wants one. A tagged 
 - ~~Scope beam colour by instantaneous frequency~~ **done 2026-10-18**: "Palette by: Frequency" on the scope, a zero-crossing estimate per point mapped by octave; Key and speed stays the default.
 - ~~Microphone source~~ **done 2026-10-18**: Sync › Source › The room (default microphone, WASAPI shared mode). Opens and streams here; untested with music in the room.
 - ~~Performance pass on the release build~~ **done 2026-10-18** (table in `docs/phase6-ui.md`): release at 2560x1440 is 160 fps with three plain layers and 63 fps with six modifiers on each; every modifier pass costs 0.1 to 0.5 ms except **fractal at about 2.4 ms** (incoherent deep-level reads). Found and fixed on the way: Feedback plus Luminescence in one chain crashed the app (shared history pair; now one pair per slot, on demand). Monitor 1 runs at 59 Hz, which the startup log now shows.
-- **Fractal cost**: give the modifier ping-pong textures a mip chain and sample level i at lod i·log2(scale); makes the deep levels cache-friendly and stops their aliasing. Worth it before anyone stacks fractals.
+- ~~Fractal cost~~ **done 2026-10-18**: a per-slot mip pyramid of the fractal's input, read at the lod of each level's magnification. Six fractals per layer 20 → 62 fps; the heavy set 63 → 98 fps.
 
 ## Casting (experimental)
 

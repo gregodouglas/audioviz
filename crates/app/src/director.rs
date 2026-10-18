@@ -15,7 +15,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::bandfilter::{BandPass, band_features};
 use crate::color;
-use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, fullscreen_pass, fullscreen_pass2, hdr_texture};
+use crate::scene::{self, FrameCtx, HDR_FORMAT, Pyramid, Scene, fullscreen_pass, fullscreen_pass2, hdr_pyramid, hdr_texture};
 use crate::scenes::kaleido::Kaleido;
 use crate::scenes::ribbons::Ribbons;
 use crate::scenes::scope::Scope;
@@ -109,6 +109,8 @@ struct Chain {
     ping: [wgpu::TextureView; 3],
     hist: Vec<Option<[wgpu::TextureView; 2]>>,
     hist_cur: Vec<usize>,
+    /// Mip pyramid of a fractal slot's input, made on demand.
+    pyramid: Vec<Option<Pyramid>>,
     /// Wet/dry uniforms, one per slot.
     mix_bufs: Vec<wgpu::Buffer>,
     bufs: Vec<wgpu::Buffer>,
@@ -122,6 +124,7 @@ impl Chain {
             ping: [hdr_texture(device, &format!("layer {i} mod a"), width, height), hdr_texture(device, &format!("layer {i} mod b"), width, height), hdr_texture(device, &format!("layer {i} mod c"), width, height)],
             hist: (0..MAX_MODS).map(|_| None).collect(),
             hist_cur: vec![0; MAX_MODS],
+            pyramid: (0..MAX_MODS).map(|_| None).collect(),
             mix_bufs: (0..MAX_MODS).map(|j| scene::uniform_buffer(device, &format!("layer {i} mix {j}"), std::mem::size_of::<MixParams>() as u64)).collect(),
             bufs: (0..MAX_MODS).map(|j| scene::uniform_buffer(device, &format!("layer {i} mod {j}"), std::mem::size_of::<GradeParams>() as u64)).collect(),
             states: vec![ModState::default(); MAX_MODS],
@@ -131,8 +134,18 @@ impl Chain {
     fn resize(&mut self, device: &wgpu::Device, i: usize, width: u32, height: u32) {
         self.index = i;
         self.ping = [hdr_texture(device, &format!("layer {i} mod a"), width, height), hdr_texture(device, &format!("layer {i} mod b"), width, height), hdr_texture(device, &format!("layer {i} mod c"), width, height)];
-        // History is remade on demand at the new size.
+        // History and pyramids are remade on demand at the new size.
         self.hist = (0..MAX_MODS).map(|_| None).collect();
+        self.pyramid = (0..MAX_MODS).map(|_| None).collect();
+    }
+
+    /// Give slot `j` a mip pyramid (or take it away) to match its modifier.
+    fn want_pyramid(&mut self, device: &wgpu::Device, j: usize, want: bool, width: u32, height: u32) {
+        match (want, self.pyramid[j].is_some()) {
+            (true, false) => self.pyramid[j] = Some(hdr_pyramid(device, &format!("layer {} pyramid {j}", self.index), width, height, PYRAMID_LEVELS)),
+            (false, true) => self.pyramid[j] = None,
+            _ => {}
+        }
     }
 
     /// Give slot `j` a history pair (or take it away) to match its modifier.
@@ -154,6 +167,10 @@ const MOD_SHADERS: [&str; 10] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ri
 /// Pipeline indices with special plumbing: both keep a history pair.
 const MOD_FEEDBACK: usize = 1;
 const MOD_LUMI: usize = 8;
+
+const MOD_FRACTAL: usize = 7;
+/// Mip levels a fractal's input keeps: 1.9^5 of magnification is lod 4.6.
+const PYRAMID_LEVELS: u32 = 6;
 
 fn uses_history(pi: usize) -> bool {
     pi == MOD_FEEDBACK || pi == MOD_LUMI
@@ -302,6 +319,8 @@ struct Outgoing {
 struct Pipes {
     mod_layout: wgpu::BindGroupLayout,
     mod_pipelines: Vec<wgpu::RenderPipeline>,
+    /// Copy / 2x box downsample on the modifier layout (builds pyramids).
+    blit: wgpu::RenderPipeline,
     mirror_sampler: wgpu::Sampler,
     sampler: wgpu::Sampler,
     layer_layout: wgpu::BindGroupLayout,
@@ -529,12 +548,14 @@ impl Director {
         }
         let mod_layout = scene::tex_layout(device, "mod", 1);
         let mod_pipelines = build_mods(device, shaders, &mod_layout)?;
+        let blit = build_blit(device, shaders, &mod_layout)?;
         let mirror_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("mod mirror"),
             address_mode_u: wgpu::AddressMode::MirrorRepeat,
             address_mode_v: wgpu::AddressMode::MirrorRepeat,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
         Ok(Self {
@@ -542,7 +563,7 @@ impl Director {
             slots,
             outgoing: (0..MAX_LAYERS).map(|_| None).collect(),
             last_layers: (0..MAX_LAYERS).map(|i| settings.layer(i)).collect(),
-            pipes: Pipes { mod_layout, mod_pipelines, mirror_sampler, sampler, layer_layout, layer_pipelines, mix_layout, mix_pipeline, blend_layout },
+            pipes: Pipes { mod_layout, mod_pipelines, blit, mirror_sampler, sampler, layer_layout, layer_pipelines, mix_layout, mix_pipeline, blend_layout },
             one_buf,
             composite: hdr_texture(device, "composite", width, height),
             composite_b: hdr_texture(device, "composite b", width, height),
@@ -607,6 +628,8 @@ impl Director {
                 c.states.insert(to, s);
                 let h = c.hist.remove(from);
                 c.hist.insert(to, h);
+                let y = c.pyramid.remove(from);
+                c.pyramid.insert(to, y);
                 let k = c.hist_cur.remove(from);
                 c.hist_cur.insert(to, k);
             }
@@ -621,6 +644,8 @@ impl Director {
                 c.states.push(ModState::default());
                 c.hist.remove(at);
                 c.hist.push(None);
+                c.pyramid.remove(at);
+                c.pyramid.push(None);
                 c.hist_cur.remove(at);
                 c.hist_cur.push(0);
             }
@@ -704,6 +729,10 @@ impl Director {
         match build_mods(device, shaders, &self.pipes.mod_layout) {
             Ok(p) => self.pipes.mod_pipelines = p,
             Err(e) => errors.push(format!("modifiers: {e}")),
+        }
+        match build_blit(device, shaders, &self.pipes.mod_layout) {
+            Ok(p) => self.pipes.blit = p,
+            Err(e) => errors.push(format!("blit: {e}")),
         }
         if let Err(e) = build_mix(device, shaders, &self.pipes.mix_layout).map(|p| self.pipes.mix_pipeline = p) {
             errors.push(format!("mix: {e}"));
@@ -847,9 +876,11 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
         for (j, m) in layer.modifiers.iter().enumerate().take(MAX_MODS) {
             if !m.enabled() {
                 chain.want_history(device, j, false, fr.width, fr.height);
+                chain.want_pyramid(device, j, false, fr.width, fr.height);
                 continue;
             }
             chain.want_history(device, j, uses_history(mod_index(m)), fr.width, fr.height);
+            chain.want_pyramid(device, j, mod_index(m) == MOD_FRACTAL, fr.width, fr.height);
             // The modifier follows the layer's band unless it has its own.
             let own_band;
             let mf: &FeatureFrame = match m.band() {
@@ -890,7 +921,19 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
         let hist = chain.hist[j].as_ref();
         let (hist_prev, hist_cur) = (chain.hist_cur[j], 1 - chain.hist_cur[j]);
         let second: &wgpu::TextureView = hist.map_or(src, |h| &h[hist_prev]);
-        let g = scene::tex_group(device, &pipes.mod_layout, &[src, second], &pipes.mirror_sampler, &chain.bufs[j]);
+        // A fractal reads a mip pyramid of its input: copy, then halve level
+        // by level (the blit's one linear tap at half size is a 2x2 box).
+        let mut first_tex = src;
+        if let (MOD_FRACTAL, Some(py)) = (pi, chain.pyramid[j].as_ref()) {
+            let mut from = src;
+            for (lvl, view) in py.levels.iter().enumerate() {
+                let g = scene::tex_group(device, &pipes.mod_layout, &[from, from], &pipes.mirror_sampler, &chain.bufs[j]);
+                fullscreen_pass(encoder, if lvl == 0 { "pyramid copy" } else { "pyramid level" }, view, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.blit, &g);
+                from = view;
+            }
+            first_tex = &py.all;
+        }
+        let g = scene::tex_group(device, &pipes.mod_layout, &[first_tex, second], &pipes.mirror_sampler, &chain.bufs[j]);
         if let (MOD_FEEDBACK, Some(h)) = (pi, hist) {
             // Feedback's output is its own history.
             fullscreen_pass(encoder, "modifier", &h[hist_cur], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.mod_pipelines[pi], &g);
@@ -969,6 +1012,13 @@ fn build_layer(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGr
             down: scene::pipeline(device, "layer down", layout, &d, HDR_FORMAT, None),
             meter: scene::pipeline(device, "layer meter", layout, &g, HDR_FORMAT, None),
         }
+    })
+}
+
+fn build_blit(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Result<wgpu::RenderPipeline, String> {
+    scene::guarded(device, || {
+        let m = scene::shader(device, shaders, "blit.wgsl");
+        scene::pipeline(device, "blit", layout, &m, HDR_FORMAT, None)
     })
 }
 

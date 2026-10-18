@@ -2,7 +2,7 @@
 
 Working backlog beyond the phase briefs. Phase briefs (`docs/phase*.md`) carry the design and the progress log; this file is the list of what is still open, in rough order, with the reasoning. Items with a GitHub issue say so; mirroring lags, the file wins.
 
-Rewritten 2026-10-18 after the Sigil, panel, colour, casting and blend-mode work. Everything since v0.1.0 is committed locally and **not pushed** until Greg says so.
+Rewritten 2026-10-18 after the Sigil, panel, colour, casting and blend-mode work. Everything since v0.1.0 is committed locally and **not pushed** until Greg says so; when it is pushed it is code only (see item 4).
 
 ## Now: finish 0.2.0
 
@@ -16,7 +16,7 @@ Built and in `dist/audioviz-0.2.0-setup.exe`, waiting on Greg's hands.
    - Still owed from earlier: the portrait-monitor fullscreen cut-off (not reproduced here; needs a screenshot), tray menu, strip controls against Spotify, the installer wizard interactively, Win+arrow and Snap Layouts on the portrait monitor.
 2. **Look feedback** on the Sigil (drips, centre, colours) and the colour plumbing (ribbons colour spread, luminescence in the picture's colours).
 3. **README screenshots for 0.2.0**: `docs/img/scene-*.png` are still 0.1.0's; add the sigil and the new panel.
-4. **Release notes** for 0.2.0 from the phase6 log; `cargo deny`; then push and tag when Greg says so.
+4. **Push, no release** (Greg, 2026-10-18): 0.2.0 goes out as pushed code only, no tag, no installer, no release notes yet; while the work is moving fast nobody rebuilds binaries per change. Greg runs `targeteleaseudioviz.exe` or builds the installer himself when he wants one. A tagged release with notes comes when the pace settles.
 
 ## Next: visuals and sound
 

@@ -75,6 +75,8 @@ pub struct Fold {
     pub mix: f32,
     /// Audio band this effect follows; none = the layer's own.
     pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
     pub mode: FoldMode,
     pub segments: u32,
     /// Rotation, radians per second at average energy.
@@ -92,7 +94,7 @@ pub struct Fold {
 
 impl Default for Fold {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, mode: FoldMode::Radial, segments: 8, speed: 0.15, zoom: 1.0, offset: 0.25, wander: 1.0, step_beats: 0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, mode: FoldMode::Radial, segments: 8, speed: 0.15, zoom: 1.0, offset: 0.25, wander: 1.0, step_beats: 0, react: 1.0 }
     }
 }
 
@@ -123,6 +125,8 @@ pub struct Feedback {
     pub mix: f32,
     /// Audio band this effect follows; none = the layer's own.
     pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
     pub decay: f32,
     /// Zoom rate per second (positive = outward).
     pub zoom: f32,
@@ -133,7 +137,7 @@ pub struct Feedback {
 
 impl Default for Feedback {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, decay: 0.9, zoom: 0.25, spin: 0.1, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, decay: 0.9, zoom: 0.25, spin: 0.1, react: 1.0 }
     }
 }
 
@@ -146,6 +150,8 @@ pub struct Polar {
     pub mix: f32,
     /// Audio band this effect follows; none = the layer's own.
     pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
     /// false = wrap (x becomes angle), true = unwrap (the inverse).
     pub unwrap: bool,
     pub radius: f32,
@@ -155,7 +161,7 @@ pub struct Polar {
 
 impl Default for Polar {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, unwrap: false, radius: 1.0, spin: 0.1, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, unwrap: false, radius: 1.0, spin: 0.1, react: 1.0 }
     }
 }
 
@@ -168,6 +174,8 @@ pub struct Ripple {
     pub mix: f32,
     /// Audio band this effect follows; none = the layer's own.
     pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
     pub amount: f32,
     pub wavelength: f32,
     pub speed: f32,
@@ -177,7 +185,7 @@ pub struct Ripple {
 
 impl Default for Ripple {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, amount: 0.04, wavelength: 0.15, speed: 0.8, sine: 0.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, amount: 0.04, wavelength: 0.15, speed: 0.8, sine: 0.0, react: 1.0 }
     }
 }
 
@@ -214,6 +222,8 @@ pub struct Edge {
     pub mix: f32,
     /// Audio band this effect follows; none = the layer's own.
     pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
     pub strength: f32,
     /// Share of the original kept underneath.
     pub keep: f32,
@@ -226,7 +236,7 @@ pub struct Edge {
 
 impl Default for Edge {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, strength: 1.5, keep: 0.0, colour: EdgeColour::Picture, tinted: false, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, strength: 1.5, keep: 0.0, colour: EdgeColour::Picture, tinted: false, react: 1.0 }
     }
 }
 
@@ -239,6 +249,8 @@ pub struct ChromaSplit {
     pub mix: f32,
     /// Audio band this effect follows; none = the layer's own.
     pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
     pub amount: f32,
     pub radial: bool,
     pub react: f32,
@@ -246,7 +258,7 @@ pub struct ChromaSplit {
 
 impl Default for ChromaSplit {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, amount: 0.012, radial: true, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, amount: 0.012, radial: true, react: 1.0 }
     }
 }
 
@@ -267,6 +279,8 @@ pub struct Mask {
     pub mix: f32,
     /// Audio band this effect follows; none = the layer's own.
     pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
     pub shape: MaskShape,
     pub radius: f32,
     pub soft: f32,
@@ -276,7 +290,7 @@ pub struct Mask {
 
 impl Default for Mask {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, shape: MaskShape::Circle, radius: 0.7, soft: 0.1, invert: false, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, shape: MaskShape::Circle, radius: 0.7, soft: 0.1, invert: false, react: 1.0 }
     }
 }
 
@@ -298,6 +312,8 @@ pub struct Fractal {
     pub mix: f32,
     /// Audio band this effect follows; none = the layer's own.
     pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
     pub mode: FractalMode,
     pub iterations: u32,
     /// KIFS scale per step (>1 shrinks the cell each level).
@@ -314,7 +330,7 @@ pub struct Fractal {
 
 impl Default for Fractal {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, mode: FractalMode::Kifs, iterations: 4, scale: 1.9, angle: 0.35, offset: 0.8, zoom: 1.0, falloff: 0.8, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, mode: FractalMode::Kifs, iterations: 4, scale: 1.9, angle: 0.35, offset: 0.8, zoom: 1.0, falloff: 0.8, react: 1.0 }
     }
 }
 
@@ -327,6 +343,8 @@ pub struct Luminescence {
     pub mix: f32,
     /// Audio band this effect follows; none = the layer's own.
     pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
     /// Fast pool release, seconds.
     pub fresh_s: f32,
     /// Slow pool release, seconds (the afterglow).
@@ -348,7 +366,7 @@ pub struct Luminescence {
 
 impl Default for Luminescence {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, fresh_s: 0.35, afterglow_s: 4.0, fresh_gain: 0.6, afterglow_gain: 0.5, hue_shift: -140.0, own_colour: true, excite: 1.5, uv: 0.6, sparkle: 1.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, fresh_s: 0.35, afterglow_s: 4.0, fresh_gain: 0.6, afterglow_gain: 0.5, hue_shift: -140.0, own_colour: true, excite: 1.5, uv: 0.6, sparkle: 1.0, react: 1.0 }
     }
 }
 
@@ -361,6 +379,8 @@ pub struct Grade {
     pub mix: f32,
     /// Audio band this effect follows; none = the layer's own.
     pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
     /// false = by brightness (gradient map), true = by the picture's hue.
     pub by_hue: bool,
     pub amount: f32,
@@ -369,7 +389,7 @@ pub struct Grade {
 
 impl Default for Grade {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, by_hue: false, amount: 1.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, by_hue: false, amount: 1.0, react: 1.0 }
     }
 }
 
@@ -531,6 +551,45 @@ impl Modifier {
         }
     }
 
+    /// Always on (not in the effects director's pool).
+    pub fn pinned(&self) -> bool {
+        match self {
+            Modifier::Fold(k) => k.pinned,
+            Modifier::Feedback(k) => k.pinned,
+            Modifier::Polar(k) => k.pinned,
+            Modifier::Ripple(k) => k.pinned,
+            Modifier::Edge(k) => k.pinned,
+            Modifier::Chroma(k) => k.pinned,
+            Modifier::Mask(k) => k.pinned,
+            Modifier::Fractal(k) => k.pinned,
+            Modifier::Lumi(k) => k.pinned,
+            Modifier::Grade(k) => k.pinned,
+            Modifier::Halftone(k) => k.pinned,
+            Modifier::Warp(k) => k.pinned,
+            Modifier::Lines(k) => k.pinned,
+            Modifier::Mirror(k) => k.pinned,
+        }
+    }
+
+    pub fn pinned_mut(&mut self) -> &mut bool {
+        match self {
+            Modifier::Fold(k) => &mut k.pinned,
+            Modifier::Feedback(k) => &mut k.pinned,
+            Modifier::Polar(k) => &mut k.pinned,
+            Modifier::Ripple(k) => &mut k.pinned,
+            Modifier::Edge(k) => &mut k.pinned,
+            Modifier::Chroma(k) => &mut k.pinned,
+            Modifier::Mask(k) => &mut k.pinned,
+            Modifier::Fractal(k) => &mut k.pinned,
+            Modifier::Lumi(k) => &mut k.pinned,
+            Modifier::Grade(k) => &mut k.pinned,
+            Modifier::Halftone(k) => &mut k.pinned,
+            Modifier::Warp(k) => &mut k.pinned,
+            Modifier::Lines(k) => &mut k.pinned,
+            Modifier::Mirror(k) => &mut k.pinned,
+        }
+    }
+
     /// Bring a loaded modifier up to date (old fields into their successors).
     pub fn normalize(&mut self) {
         if let Modifier::Edge(k) = self {
@@ -653,6 +712,8 @@ pub struct Halftone {
     pub mix: f32,
     /// Audio band this effect follows; none = the layer's own.
     pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
     pub shape: HalftoneShape,
     /// Screen cell size, pixels.
     pub cell: f32,
@@ -673,7 +734,7 @@ pub struct Halftone {
 
 impl Default for Halftone {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, shape: HalftoneShape::Dot, cell: 9.0, angle: 15.0, mono: 0.5, drift: 0.6, gamma: 1.4, palette: true, invert: false, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, shape: HalftoneShape::Dot, cell: 9.0, angle: 15.0, mono: 0.5, drift: 0.6, gamma: 1.4, palette: true, invert: false, react: 1.0 }
     }
 }
 
@@ -686,6 +747,8 @@ pub struct Warp {
     pub mix: f32,
     /// Audio band this effect follows; none = the layer's own.
     pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
     /// Displacement at rest, pixels.
     pub amount: f32,
     /// Field detail: noise cycles across the screen.
@@ -702,7 +765,7 @@ pub struct Warp {
 
 impl Default for Warp {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, amount: 24.0, scale: 3.0, speed: 0.25, twist: 0.5, octaves: 2, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, amount: 24.0, scale: 3.0, speed: 0.25, twist: 0.5, octaves: 2, react: 1.0 }
     }
 }
 
@@ -716,6 +779,8 @@ pub struct Lines {
     pub mix: f32,
     /// Audio band this effect follows; none = the layer's own.
     pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
     /// Stripe pitch, pixels.
     pub pitch: f32,
     /// Stripe angle, degrees (0 = horizontal lines).
@@ -730,7 +795,7 @@ pub struct Lines {
 
 impl Default for Lines {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pitch: 3.0, angle: 45.0, cut: 0.35, glow: 0.04, react: 0.5 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, pitch: 3.0, angle: 45.0, cut: 0.35, glow: 0.04, react: 0.5 }
     }
 }
 
@@ -773,6 +838,8 @@ pub struct Mirror {
     pub mix: f32,
     /// Audio band this effect follows; none = the layer's own.
     pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
     pub side: MirrorSide,
     /// Add the reflection to the picture instead of replacing the far side.
     pub additive: bool,
@@ -783,7 +850,7 @@ pub struct Mirror {
 
 impl Default for Mirror {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, side: MirrorSide::Left, additive: false, flip: 0.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, side: MirrorSide::Left, additive: false, flip: 0.0, react: 1.0 }
     }
 }
 
@@ -1110,6 +1177,52 @@ impl Default for WheelParams {
     }
 }
 
+/// How a director runs: by hand, by the system, or by a saved sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DirectorMode {
+    /// Off: nothing moves unless you move it.
+    #[default]
+    Manual,
+    /// The system decides, on beats and cues.
+    Auto,
+    /// A saved sequence for one song (comes with the studio timeline).
+    Cue,
+}
+
+impl DirectorMode {
+    pub fn name(self) -> &'static str {
+        match self {
+            DirectorMode::Manual => "Manual",
+            DirectorMode::Auto => "Auto",
+            DirectorMode::Cue => "Cue",
+        }
+    }
+}
+
+/// The effects director of one layer: on a cadence of beats it picks which
+/// of the layer's pool effects are live and fades the others out, so the
+/// look of the layer changes through a song. Pinned effects stay on.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EffectsDirector {
+    pub mode: DirectorMode,
+    /// Roll every this many beats.
+    pub every: u32,
+    /// How many pool effects are live at once.
+    pub live: u32,
+    /// Chance a roll changes nothing.
+    pub rest: f32,
+    /// Seconds an effect takes to fade in or out.
+    pub fade_s: f32,
+}
+
+impl Default for EffectsDirector {
+    fn default() -> Self {
+        Self { mode: DirectorMode::Manual, every: 4, live: 1, rest: 0.5, fade_s: 0.6 }
+    }
+}
+
 /// Where a layer takes its colour from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1211,6 +1324,8 @@ pub struct Layer {
     pub palette: PaletteSel,
     /// Ordered chain of modifiers run over the visual's output.
     pub modifiers: Vec<Modifier>,
+    /// Which of them are live when: the layer's effects director.
+    pub director: EffectsDirector,
     /// Pre-chain field, migrated into `modifiers` on load; never written.
     #[serde(skip_serializing)]
     pub fold: LegacyFold,
@@ -1226,7 +1341,7 @@ pub struct Layer {
 
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default(), waves: WavesParams::default(), crystal: CrystalParams::default(), wheel: WheelParams::default() }
+        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), director: EffectsDirector::default(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default(), waves: WavesParams::default(), crystal: CrystalParams::default(), wheel: WheelParams::default() }
     }
 }
 

@@ -12,7 +12,7 @@ use crate::overlays::CalibrationView;
 use crate::scene::Scene;
 use crate::scene_store::SceneDef;
 use crate::color;
-use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
+use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
 use crate::widgets::{self, chip, dropdown, ghost_button, group, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
@@ -213,7 +213,10 @@ fn scenes_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
     }
     hint(ui, "A scene is a mix of up to three layers plus the picture settings. Space cycles; A lets the director pick on track changes and drops.");
     ui.add_space(8.0);
-    toggle_row(ui, "Auto director (A)", &mut settings.auto_scenes);
+    small_caps(ui, "Scene director (A)");
+    if let Some(i) = segmented(ui, &["Manual", "Auto"], settings.auto_scenes as usize) {
+        settings.auto_scenes = i == 1;
+    }
     hint(ui, &format!("Last cue: {}{}", stats.last_cue, if stats.fading { " · fading" } else { "" }));
     if let Some(np) = &stats.now_playing {
         hint(ui, np);
@@ -416,6 +419,9 @@ fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelStat
                 state.editing_mod = j;
                 state.mod_open = true;
             }
+            if m.pinned() && l.director.mode != DirectorMode::Manual {
+                ui.label(egui::RichText::new("always").size(10.0).color(TEXT_3));
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.add(egui::Button::new(egui::RichText::new("×").color(TEXT_3)).frame(false)).on_hover_text("Remove").clicked() {
                     remove = Some(j);
@@ -464,6 +470,21 @@ fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelStat
     }
     if n > 0 {
         hint(ui, "Order matters: each pass sees the one above it. Click a name to open its controls; Esc comes back.");
+        ui.add_space(8.0);
+        let d = &mut l.director;
+        let dd = crate::settings::EffectsDirector::default();
+        group(ui, "layer.director", "Effects director", true, 5, |ui| {
+            if let Some(i) = segmented(ui, &["Manual", "Auto"], (d.mode == DirectorMode::Auto) as usize) {
+                d.mode = if i == 1 { DirectorMode::Auto } else { DirectorMode::Manual };
+            }
+            if d.mode == DirectorMode::Auto {
+                slider_def(ui, "Roll every", &mut d.every, Some(dd.every), 1..=32, |v| if v < 1.5 { "1 beat".into() } else { format!("{v:.0} beats") }, false);
+                slider_def(ui, "Live at once", &mut d.live, Some(dd.live), 1..=MAX_MODS as u32, |v| format!("{v:.0}"), false);
+                slider_def(ui, "Sits out", &mut d.rest, Some(dd.rest), 0.0..=1.0, |v| format!("{:.0}%", v * 100.0), false);
+                slider_def(ui, "Fade", &mut d.fade_s, Some(dd.fade_s), 0.05..=4.0, |v| format!("{v:.2} s"), true);
+            }
+            hint(ui, "Auto: on the cadence, the director picks which effects are live and fades the rest out, seeded by the track so a song replays the same way. Mark an effect Always on in its page to keep it out of the pool. Cue lists come with the studio timeline.");
+        });
     }
 }
 
@@ -478,6 +499,7 @@ fn modifier_page(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelSt
     toggle_row(ui, "On", m.enabled_mut());
     slider_def(ui, "Mix", m.mix_mut(), Some(1.0), 0.0..=1.0, |v| format!("{:.0}%", v * 100.0), false);
     modifier_band(ui, m.band_mut());
+    toggle_row(ui, "Always on", m.pinned_mut()).on_hover_text("Kept out of the effects director's pool");
     ui.add_space(4.0);
     modifier_controls(ui, m);
     ui.add_space(10.0);
@@ -821,7 +843,9 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
             }
         });
         if has_chain {
-            ui.horizontal(|ui| {
+            // Chips wrap inside the column; a long chain never widens the panel.
+            ui.horizontal_wrapped(|ui| {
+                ui.set_max_width(ui.available_width());
                 ui.add_space(24.0);
                 let l = settings.layer(i);
                 for (j, m) in l.modifiers.iter().enumerate() {

@@ -24,7 +24,8 @@ use crate::scenes::starfield::Starfield;
 use crate::scenes::waves::Waves;
 use crate::scenes::crystal::Crystal;
 use crate::scenes::wheel::Wheel;
-use crate::settings::{EdgeColour, FoldMode, FractalMode, HalftoneShape, Layer, MirrorSide, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
+use crate::rng::Rng;
+use crate::settings::{DirectorMode, EdgeColour, FoldMode, FractalMode, HalftoneShape, Layer, MirrorSide, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
 use crate::shaders::ShaderSet;
 
 #[repr(C)]
@@ -282,9 +283,26 @@ impl Fade {
     }
 }
 
+/// The effects director's live state for one layer: beat count, roll count,
+/// which pool slots are live, and each slot's slewed gate.
+struct FxState {
+    beats: u32,
+    rolls: u32,
+    live: [bool; MAX_MODS],
+    gate: [f32; MAX_MODS],
+    last_beat: f32,
+    started: bool,
+}
+
+impl Default for FxState {
+    fn default() -> Self {
+        Self { beats: 0, rolls: 0, live: [true; MAX_MODS], gate: [1.0; MAX_MODS], last_beat: 0.0, started: false }
+    }
+}
+
 /// Everything a layer slot carries besides its visual instance: band filter,
-/// levelling meter, modifier chain, palette, slewed tint, compositor uniform
-/// and the opacity ramp.
+/// levelling meter, modifier chain, palette, slewed tint, compositor uniform,
+/// the opacity ramp and the effects director's state.
 struct Slot {
     filter: BandPass,
     meter: Meter,
@@ -293,6 +311,7 @@ struct Slot {
     tint: [f32; 3],
     buf: wgpu::Buffer,
     fade: Fade,
+    fx: FxState,
 }
 
 impl Slot {
@@ -305,6 +324,7 @@ impl Slot {
             tint: layer.tint.color,
             buf: scene::uniform_buffer(device, &format!("layer {i}"), std::mem::size_of::<LayerParams>() as u64),
             fade: Fade::at(level),
+            fx: FxState::default(),
         }
     }
 
@@ -354,6 +374,8 @@ struct Frame<'a> {
     height: u32,
     /// Levelling on (auto exposure).
     level: bool,
+    /// A scene switch landed this frame: effects directors roll.
+    scene_changed: bool,
 }
 
 pub struct Director {
@@ -809,7 +831,7 @@ impl Director {
         // Levelling: with auto exposure on, each layer is brought to its own
         // dark-field mean before mixing, so opacity is the mix ratio and a dim
         // layer is not lost under a bright one.
-        let frame = Frame { features, points, sample_rate, tint, art, art_image, art_id, photos_folder: &settings.photos_folder, dt, time, auto_gain, width: self.width, height: self.height, level: settings.post.auto_exposure };
+        let frame = Frame { features, points, sample_rate, tint, art, art_image, art_id, photos_folder: &settings.photos_folder, dt, time, auto_gain, width: self.width, height: self.height, level: settings.post.auto_exposure, scene_changed: self.pending.is_some() };
 
         // Aim every slot's ramp at its target and advance it. A scene switch
         // fades over its own time (staggered for the auto director); a layer
@@ -924,13 +946,61 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
     visual.render(queue, encoder, &ctx, layer);
     queue.write_buffer(&slot.buf, 0, bytemuck::bytes_of(&LayerParams { opacity: level, dt, flags: fr.level as u32 | if first { 2 } else { 0 }, blend: layer.blend as u32 }));
 
+    // Effects director: which pool effects are live, and a gate per slot
+    // that slews toward live or resting; pinned effects stay at 1.
+    {
+        let fx = &mut slot.fx;
+        let dir = &layer.director;
+        let pool: Vec<usize> = layer.modifiers.iter().enumerate().take(MAX_MODS).filter(|(_, m)| m.enabled() && !m.pinned()).map(|(j, _)| j).collect();
+        if dir.mode == DirectorMode::Auto && !pool.is_empty() {
+            let beat = feats.beat_pulse * feats.beat_confidence;
+            let hit = beat > fx.last_beat + 0.4;
+            fx.last_beat = beat;
+            let mut roll = !fx.started || fr.scene_changed;
+            if hit {
+                fx.beats = fx.beats.wrapping_add(1);
+                if fx.beats % dir.every.max(1) == 0 {
+                    roll = true;
+                }
+            }
+            if roll {
+                let first = !fx.started;
+                fx.started = true;
+                fx.rolls = fx.rolls.wrapping_add(1);
+                // Seeded by the track and the roll, so a song replays the same way.
+                let mut rng = Rng::seeded(&[fr.art_id, slot.chain.index as u64, fx.rolls as u64]);
+                if first || rng.next() >= dir.rest {
+                    let mut rest: Vec<usize> = pool.clone();
+                    fx.live = [false; MAX_MODS];
+                    for _ in 0..(dir.live.max(1) as usize).min(rest.len()) {
+                        let k = rng.below(rest.len());
+                        fx.live[rest.swap_remove(k)] = true;
+                    }
+                }
+            }
+            let k = 1.0 - (-dt / dir.fade_s.max(0.02)).exp();
+            for j in 0..MAX_MODS {
+                let want = if pool.contains(&j) && !fx.live[j] { 0.0 } else { 1.0 };
+                fx.gate[j] += (want - fx.gate[j]) * k;
+            }
+        } else {
+            fx.started = false;
+            let k = 1.0 - (-dt / 0.3).exp();
+            for g in &mut fx.gate {
+                *g += (1.0 - *g) * k;
+            }
+        }
+    }
+
     // Modifier chain: advance every slot's state and write its uniform
     // first (mutable), then run the passes (immutable borrows only).
     let mut passes: Vec<(usize, usize, f32)> = Vec::new(); // (slot, pipeline index, wet/dry)
     {
+        let gates = slot.fx.gate;
         let chain = &mut slot.chain;
         for (j, m) in layer.modifiers.iter().enumerate().take(MAX_MODS) {
-            if !m.enabled() {
+            // A resting effect is skipped once its gate has closed.
+            if !m.enabled() || gates[j] < 0.002 {
                 chain.want_history(device, j, false, fr.width, fr.height);
                 chain.want_pyramid(device, j, false, fr.width, fr.height);
                 continue;
@@ -959,7 +1029,7 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
             } else {
                 queue.write_buffer(&chain.bufs[j], 0, bytemuck::bytes_of(&p));
             }
-            let mix = m.mix().clamp(0.0, 1.0);
+            let mix = (m.mix() * gates[j]).clamp(0.0, 1.0);
             if mix < 0.999 {
                 queue.write_buffer(&chain.mix_bufs[j], 0, bytemuck::bytes_of(&MixParams { t: mix, _pad: [0.0; 3] }));
             }

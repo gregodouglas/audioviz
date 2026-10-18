@@ -25,6 +25,8 @@ Greg: "I want to focus on adding visuals." Shipping is deferred (below) except t
 
 Inspiration Greg handed over (2026-10-18 late), credits kept in `docs/INSPIRATION.md`: **soniaboller/audible-visuals** (three.js; port the visuals worth it, credit the author), and **Uberviz** by Felix Turner (uberviz.io; the Crystal visualizer, the halftone, the colour/monotone drift). Uberviz's licence is unknown, so it is inspiration only unless a licensed repo turns up.
 
+Also queued (Greg, 2026-10-18 night): **visual presets**, named parameter sets per visual, built-in plus user-saved, with his ribbons starfield (max particles, persistence 0.001/s, slow and small) as the first.
+
 Visual candidates, in the order to try (reordered 2026-10-18 late on the research; details in `docs/INSPIRATION.md`):
 
 - ~~Waves~~ **built 2026-10-18** (waveform or spectrum rows in perspective, hidden-line fill, palette by age or level; built-in scene). Awaiting Greg's look.
@@ -39,7 +41,7 @@ Visual candidates, in the order to try (reordered 2026-10-18 late on the researc
 - **Harmonograph**: damped Lissajous of the two strongest pitch classes, drawn as one long line.
 - **Interference**: a few sinusoid line fields driven by bands, moiré where they cross.
 
-Modifier candidates: ~~warp~~ (built 2026-10-18), ~~halftone~~ (built 2026-10-18; dither still open), ~~scanlines~~ and ~~mirror~~ (built 2026-10-18), **glow** and **vignette** as modifiers (the heavy Uberviz frame), **colorify** (one drifting ink, the other half of Uberviz's colour/mono look), **beat roll** (a per-layer scheduler that flips modifiers on random beats, after Uberviz autoMode), **glitch** (block displacement and channel tears on onsets), **posterize / hue cycle**, **scanlines / CRT**, **echo** (a delayed copy under the picture, reusing the history pair).
+Modifier candidates: ~~warp~~ (built 2026-10-18), ~~halftone~~ (built 2026-10-18; dither still open), ~~scanlines~~ and ~~mirror~~ (built 2026-10-18), **glow** and **vignette** as modifiers (the heavy Uberviz frame), **colorify** (one drifting ink, the other half of Uberviz's colour/mono look), ~~beat roll~~ (built 2026-10-18 as the **effects director**, `docs/model.md`), **glitch** (block displacement and channel tears on onsets), **posterize / hue cycle**, **scanlines / CRT**, **echo** (a delayed copy under the picture, reusing the history pair).
 
 ## Done: visuals and sound (the previous "Next" list)
 

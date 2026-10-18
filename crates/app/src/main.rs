@@ -7,6 +7,7 @@ mod chrome;
 mod color;
 mod config;
 mod director;
+mod rng;
 mod engine;
 mod gpu;
 mod hittest;

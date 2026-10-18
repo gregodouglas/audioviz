@@ -10,6 +10,8 @@
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3};
 
+use crate::rng::Rng;
+
 use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, begin_pass};
 use crate::shaders::ShaderSet;
 use crate::settings::{CrystalStyle, Layer, VisualKind};
@@ -67,27 +69,12 @@ struct Shard {
     far: Vec3,
 }
 
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> f32 {
-        // splitmix64
-        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        ((z ^ (z >> 31)) >> 40) as f32 / (1u64 << 24) as f32
-    }
-    fn range(&mut self, lo: f32, hi: f32) -> f32 {
-        lo + (hi - lo) * self.next()
-    }
-    fn quat(&mut self) -> Quat {
-        Quat::from_euler(glam::EulerRot::XYZ, self.range(0.0, std::f32::consts::TAU), self.range(0.0, std::f32::consts::TAU), self.range(0.0, std::f32::consts::TAU))
-    }
+fn quat(rng: &mut Rng) -> Quat {
+    Quat::from_euler(glam::EulerRot::XYZ, rng.range(0.0, std::f32::consts::TAU), rng.range(0.0, std::f32::consts::TAU), rng.range(0.0, std::f32::consts::TAU))
 }
 
 fn random_pose(rng: &mut Rng) -> Pose {
-    Pose { rot: rng.quat(), scale: Vec3::new(rng.range(0.8, 2.2), rng.range(0.8, 2.2), rng.range(0.8, 2.2)), opacity: rng.range(0.25, 0.7), hue: rng.next() }
+    Pose { rot: quat(rng), scale: Vec3::new(rng.range(0.8, 2.2), rng.range(0.8, 2.2), rng.range(0.8, 2.2)), opacity: rng.range(0.25, 0.7), hue: rng.next() }
 }
 
 fn ease_in_expo(t: f32) -> f32 {
@@ -127,7 +114,7 @@ impl Crystal {
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniform.as_entire_binding() }, wgpu::BindGroupEntry { binding: 1, resource: shards_buf.as_entire_binding() }],
         });
         let (faces, faces_solid, edges) = build(device, shaders, &layout)?;
-        let mut rng = Rng(0x5EED_C0DE_0000_0001);
+        let mut rng = Rng::seeded(&[0x5EED_C0DE]);
         let shards = (0..MAX_SHARDS)
             .map(|_| {
                 let p = random_pose(&mut rng);
@@ -172,14 +159,14 @@ impl Scene for Crystal {
         if hit && p.react > 0.0 {
             self.beats += 1;
             if self.beats % p.every.max(1) == 0 {
-                let i = (self.rng.next() * count as f32) as usize % count;
+                let i = self.rng.below(count);
                 let s = &mut self.shards[i];
                 s.from = current_pose(s);
                 s.to = random_pose(&mut self.rng);
                 s.t = 0.0;
             }
             if self.beats % 4 == 0 {
-                self.tilt_to = self.rng.quat();
+                self.tilt_to = quat(&mut self.rng);
             }
         }
         // Tumble and tilt.
@@ -322,7 +309,7 @@ mod tests {
 
     #[test]
     fn tween_settles() {
-        let mut rng = Rng(7);
+        let mut rng = Rng::seeded(&[7]);
         let (a, b) = (random_pose(&mut rng), random_pose(&mut rng));
         let s = Shard { from: a, to: b, t: 1.0, rest: Vec3::ZERO, far: Vec3::ZERO };
         let p = current_pose(&s);

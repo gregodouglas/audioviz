@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::settings::{Fold, Layer, Lines, Mirror, Modifier, Settings, VisualKind};
+use crate::settings::{DirectorMode, Fold, Halftone, Layer, Lines, Mirror, Modifier, Settings, VisualKind, Warp};
 
 #[derive(Clone)]
 pub struct SceneDef {
@@ -203,9 +203,12 @@ pub fn builtin() -> Vec<SceneDef> {
             {
                 let mut l = Layer::new(VisualKind::Crystal, true, 1.0);
                 l.palette.name = "neon".into();
-                l.modifiers.push(Modifier::Mirror(Mirror { flip: 0.3, ..Default::default() }));
-                l.modifiers.push(Modifier::Lines(Lines::default()));
-                l.modifiers.push(Modifier::Chroma(crate::settings::ChromaSplit { amount: 0.004, ..Default::default() }));
+                l.modifiers.push(Modifier::Mirror(Mirror { flip: 0.3, pinned: true, ..Default::default() }));
+                l.modifiers.push(Modifier::Halftone(Halftone { mono: 0.8, ..Default::default() }));
+                l.modifiers.push(Modifier::Warp(Warp { amount: 30.0, ..Default::default() }));
+                l.modifiers.push(Modifier::Lines(Lines { pinned: true, ..Default::default() }));
+                l.modifiers.push(Modifier::Chroma(crate::settings::ChromaSplit { amount: 0.004, pinned: true, ..Default::default() }));
+                l.director.mode = DirectorMode::Auto;
                 l
             },
             {

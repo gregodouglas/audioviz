@@ -64,6 +64,8 @@ pub struct Fold {
     pub enabled: bool,
     /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
     pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
     pub mode: FoldMode,
     pub segments: u32,
     /// Rotation, radians per second at average energy.
@@ -81,7 +83,7 @@ pub struct Fold {
 
 impl Default for Fold {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, mode: FoldMode::Radial, segments: 8, speed: 0.15, zoom: 1.0, offset: 0.25, wander: 1.0, step_beats: 0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, mode: FoldMode::Radial, segments: 8, speed: 0.15, zoom: 1.0, offset: 0.25, wander: 1.0, step_beats: 0, react: 1.0 }
     }
 }
 
@@ -110,6 +112,8 @@ pub struct Feedback {
     pub enabled: bool,
     /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
     pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
     pub decay: f32,
     /// Zoom rate per second (positive = outward).
     pub zoom: f32,
@@ -120,7 +124,7 @@ pub struct Feedback {
 
 impl Default for Feedback {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, decay: 0.9, zoom: 0.25, spin: 0.1, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, decay: 0.9, zoom: 0.25, spin: 0.1, react: 1.0 }
     }
 }
 
@@ -131,6 +135,8 @@ pub struct Polar {
     pub enabled: bool,
     /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
     pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
     /// false = wrap (x becomes angle), true = unwrap (the inverse).
     pub unwrap: bool,
     pub radius: f32,
@@ -140,7 +146,7 @@ pub struct Polar {
 
 impl Default for Polar {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, unwrap: false, radius: 1.0, spin: 0.1, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, unwrap: false, radius: 1.0, spin: 0.1, react: 1.0 }
     }
 }
 
@@ -151,6 +157,8 @@ pub struct Ripple {
     pub enabled: bool,
     /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
     pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
     pub amount: f32,
     pub wavelength: f32,
     pub speed: f32,
@@ -160,7 +168,31 @@ pub struct Ripple {
 
 impl Default for Ripple {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, amount: 0.04, wavelength: 0.15, speed: 0.8, sine: 0.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, amount: 0.04, wavelength: 0.15, speed: 0.8, sine: 0.0, react: 1.0 }
+    }
+}
+
+/// What colours an edge outline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum EdgeColour {
+    /// The picture's own hue under the edge.
+    #[default]
+    Picture,
+    /// The layer tint.
+    Tint,
+    /// The layer's palette, by the edge's direction; the palette's cycle turns it.
+    Palette,
+}
+
+impl EdgeColour {
+    pub const ALL: [EdgeColour; 3] = [EdgeColour::Picture, EdgeColour::Tint, EdgeColour::Palette];
+    pub fn name(self) -> &'static str {
+        match self {
+            EdgeColour::Picture => "Picture",
+            EdgeColour::Tint => "Tint",
+            EdgeColour::Palette => "Palette",
+        }
     }
 }
 
@@ -171,16 +203,21 @@ pub struct Edge {
     pub enabled: bool,
     /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
     pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
     pub strength: f32,
     /// Share of the original kept underneath.
     pub keep: f32,
+    pub colour: EdgeColour,
+    /// Pre-`colour` flag (one build, 2026-10-17); read for migration only.
+    #[serde(skip_serializing)]
     pub tinted: bool,
     pub react: f32,
 }
 
 impl Default for Edge {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, strength: 1.5, keep: 0.0, tinted: false, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, strength: 1.5, keep: 0.0, colour: EdgeColour::Picture, tinted: false, react: 1.0 }
     }
 }
 
@@ -191,6 +228,8 @@ pub struct ChromaSplit {
     pub enabled: bool,
     /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
     pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
     pub amount: f32,
     pub radial: bool,
     pub react: f32,
@@ -198,7 +237,7 @@ pub struct ChromaSplit {
 
 impl Default for ChromaSplit {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, amount: 0.012, radial: true, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, amount: 0.012, radial: true, react: 1.0 }
     }
 }
 
@@ -217,6 +256,8 @@ pub struct Mask {
     pub enabled: bool,
     /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
     pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
     pub shape: MaskShape,
     pub radius: f32,
     pub soft: f32,
@@ -226,7 +267,7 @@ pub struct Mask {
 
 impl Default for Mask {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, shape: MaskShape::Circle, radius: 0.7, soft: 0.1, invert: false, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, shape: MaskShape::Circle, radius: 0.7, soft: 0.1, invert: false, react: 1.0 }
     }
 }
 
@@ -246,6 +287,8 @@ pub struct Fractal {
     pub enabled: bool,
     /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
     pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
     pub mode: FractalMode,
     pub iterations: u32,
     /// KIFS scale per step (>1 shrinks the cell each level).
@@ -262,7 +305,7 @@ pub struct Fractal {
 
 impl Default for Fractal {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, mode: FractalMode::Kifs, iterations: 4, scale: 1.9, angle: 0.35, offset: 0.8, zoom: 1.0, falloff: 0.8, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, mode: FractalMode::Kifs, iterations: 4, scale: 1.9, angle: 0.35, offset: 0.8, zoom: 1.0, falloff: 0.8, react: 1.0 }
     }
 }
 
@@ -273,6 +316,8 @@ pub struct Luminescence {
     pub enabled: bool,
     /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
     pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
     /// Fast pool release, seconds.
     pub fresh_s: f32,
     /// Slow pool release, seconds (the afterglow).
@@ -294,7 +339,7 @@ pub struct Luminescence {
 
 impl Default for Luminescence {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, fresh_s: 0.35, afterglow_s: 4.0, fresh_gain: 0.6, afterglow_gain: 0.5, hue_shift: -140.0, own_colour: true, excite: 1.5, uv: 0.6, sparkle: 1.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, fresh_s: 0.35, afterglow_s: 4.0, fresh_gain: 0.6, afterglow_gain: 0.5, hue_shift: -140.0, own_colour: true, excite: 1.5, uv: 0.6, sparkle: 1.0, react: 1.0 }
     }
 }
 
@@ -305,6 +350,8 @@ pub struct Grade {
     pub enabled: bool,
     /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
     pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
     /// false = by brightness (gradient map), true = by the picture's hue.
     pub by_hue: bool,
     pub amount: f32,
@@ -313,7 +360,7 @@ pub struct Grade {
 
 impl Default for Grade {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, by_hue: false, amount: 1.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, by_hue: false, amount: 1.0, react: 1.0 }
     }
 }
 
@@ -417,6 +464,47 @@ impl Modifier {
             Modifier::Fractal(k) => k.mix,
             Modifier::Lumi(k) => k.mix,
             Modifier::Grade(k) => k.mix,
+        }
+    }
+
+    /// The band this modifier follows (`None` = the layer's own).
+    pub fn band(&self) -> Option<AudioBand> {
+        match self {
+            Modifier::Fold(k) => k.band,
+            Modifier::Feedback(k) => k.band,
+            Modifier::Polar(k) => k.band,
+            Modifier::Ripple(k) => k.band,
+            Modifier::Edge(k) => k.band,
+            Modifier::Chroma(k) => k.band,
+            Modifier::Mask(k) => k.band,
+            Modifier::Fractal(k) => k.band,
+            Modifier::Lumi(k) => k.band,
+            Modifier::Grade(k) => k.band,
+        }
+    }
+
+    pub fn band_mut(&mut self) -> &mut Option<AudioBand> {
+        match self {
+            Modifier::Fold(k) => &mut k.band,
+            Modifier::Feedback(k) => &mut k.band,
+            Modifier::Polar(k) => &mut k.band,
+            Modifier::Ripple(k) => &mut k.band,
+            Modifier::Edge(k) => &mut k.band,
+            Modifier::Chroma(k) => &mut k.band,
+            Modifier::Mask(k) => &mut k.band,
+            Modifier::Fractal(k) => &mut k.band,
+            Modifier::Lumi(k) => &mut k.band,
+            Modifier::Grade(k) => &mut k.band,
+        }
+    }
+
+    /// Bring a loaded modifier up to date (old fields into their successors).
+    pub fn normalize(&mut self) {
+        if let Modifier::Edge(k) = self {
+            if k.tinted {
+                k.colour = EdgeColour::Tint;
+                k.tinted = false;
+            }
         }
     }
 
@@ -786,6 +874,9 @@ impl Layer {
             self.fold.enabled = false;
         }
         self.modifiers.truncate(MAX_MODS);
+        for m in &mut self.modifiers {
+            m.normalize();
+        }
     }
 
     pub fn has_fold(&self) -> bool {

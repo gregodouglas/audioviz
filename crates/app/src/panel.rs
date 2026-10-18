@@ -12,7 +12,7 @@ use crate::overlays::CalibrationView;
 use crate::scene::Scene;
 use crate::scene_store::SceneDef;
 use crate::color;
-use crate::settings::{AudioBand, Blend, ChromaSplit, Edge, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
+use crate::settings::{AudioBand, Blend, ChromaSplit, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
 use crate::widgets::{self, chip, dropdown, ghost_button, group, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
@@ -476,6 +476,7 @@ fn modifier_page(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelSt
     };
     toggle_row(ui, "On", m.enabled_mut());
     slider_def(ui, "Mix", m.mix_mut(), Some(1.0), 0.0..=1.0, |v| format!("{:.0}%", v * 100.0), false);
+    modifier_band(ui, m.band_mut());
     ui.add_space(4.0);
     modifier_controls(ui, m);
     ui.add_space(10.0);
@@ -494,6 +495,41 @@ fn modifier_page(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelSt
         l.modifiers.remove(j);
         a.remove_modifier = Some((editing, j));
         state.mod_open = false;
+    }
+}
+
+/// Which part of the music a modifier follows: the layer's own band (the
+/// default), the full mix, a preset band or a custom range.
+fn modifier_band(ui: &mut egui::Ui, band: &mut Option<AudioBand>) {
+    let mut items: Vec<&str> = vec!["This layer's band", "Full mix"];
+    items.extend(AudioBand::PRESETS.iter().map(|(n, _, _)| *n));
+    items.push("Custom range");
+    let custom = items.len() - 1;
+    let sel = match band {
+        None => 0,
+        Some(b) if !b.enabled => 1,
+        Some(b) => AudioBand::PRESETS.iter().position(|(_, lo, hi)| (b.lo_hz - lo).abs() < 1.0 && (b.hi_hz - hi).abs() < 1.0).map(|p| p + 2).unwrap_or(custom),
+    };
+    if let Some(i) = dropdown(ui, "Reacts to", &items, Some(sel)) {
+        if i == 0 {
+            *band = None;
+        } else if i == 1 {
+            *band = Some(AudioBand { enabled: false, ..band.unwrap_or_default() });
+        } else if i == custom {
+            *band = Some(AudioBand { enabled: true, ..band.unwrap_or_default() });
+        } else {
+            let (_, lo, hi) = AudioBand::PRESETS[i - 2];
+            *band = Some(AudioBand { enabled: true, lo_hz: lo, hi_hz: hi });
+        }
+    }
+    if let Some(b) = band {
+        if b.enabled && sel == custom {
+            slider_row(ui, "Low cut", &mut b.lo_hz, 20.0..=16000.0, |v| format!("{v:.0} Hz"), true);
+            slider_row(ui, "High cut", &mut b.hi_hz, 20.0..=16000.0, |v| format!("{v:.0} Hz"), true);
+            if b.hi_hz < b.lo_hz * 1.2 {
+                b.hi_hz = b.lo_hz * 1.2;
+            }
+        }
     }
 }
 
@@ -549,8 +585,13 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             let d = Edge::default();
             slider_def(ui, "Strength", &mut k.strength, Some(d.strength), 0.0..=5.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Keep original", &mut k.keep, Some(d.keep), 0.0..=1.0, |v| format!("{v:.2}"), false);
-            toggle_row(ui, "Edges in the layer tint", &mut k.tinted);
+            small_caps(ui, "Colour");
+            let names: Vec<&str> = EdgeColour::ALL.iter().map(|c| c.name()).collect();
+            if let Some(i) = segmented(ui, &names, EdgeColour::ALL.iter().position(|c| *c == k.colour).unwrap_or(0)) {
+                k.colour = EdgeColour::ALL[i];
+            }
             slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Palette colours each edge by its direction, so a curve runs through the palette and the palette's cycle turns it with the music.");
         }
         Modifier::Chroma(k) => {
             let d = ChromaSplit::default();

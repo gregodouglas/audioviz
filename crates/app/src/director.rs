@@ -21,7 +21,7 @@ use crate::scenes::ribbons::Ribbons;
 use crate::scenes::scope::Scope;
 use crate::scenes::sigil::Sigil;
 use crate::scenes::starfield::Starfield;
-use crate::settings::{FoldMode, FractalMode, Layer, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
+use crate::settings::{EdgeColour, FoldMode, FractalMode, Layer, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
 use crate::shaders::ShaderSet;
 
 #[repr(C)]
@@ -422,8 +422,14 @@ fn mod_params(m: &Modifier, st: &mut ModState, f: &FeatureFrame, tint: [f32; 3],
             p.p2 = [k.sine * 0.02, 12.0, time * 1.5, 0.0];
         }
         Modifier::Edge(k) => {
+            // p0.w (palette shift) is filled in by the caller from the layer's palette state.
             let strength = k.strength * (0.7 + 0.3 * energy * k.react);
-            p.p0 = [strength, k.keep, k.tinted as u32 as f32, 0.0];
+            let colour = match k.colour {
+                EdgeColour::Picture => 0.0,
+                EdgeColour::Tint => 1.0,
+                EdgeColour::Palette => 2.0,
+            };
+            p.p0 = [strength, k.keep, colour, 0.0];
             p.p1 = [tint[0], tint[1], tint[2], 0.0];
         }
         Modifier::Chroma(k) => {
@@ -810,9 +816,24 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
             if !m.enabled() {
                 continue;
             }
-            let mut p = mod_params(m, &mut chain.states[j], feats, slot.tint, dt, time, fr.width, fr.height);
-            if matches!(m, Modifier::Grade(_)) {
-                p.p0[2] = pal_shift;
+            // The modifier follows the layer's band unless it has its own.
+            let own_band;
+            let mf: &FeatureFrame = match m.band() {
+                None => feats,
+                Some(b) if b.enabled => {
+                    own_band = band_features(fr.features, b.lo_hz, b.hi_hz);
+                    &own_band
+                }
+                Some(_) => fr.features,
+            };
+            let mut p = mod_params(m, &mut chain.states[j], mf, slot.tint, dt, time, fr.width, fr.height);
+            if matches!(m, Modifier::Grade(_) | Modifier::Edge(_)) {
+                // Both read the palette table; grade shifts in p0.z, edge in p0.w.
+                if matches!(m, Modifier::Grade(_)) {
+                    p.p0[2] = pal_shift;
+                } else {
+                    p.p0[3] = pal_shift;
+                }
                 queue.write_buffer(&chain.bufs[j], 0, bytemuck::bytes_of(&GradeParams { m: p, pal: *pal_table }));
             } else {
                 queue.write_buffer(&chain.bufs[j], 0, bytemuck::bytes_of(&p));

@@ -209,6 +209,16 @@ mod tests {
     }
 
     #[test]
+    fn migrates_edge_tinted_flag_and_defaults_modifier_bands() {
+        let text = r#"{"layers":[{"visual":"scope","enabled":true,"modifiers":[{"kind":"edge","tinted":true},{"kind":"ripple"}]}]}"#;
+        let s = parse(text).unwrap();
+        let m = &s.layers[0].modifiers;
+        assert!(matches!(m[0], crate::settings::Modifier::Edge(e) if e.colour == crate::settings::EdgeColour::Tint && !e.tinted));
+        assert!(m.iter().all(|m| m.band().is_none()), "modifiers follow the layer's band by default");
+        assert!(!serde_json::to_string(&s).unwrap().contains("tinted"));
+    }
+
+    #[test]
     fn current_format_round_trips() {
         let s = Settings::default();
         let text = serde_json::to_string(&s).unwrap();

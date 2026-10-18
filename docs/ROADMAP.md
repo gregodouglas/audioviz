@@ -19,7 +19,21 @@ Pushed as code; the installer Greg tests is his local `dist/audioviz-0.2.0-setup
 4. **Push, no release** (Greg, 2026-10-18): 0.2.0 goes out as pushed code only, no tag, no installer, no release notes yet; while the work is moving fast nobody rebuilds binaries per change. Greg runs `target
 eleaseudioviz.exe` or builds the installer himself when he wants one. A tagged release with notes comes when the pace settles.
 
-## Next: visuals and sound
+## Now: more visuals, modifiers and effects (Greg, 2026-10-18 late)
+
+Greg: "I want to focus on adding visuals." Shipping is deferred (below) except the measured default delay. Taste to build against: spacey, lines, post-modern, neon palettes, striking over realistic; every new piece is an ordinary layer (bands, tint, palette, modifiers, blend) and gets a built-in scene. One per commit, a snapshot to Greg before any tuning.
+
+Visual candidates, in the order to try:
+
+- **Waves**: a landscape of waveform history, stacked rows in perspective, each row hiding the ones behind it (the Unknown Pleasures look), rows coloured by age or pitch through the palette, height by band energy.
+- **Tunnel**: a wireframe tunnel of rings flown through, each ring's radius the spectrum at the moment it was born; lines only.
+- **Strings**: chords of the chroma drawn as taut lines between points on a circle (string art); a chord change re-strings it.
+- **Harmonograph**: damped Lissajous of the two strongest pitch classes, drawn as one long line.
+- **Interference**: a few sinusoid line fields driven by bands, moiré where they cross.
+
+Modifier candidates: **warp** (noise displacement, bass-driven), **halftone / dither** (print feel), **glitch** (block displacement and channel tears on onsets), **posterize / hue cycle**, **scanlines / CRT**, **echo** (a delayed copy under the picture, reusing the history pair).
+
+## Done: visuals and sound (the previous "Next" list)
 
 - ~~Director that fades layers~~ **done 2026-10-18**: per-slot eased opacity ramps, a replaced visual fades out under its successor, the auto director staggers the slots bottom first (`docs/phase6-ui.md` log).
 - ~~Sigil second pass~~ Not needed after Greg's 2026-10-18 verdict (above). Candidates kept ready in the code if he ever asks: cardinal triangles per level, more polygram types, a music-written trace (last struck pitch classes instead of a seeded path).
@@ -34,12 +48,15 @@ eleaseudioviz.exe` or builds the installer himself when he wants one. A tagged 
 - Current: Windows Miracast via the cast panel, auto-detect the new display, one click to fullscreen there. Roku takes no Google Cast.
 - Only if mirroring disappoints: a native Roku channel fed by an encoded live stream (Media Foundation H.264 → HLS, BrightScript player). Weeks of work and seconds of lag to compensate; not planned.
 
-## Shipping
+## Measured default audio delay (kept, needs Greg)
 
-- **Bespoke installer** (issue #3): the app's own design instead of Inno, when there is time. Inno stays for 0.2.0.
-- **Code signing**: Azure Artifact Signing, wired in `release.yml` behind `CODE_SIGNING`; needs the account, a certificate profile and the five secrets. Ship unsigned until then (decided Phase 5).
-- **winget** submission after a signed public release; no winget mention anywhere user-facing until it is real.
-- **Measured default audio delay**: Greg's tap calibration on the reference rig becomes the shipped default if clearly non-zero.
+On the reference rig with wired output: press **C**, tap along for ten beats, read the offset the sheet shows (it is also in the Sync section after applying). Tell the session the number; if it is clearly non-zero it becomes `audio_delay_ms`'s shipped default, with a note in the Sync hint that it was measured on one rig.
+
+## Shipping (deferred by Greg, 2026-10-18 late)
+
+- **Bespoke installer** (issue #3): the app's own design instead of Inno. Deferred; Inno stays. When it comes back: a dark Inno skin on the app's theme tokens is a day, a self-made installer is a week and worse for SmartScreen while unsigned.
+- **Code signing**: Azure Artifact Signing, wired in `release.yml` behind `CODE_SIGNING`; needs the account, a certificate profile and the five secrets. Ship unsigned until then (decided Phase 5). Deferred.
+- **winget** submission after a signed public release; no winget mention anywhere user-facing until it is real. Deferred with signing.
 - **Settings file**: every schema change so far migrates (`config::migrate`, `Layer::normalize`, serde defaults and aliases). Keep it that way; a dev run must never clobber `%APPDATA%\audioviz\settings.json` (`config::save` refuses under `AUDIOVIZ_DEFAULTS`).
 
 ## Later: macOS

@@ -1,14 +1,16 @@
 // The electron beam: one instanced quad per consecutive sample pair, drawn
 // additively in the phosphor tint. Brightness per segment ~ 1 / length (time
-// spent per pixel), with a Gaussian cross-section.
+// spent per pixel), with a Gaussian cross-section. Points are (x, y, palette
+// position, 0); the position is used in frequency mode.
 
 @group(0) @binding(0) var<uniform> P: ScopeParams;
-@group(0) @binding(1) var<storage, read> points: array<vec2<f32>>;
+@group(0) @binding(1) var<storage, read> points: array<vec4<f32>>;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) local: vec2<f32>,   // (along, across) in pixels
     @location(1) seg_len: f32,       // segment length in pixels
+    @location(2) pal_pos: f32,       // palette position of this segment (frequency mode)
 };
 
 // Map an (L, R) sample to pixel coordinates: gain, rotation, square aspect.
@@ -22,8 +24,8 @@ fn to_px(s: vec2<f32>) -> vec2<f32> {
 
 @vertex
 fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VsOut {
-    let a = to_px(points[ii]);
-    let b = to_px(points[ii + 1u]);
+    let a = to_px(points[ii].xy);
+    let b = to_px(points[ii + 1u].xy);
     var d = b - a;
     let len = length(d);
     if (len < 1e-4) {
@@ -51,6 +53,7 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
     out.pos = vec4<f32>(ndc, 0.0, 1.0);
     out.local = vec2<f32>(along, across);
     out.seg_len = len;
+    out.pal_pos = points[ii + 1u].z;
     return out;
 }
 
@@ -62,9 +65,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let sigma = max(P.beam_width, 0.3);
     let falloff = exp(-(dist * dist) / (2.0 * sigma * sigma));
     let energy = P.beam_intensity / (in.seg_len + 1.0);
-    // Palette: the key sets the base position, fast beam travel moves along it.
+    // Palette: the key sets the base position and fast beam travel moves
+    // along it, or (frequency mode) the point's own pitch picks it.
     let speed = clamp(in.seg_len / 40.0, 0.0, 1.0);
-    let pal = scope_pal(P, P.palette_shift + 0.15 * P.key_pos + speed * P.speed_spread) * 1.2;
+    var t = P.palette_shift + 0.15 * P.key_pos + speed * P.speed_spread;
+    if (P.colour_mode > 0.5) {
+        t = P.palette_shift + in.pal_pos;
+    }
+    let pal = scope_pal(P, t) * 1.2;
     let col = mix(P.tint.rgb, pal, P.palette_mix);
     return vec4<f32>(col * falloff * energy, 1.0);
 }

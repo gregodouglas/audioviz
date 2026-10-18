@@ -601,9 +601,32 @@ impl Default for KaleidoParams {
     }
 }
 
+/// What picks the scope beam's palette position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ScopeColour {
+    /// The track's key sets the colour; fast beam travel moves along the palette.
+    #[default]
+    Key,
+    /// Each part of the trace takes the colour of its own pitch (zero-crossing estimate).
+    Frequency,
+}
+
+impl ScopeColour {
+    pub const ALL: [ScopeColour; 2] = [ScopeColour::Key, ScopeColour::Frequency];
+    pub fn name(self) -> &'static str {
+        match self {
+            ScopeColour::Key => "Key and speed",
+            ScopeColour::Frequency => "Frequency",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ScopeParams {
+    /// With a palette: what picks the beam's colour.
+    pub colour: ScopeColour,
     pub gain: f32,
     pub auto_gain: bool,
     pub rotation_deg: f32,
@@ -617,7 +640,7 @@ pub struct ScopeParams {
 
 impl Default for ScopeParams {
     fn default() -> Self {
-        Self { gain: 0.85, auto_gain: true, rotation_deg: 45.0, beam_width: 1.2, beam_intensity: 1.0, persistence: 0.05, beat_pulse: 0.3 }
+        Self { colour: ScopeColour::Key, gain: 0.85, auto_gain: true, rotation_deg: 45.0, beam_width: 1.2, beam_intensity: 1.0, persistence: 0.05, beat_pulse: 0.3 }
     }
 }
 

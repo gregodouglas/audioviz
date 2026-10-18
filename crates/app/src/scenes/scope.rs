@@ -5,12 +5,16 @@
 //!
 //! Beam brightness per segment is inversely proportional to its on-screen
 //! length, so a fast-moving beam is dim and a lingering one is bright.
+//!
+//! With a palette the beam's colour comes from the key and its speed, or,
+//! in frequency mode, from each point's own pitch: a zero-crossing estimate
+//! of the mid signal, mapped by octave over `F_LO`..`F_HI` (`frequency_positions`).
 
 use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, Scene, begin_pass, fullscreen_pass, hdr_texture, HDR_FORMAT};
 use crate::shaders::ShaderSet;
-use crate::settings::{Layer, VisualKind};
+use crate::settings::{Layer, ScopeColour, VisualKind};
 
 pub const MAX_POINTS: usize = 32_768;
 
@@ -23,7 +27,8 @@ pub struct ScopeParams {
     pub beam_width: f32,
     pub beam_intensity: f32,
     pub decay: f32,
-    pub _pad: f32,
+    /// 0 = key and speed pick the palette position, 1 = each point's frequency.
+    pub colour_mode: f32,
     pub tint: [f32; 4],
     pub point_count: u32,
     pub _pad2: [u32; 3],
@@ -41,6 +46,45 @@ struct Pipelines {
     beam: wgpu::RenderPipeline,
 }
 
+/// Frequency range the palette spans in frequency mode, bottom to top, by octave.
+const F_LO: f32 = 55.0;
+const F_HI: f32 = 7040.0;
+
+/// Palette position (0..1) of a frequency: by octave over `F_LO`..`F_HI`.
+fn frequency_position(f: f32) -> f32 {
+    if f <= 0.0 {
+        return 0.0;
+    }
+    ((f / F_LO).log2() / (F_HI / F_LO).log2()).clamp(0.0, 1.0)
+}
+
+/// Per-point palette positions from the trace's instantaneous frequency.
+/// The mid signal's zero-crossing intervals give half periods; the points in
+/// each interval take the smoothed frequency, so the colour settles instead
+/// of flickering between crossings. `smoothed` carries across frames and is
+/// held through silence.
+pub fn frequency_positions(points: &[[f32; 2]], sample_rate: f32, smoothed: &mut f32, out: &mut Vec<f32>) {
+    out.clear();
+    out.resize(points.len(), 0.0);
+    let mid = |p: &[f32; 2]| p[0] + p[1];
+    let mut last_cross: Option<usize> = None;
+    let mut start = 0;
+    for i in 1..points.len() {
+        let (a, b) = (mid(&points[i - 1]), mid(&points[i]));
+        if (a < 0.0) != (b < 0.0) {
+            if let Some(c) = last_cross {
+                let f = sample_rate / (2.0 * (i - c) as f32);
+                *smoothed = if *smoothed > 0.0 { *smoothed * 0.6 + f * 0.4 } else { f };
+                let pos = frequency_position(*smoothed);
+                out[start..i].fill(pos);
+                start = i;
+            }
+            last_cross = Some(i);
+        }
+    }
+    out[start..].fill(frequency_position(*smoothed));
+}
+
 pub struct Scope {
     hdr: [wgpu::TextureView; 2],
     current: usize,
@@ -52,7 +96,11 @@ pub struct Scope {
     hdr_groups: [wgpu::BindGroup; 2],
     beam_group: wgpu::BindGroup,
     pipelines: Pipelines,
-    last_point: [f32; 2],
+    /// Last frame's final point (x, y, palette position, 0), so the trace is continuous.
+    last_point: [f32; 4],
+    /// Frequency mode: the smoothed estimate carried across frames.
+    freq: f32,
+    freq_pos: Vec<f32>,
 }
 
 impl Scope {
@@ -61,7 +109,7 @@ impl Scope {
         let params_buf = scene::uniform_buffer(device, "scope params", std::mem::size_of::<ScopeParams>() as u64);
         let points_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("scope points"),
-            size: (MAX_POINTS * 8) as u64,
+            size: (MAX_POINTS * 16) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -97,7 +145,7 @@ impl Scope {
             scene::tex_group(device, &tex_layout, &[&hdr[0]], &sampler, &params_buf),
             scene::tex_group(device, &tex_layout, &[&hdr[1]], &sampler, &params_buf),
         ];
-        Ok(Self { hdr, current: 0, sampler, params_buf, points_buf, tex_layout, beam_layout, hdr_groups, beam_group, pipelines, last_point: [0.0; 2] })
+        Ok(Self { hdr, current: 0, sampler, params_buf, points_buf, tex_layout, beam_layout, hdr_groups, beam_group, pipelines, last_point: [0.0; 4], freq: 0.0, freq_pos: Vec::new() })
     }
 }
 
@@ -125,11 +173,16 @@ impl Scene for Scope {
         let gain = if s.auto_gain { s.gain * ctx.auto_gain } else { s.gain };
         let pulse = 1.0 + s.beat_pulse * f.beat_pulse * f.beat_confidence;
 
-        // Continuous trace: prepend last frame's final point.
-        let mut points = Vec::with_capacity(ctx.points.len() + 1);
+        // Continuous trace: prepend last frame's final point. Each point
+        // carries its palette position (frequency mode) in z.
+        let by_frequency = s.colour == ScopeColour::Frequency && ctx.palette.is_some();
+        if by_frequency {
+            frequency_positions(ctx.points, ctx.sample_rate as f32, &mut self.freq, &mut self.freq_pos);
+        }
+        let mut points: Vec<[f32; 4]> = Vec::with_capacity(ctx.points.len() + 1);
         points.push(self.last_point);
-        points.extend_from_slice(ctx.points);
-        if let Some(p) = ctx.points.last() {
+        points.extend(ctx.points.iter().enumerate().map(|(i, p)| [p[0], p[1], if by_frequency { self.freq_pos[i] } else { 0.0 }, 0.0]));
+        if let Some(p) = points.last() {
             self.last_point = *p;
         }
         let n = points.len().min(MAX_POINTS);
@@ -141,7 +194,7 @@ impl Scene for Scope {
             beam_width: s.beam_width,
             beam_intensity: s.beam_intensity * pulse,
             decay: s.persistence.max(1e-6).powf(ctx.dt),
-            _pad: 0.0,
+            colour_mode: by_frequency as u32 as f32,
             tint: [ctx.tint[0], ctx.tint[1], ctx.tint[2], 1.0],
             point_count: n as u32,
             _pad2: [0; 3],
@@ -175,7 +228,7 @@ impl Scene for Scope {
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         let s = &mut layer.scope;
         let d = crate::settings::ScopeParams::default();
-        use crate::widgets::{ghost_button, group, slider_def, toggle_row};
+        use crate::widgets::{ghost_button, group, hint, segmented, slider_def, small_caps, toggle_row};
         group(ui, "scope.beam", "Beam", true, 4, |ui| {
             slider_def(ui, "Gain", &mut s.gain, Some(d.gain), 0.05..=3.0, |v| format!("{v:.2}"), true);
             toggle_row(ui, "Auto gain", &mut s.auto_gain);
@@ -186,6 +239,14 @@ impl Scene for Scope {
             slider_def(ui, "Rotation", &mut s.rotation_deg, Some(d.rotation_deg), -180.0..=180.0, |v| format!("{v:.0}°"), false);
             slider_def(ui, "Persistence", &mut s.persistence, Some(d.persistence), 0.0001..=0.9, |v| format!("{v:.3} /s"), true);
             slider_def(ui, "Beat pulse", &mut s.beat_pulse, Some(d.beat_pulse), 0.0..=1.0, |v| format!("{v:.2}"), false);
+        });
+        group(ui, "scope.colour", "Colour", true, 1, |ui| {
+            small_caps(ui, "Palette by");
+            let names: Vec<&str> = ScopeColour::ALL.iter().map(|c| c.name()).collect();
+            if let Some(i) = segmented(ui, &names, ScopeColour::ALL.iter().position(|c| *c == s.colour).unwrap_or(0)) {
+                s.colour = ScopeColour::ALL[i];
+            }
+            hint(ui, "With a palette (Colour tab): the key picks the colour and fast travel moves along it, or each part of the trace takes the colour of its own pitch, bass at the start of the palette and treble at the end.");
         });
         ui.add_space(6.0);
         if ghost_button(ui, "Reset scope", false).clicked() {
@@ -203,4 +264,32 @@ fn build(device: &wgpu::Device, shaders: &ShaderSet, tex_layout: &wgpu::BindGrou
             beam: scene::pipeline(device, "scope beam", beam_layout, &beam, HDR_FORMAT, Some(scene::ADDITIVE)),
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frequency_positions_follow_a_sine() {
+        let sr = 48_000.0;
+        let pts: Vec<[f32; 2]> = (0..4800).map(|i| { let v = (i as f32 / sr * 440.0 * std::f32::consts::TAU).sin(); [v, v] }).collect();
+        let mut f = 0.0;
+        let mut out = Vec::new();
+        frequency_positions(&pts, sr, &mut f, &mut out);
+        assert_eq!(out.len(), pts.len());
+        assert!((f - 440.0).abs() < 5.0, "smoothed {f}");
+        let want = frequency_position(440.0);
+        assert!((out[2400] - want).abs() < 0.02, "{} vs {want}", out[2400]);
+        assert!((want - 3.0 / 7.0).abs() < 1e-3, "three octaves above 55 Hz over seven");
+    }
+
+    #[test]
+    fn frequency_positions_hold_through_silence() {
+        let mut f = 1000.0;
+        let mut out = Vec::new();
+        frequency_positions(&[[0.0; 2]; 100], 48_000.0, &mut f, &mut out);
+        assert_eq!(f, 1000.0);
+        assert!(out.iter().all(|&p| (p - frequency_position(1000.0)).abs() < 1e-6));
+    }
 }

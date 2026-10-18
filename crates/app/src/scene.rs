@@ -16,6 +16,8 @@ pub struct FrameCtx<'a> {
     pub tint: [f32; 3],
     pub dt: f32,
     pub time: f32,
+    /// Sample rate of `points`, Hz.
+    pub sample_rate: u32,
     pub width: u32,
     pub height: u32,
     /// (L, R) samples since the last frame, newest last (band-passed for the layer).

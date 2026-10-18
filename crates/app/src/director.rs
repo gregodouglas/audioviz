@@ -803,7 +803,7 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
     }
     let pal_active = layer.palette.active();
     let (pal_table, pal_shift, pal_amount) = (&slot.palette.table, slot.palette.shift, if pal_active { layer.palette.amount } else { 0.0 });
-    let ctx = FrameCtx { features: feats, tint: slot.tint, dt, time, width: fr.width, height: fr.height, points: pts, auto_gain: fr.auto_gain, art: fr.art_image, art_id: fr.art_id, photos_folder: fr.photos_folder, palette: pal_active.then_some(pal_table), palette_shift: pal_shift, palette_amount: pal_amount };
+    let ctx = FrameCtx { features: feats, tint: slot.tint, dt, time, sample_rate: fr.sample_rate, width: fr.width, height: fr.height, points: pts, auto_gain: fr.auto_gain, art: fr.art_image, art_id: fr.art_id, photos_folder: fr.photos_folder, palette: pal_active.then_some(pal_table), palette_shift: pal_shift, palette_amount: pal_amount };
     visual.render(queue, encoder, &ctx, layer);
     queue.write_buffer(&slot.buf, 0, bytemuck::bytes_of(&LayerParams { opacity: level, dt, flags: fr.level as u32 | if first { 2 } else { 0 }, blend: layer.blend as u32 }));
 

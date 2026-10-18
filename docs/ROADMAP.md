@@ -24,7 +24,7 @@ eleaseudioviz.exe` or builds the installer himself when he wants one. A tagged 
 - ~~Director that fades layers~~ **done 2026-10-18**: per-slot eased opacity ramps, a replaced visual fades out under its successor, the auto director staggers the slots bottom first (`docs/phase6-ui.md` log).
 - **Sigil second pass** after Greg's look: drip tuning, the centre, and whatever the hand test turns up. Candidates kept ready in the code: cardinal triangles per level, more polygram types, a music-written trace (last struck pitch classes instead of a seeded path).
 - ~~More colour plumbing~~ **done 2026-10-18**: the edge modifier colours by Picture, Tint or Palette (direction-mapped); every modifier has its own "Reacts to" band (default: the layer's). A blend-mode per modifier is *not* planned (Mix covers it).
-- **Scope**: beam colour by instantaneous frequency (a cheap zero-crossing estimate on the CPU) as an option beside key + speed.
+- ~~Scope beam colour by instantaneous frequency~~ **done 2026-10-18**: "Palette by: Frequency" on the scope, a zero-crossing estimate per point mapped by octave; Key and speed stays the default.
 - **Microphone source** ("listen to the room") for setups where the music does not play on the PC. Not needed for Greg's room (Sonos on the TV's HDMI); worth doing before anyone else uses casting.
 - **Performance pass on the release build**: all numbers so far are debug builds at 1440x2560; measure release, and the cost of three layers each with six modifiers, before 0.2.0 ships.
 

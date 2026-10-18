@@ -62,5 +62,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let sigma = max(P.beam_width, 0.3);
     let falloff = exp(-(dist * dist) / (2.0 * sigma * sigma));
     let energy = P.beam_intensity / (in.seg_len + 1.0);
-    return vec4<f32>(P.tint.rgb * falloff * energy, 1.0);
+    // Palette: the key sets the base position, fast beam travel moves along it.
+    let speed = clamp(in.seg_len / 40.0, 0.0, 1.0);
+    let pal = scope_pal(P, P.palette_shift + 0.15 * P.key_pos + speed * P.speed_spread) * 1.2;
+    let col = mix(P.tint.rgb, pal, P.palette_mix);
+    return vec4<f32>(col * falloff * energy, 1.0);
 }

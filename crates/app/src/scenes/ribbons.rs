@@ -41,7 +41,8 @@ pub struct RibbonParams {
     pub lifetime: f32,
     pub palette_mix: f32,
     pub palette_shift: f32,
-    pub _pp: [f32; 2],
+    pub spread: f32,
+    pub _pp: f32,
     pub palette: crate::color::Table,
 }
 
@@ -204,7 +205,8 @@ impl Scene for Ribbons {
             lifetime: 5.0,
             palette_mix: ctx.palette_amount,
             palette_shift: ctx.palette_shift,
-            _pp: [0.0; 2],
+            spread: s.spread,
+            _pp: 0.0,
             palette: ctx.palette.copied().unwrap_or([[0.0; 4]; crate::color::ENTRIES]),
         };
         queue.write_buffer(&self.params_buf, 0, bytemuck::bytes_of(&params));
@@ -248,7 +250,8 @@ impl Scene for Ribbons {
             slider_def(ui, "Intensity", &mut s.intensity, Some(d.intensity), 0.05..=10.0, |v| format!("{v:.2}"), true);
             slider_def(ui, "Persistence", &mut s.persistence, Some(d.persistence), 0.0001..=0.95, |v| format!("{v:.3} /s"), true);
             slider_def(ui, "Saturation", &mut s.saturation, Some(d.saturation), 0.0..=1.0, |v| format!("{v:.2}"), false);
-            hint(ui, "Colours: pitch class on a circle of fifths, pulled toward the key, or the layer palette when one is set.");
+            slider_def(ui, "Colour spread", &mut s.spread, Some(d.spread), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Without a palette: pitch class on a circle of fifths, pulled toward the key. With one: the chord sits around the palette's current position, spread this far; cycling moves it.");
         });
         ui.add_space(6.0);
         if ghost_button(ui, "Reset ribbons", false).clicked() {

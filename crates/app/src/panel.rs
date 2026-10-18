@@ -12,7 +12,7 @@ use crate::overlays::CalibrationView;
 use crate::scene::Scene;
 use crate::scene_store::SceneDef;
 use crate::color;
-use crate::settings::{AudioBand, ChromaSplit, Edge, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, ImageSource, LayerTab, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
+use crate::settings::{AudioBand, ChromaSplit, Edge, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
 use crate::widgets::{self, chip, dropdown, ghost_button, group, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
@@ -583,11 +583,12 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             slider_def(ui, "Afterglow", &mut k.afterglow_gain, Some(d.afterglow_gain), 0.0..=2.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Afterglow release", &mut k.afterglow_s, Some(d.afterglow_s), 0.5..=20.0, |v| format!("{v:.1} s"), true);
             slider_def(ui, "Afterglow hue", &mut k.hue_shift, Some(d.hue_shift), -180.0..=180.0, |v| format!("{v:.0}°"), false);
+            toggle_row(ui, "Glow in the picture's colours", &mut k.own_colour);
             slider_def(ui, "UV saturation", &mut k.uv, Some(d.uv), 0.0..=2.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Excite on onsets", &mut k.excite, Some(d.excite), 0.0..=4.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Sparkle", &mut k.sparkle, Some(d.sparkle), 0.0..=3.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
-            hint(ui, "A dual phosphor: the picture flashes in its own colour and leaves a long afterglow in a shifted hue; charged areas sparkle on transients like plankton.");
+            hint(ui, "A dual phosphor: the picture flashes and leaves a long afterglow in a shifted hue; charged areas sparkle on transients like plankton. In the picture's colours a palette carries straight through; off, it glows in the layer tint.");
         }
         Modifier::Grade(k) => {
             let d = Grade::default();
@@ -867,6 +868,16 @@ fn picture_section(ui: &mut egui::Ui, settings: &mut Settings) {
     slider_def(ui, "Bloom", &mut p.bloom, Some(d.bloom), 0.0..=3.0, |v| format!("{v:.2}"), false);
     slider_def(ui, "Grain", &mut p.grain, Some(d.grain), 0.0..=1.0, |v| format!("{v:.2}"), false);
     ui.add_space(8.0);
+    small_caps(ui, "Look");
+    if let Some(i) = segmented(ui, &["film", "neon"], (p.look == Look::Neon) as usize) {
+        p.look = if i == 1 { Look::Neon } else { Look::Film };
+    }
+    slider_def(ui, "Saturation", &mut p.saturation, Some(d.saturation), 0.0..=2.0, |v| format!("{v:.2}"), false);
+    hint(ui, match p.look {
+        Look::Film => "Film: bright colours roll off toward white, like a camera.",
+        Look::Neon => "Neon: hue and saturation survive brightness; only the hottest cores whiten, like a tube.",
+    });
+    ui.add_space(8.0);
     small_caps(ui, "Scene tint");
     ui.horizontal(|ui| {
         ui.color_edit_button_rgb(&mut settings.tint);
@@ -986,7 +997,7 @@ fn display_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, a:
     toggle_row(ui, "Start fullscreen on it", &mut settings.start_fullscreen);
 
     ui.add_space(8.0);
-    small_caps(ui, "Cast to a TV");
+    small_caps(ui, "Cast to a TV · experimental");
     match &stats.cast {
         None => {
             if ghost_button(ui, "Cast to a TV…", false).clicked() {

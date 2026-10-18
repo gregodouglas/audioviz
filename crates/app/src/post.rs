@@ -26,6 +26,11 @@ pub struct PostParams {
     /// limited. Only read when `flags` bit1 is set.
     pub flash_rise: f32,
     pub _pad: u32,
+    /// Saturation before the tonemapper.
+    pub saturation: f32,
+    /// 0 = film (AgX), 1 = neon (hue-preserving).
+    pub look: u32,
+    pub _pad1: [u32; 2],
 }
 
 struct Pipelines {
@@ -159,7 +164,8 @@ mod tests {
     /// these are the offsets the WGSL side relies on.
     #[test]
     fn post_params_layout() {
-        assert_eq!(size_of::<PostParams>(), 32);
+        assert_eq!(size_of::<PostParams>(), 48);
+        assert_eq!(offset_of!(PostParams, saturation), 32);
         assert_eq!(size_of::<PostParams>() % 16, 0);
         assert_eq!(offset_of!(PostParams, exposure), 0);
         assert_eq!(offset_of!(PostParams, bloom), 4);

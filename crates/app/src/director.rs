@@ -320,13 +320,21 @@ fn mod_params(m: &Modifier, st: &mut ModState, f: &FeatureFrame, tint: [f32; 3],
             p.p2 = [k.falloff.clamp(0.1, 1.0), 0.0, 0.0, 0.0];
         }
         Modifier::Lumi(k) => {
-            let fresh = tint;
-            let faded = hue_rotate(tint, k.hue_shift);
             p.p0 = [k.fresh_s.max(0.02), k.afterglow_s.max(0.1), k.fresh_gain, k.afterglow_gain];
-            p.p1 = [fresh[0], fresh[1], fresh[2], k.excite * k.react];
-            p.p2 = [faded[0], faded[1], faded[2], k.sparkle * k.react];
+            if k.own_colour {
+                // The shader glows in the picture's remembered colour and turns
+                // the afterglow by this angle (cos, sin) in YIQ.
+                let a = k.hue_shift.to_radians();
+                p.p1 = [a.cos(), a.sin(), 0.0, k.excite * k.react];
+                p.p2 = [0.0, 0.0, 0.0, k.sparkle * k.react];
+            } else {
+                let fresh = tint;
+                let faded = hue_rotate(tint, k.hue_shift);
+                p.p1 = [fresh[0], fresh[1], fresh[2], k.excite * k.react];
+                p.p2 = [faded[0], faded[1], faded[2], k.sparkle * k.react];
+            }
             // Charge rate keeps the slow pool's steady state near the picture's own level.
-            p.p3 = [k.uv, onset, 1.0 / k.afterglow_s.max(0.1), 0.0];
+            p.p3 = [k.uv, onset, 1.0 / k.afterglow_s.max(0.1), k.own_colour as u32 as f32];
         }
         Modifier::Grade(k) => {
             // p0.z (shift) is filled in by the caller from the layer's palette state.

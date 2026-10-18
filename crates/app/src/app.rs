@@ -668,7 +668,7 @@ impl Running {
         if self.settings.reduce_flashing {
             flags |= 2;
         }
-        self.post.render(&self.gpu.queue, &mut encoder, &view, PostParams { exposure: post.exposure, bloom: post.bloom, grain: post.grain, time, dt, flags, flash_rise: self.settings.flash_rise, ..Default::default() });
+        self.post.render(&self.gpu.queue, &mut encoder, &view, PostParams { exposure: post.exposure, bloom: post.bloom, grain: post.grain, time, dt, flags, flash_rise: self.settings.flash_rise, saturation: post.saturation, look: (post.look == crate::settings::Look::Neon) as u32, ..Default::default() });
 
         // --- egui: overlays, chrome, strip, panel ---
         let fullscreen = self.gpu.window.fullscreen().is_some();

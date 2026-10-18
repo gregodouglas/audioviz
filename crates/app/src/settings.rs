@@ -278,8 +278,11 @@ pub struct Luminescence {
     pub afterglow_s: f32,
     pub fresh_gain: f32,
     pub afterglow_gain: f32,
-    /// Afterglow hue, degrees away from the layer tint.
+    /// Afterglow hue, degrees away from the glow colour.
     pub hue_shift: f32,
+    /// Glow in the picture's own colours (so a palette carries through)
+    /// instead of the layer tint.
+    pub own_colour: bool,
     /// Extra excitation on onsets.
     pub excite: f32,
     /// Fluorescent saturation of the excited picture.
@@ -290,7 +293,7 @@ pub struct Luminescence {
 
 impl Default for Luminescence {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, fresh_s: 0.35, afterglow_s: 4.0, fresh_gain: 0.6, afterglow_gain: 0.5, hue_shift: -140.0, excite: 1.5, uv: 0.6, sparkle: 1.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, fresh_s: 0.35, afterglow_s: 4.0, fresh_gain: 0.6, afterglow_gain: 0.5, hue_shift: -140.0, own_colour: true, excite: 1.5, uv: 0.6, sparkle: 1.0, react: 1.0 }
     }
 }
 
@@ -541,11 +544,14 @@ pub struct RibbonsParams {
     pub persistence: f32,
     pub saturation: f32,
     pub count: u32,
+    /// With a palette: how far a chord spreads around the current position
+    /// (0 = one colour at a time, 1 = the whole palette at once).
+    pub spread: f32,
 }
 
 impl Default for RibbonsParams {
     fn default() -> Self {
-        Self { speed: 0.3, scale: 1.5, curl: 1.0, vortex: 1.0, width: 1.0, intensity: 1.0, persistence: 0.3, saturation: 0.45, count: 12_000 }
+        Self { speed: 0.3, scale: 1.5, curl: 1.0, vortex: 1.0, width: 1.0, intensity: 1.0, persistence: 0.3, saturation: 0.45, count: 12_000, spread: 0.3 }
     }
 }
 
@@ -765,12 +771,25 @@ pub struct PostSettings {
     pub auto_exposure: bool,
     pub bloom: f32,
     pub grain: f32,
+    /// Tonemapper: film (AgX, bright colours roll to white) or neon (hue kept,
+    /// only brightness compresses, so saturated colours stay saturated).
+    pub look: Look,
+    /// Colour saturation before the tonemapper (1 = as rendered).
+    pub saturation: f32,
 }
 
 impl Default for PostSettings {
     fn default() -> Self {
-        Self { exposure: 1.0, auto_exposure: true, bloom: 0.3, grain: 0.15 }
+        Self { exposure: 1.0, auto_exposure: true, bloom: 0.3, grain: 0.15, look: Look::Film, saturation: 1.0 }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Look {
+    #[default]
+    Film,
+    Neon,
 }
 
 /// Panel sections, in rail order.

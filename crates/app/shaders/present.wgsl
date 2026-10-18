@@ -56,7 +56,19 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
     // here is a capped rise on screen.
     let expo = textureSampleLevel(expo_tex, samp, vec2<f32>(0.5), 0.0);
     var col = (hdr + bloom * P.bloom) * P.exposure * expo.r * expo.b;
-    col = agx_eotf(agx(col));
+    let lum = dot(col, vec3<f32>(0.2126, 0.7152, 0.0722));
+    col = max(mix(vec3<f32>(lum), col, P.saturation), vec3<f32>(0.0));
+    if (P.look == 1u) {
+        // Neon: compress brightness through the same curve but on the brightest
+        // channel only, so hue and saturation survive; only very hot cores
+        // whiten, the way a tube's centre does.
+        let m = max(col.r, max(col.g, col.b));
+        let t = agx_eotf(agx(vec3<f32>(m))).x;
+        let kept = col * (t / max(m, 1e-5));
+        col = mix(kept, vec3<f32>(t), 0.7 * smoothstep(6.0, 40.0, m));
+    } else {
+        col = agx_eotf(agx(col));
+    }
 
     let d = in.uv - 0.5;
     col *= 1.0 - 0.35 * dot(d, d) * 2.0;

@@ -27,6 +27,13 @@ pub struct ScopeParams {
     pub tint: [f32; 4],
     pub point_count: u32,
     pub _pad2: [u32; 3],
+    /// Palette: how far to take it, its shift, the key's position, and how
+    /// much beam speed moves along it.
+    pub palette_mix: f32,
+    pub palette_shift: f32,
+    pub key_pos: f32,
+    pub speed_spread: f32,
+    pub palette: crate::color::Table,
 }
 
 struct Pipelines {
@@ -138,6 +145,11 @@ impl Scene for Scope {
             tint: [ctx.tint[0], ctx.tint[1], ctx.tint[2], 1.0],
             point_count: n as u32,
             _pad2: [0; 3],
+            palette_mix: ctx.palette_amount,
+            palette_shift: ctx.palette_shift,
+            key_pos: audioviz_analysis::chroma::pitch_class_hue(f.key_class),
+            speed_spread: 0.35,
+            palette: ctx.palette.copied().unwrap_or([[0.0; 4]; crate::color::ENTRIES]),
         };
         queue.write_buffer(&self.params_buf, 0, bytemuck::bytes_of(&params));
         if n > 0 {

@@ -161,6 +161,7 @@ pub fn builtin() -> Vec<SceneDef> {
         |s| {
             s.tint = [0.55, 0.35, 1.0];
             s.post.bloom = 0.16;
+            s.post.look = crate::settings::Look::Neon;
         },
     ));
     v

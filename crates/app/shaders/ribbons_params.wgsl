@@ -28,7 +28,7 @@ struct RibbonParams {
     lifetime: f32,
     palette_mix: f32,
     palette_shift: f32,
-    _pp0: f32,
+    spread: f32,          // palette: how far a chord spreads around the shift
     _pp1: f32,
     palette: array<vec4<f32>, 32>,
 };

@@ -42,6 +42,10 @@ struct PostParams {
     flags: u32,       // bit0 (1): auto exposure, bit1 (2): reduce flashing
     flash_rise: f32,  // reduce flashing: max brightness rise factor per second is 1 + flash_rise
     _pad0: u32,
+    saturation: f32,  // before the tonemapper, 1 = as rendered
+    look: u32,        // 0 film (AgX), 1 neon (hue-preserving)
+    _pad1a: u32,
+    _pad1b: u32,
 };
 
 // Layer compositor / meter params (director.rs::LayerParams).

@@ -53,9 +53,12 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
     let hue = fract(mix(P.key_hue, class_hue, 0.6));
     let fade = smoothstep(0.0, 0.6, part.age) * (1.0 - smoothstep(part.life - 1.0, part.life, part.age));
     let own = mix(P.tint.rgb, hsv2rgb(hue, P.saturation, 1.0), 0.85);
-    // Palette: each particle takes the colour at its hue position (so a
-    // chord spreads across the palette), shifted with the music.
-    let pal = ribbon_pal(P, class_hue + part.seed * 0.08 + P.palette_shift) * 1.3;
+    // Palette: the chord sits around the palette's moving position; each
+    // class is offset by its distance from the key (circle of fifths), scaled
+    // by the spread, so a chord is a few neighbouring colours, not confetti.
+    var off = class_hue - P.key_hue;
+    off = off - round(off);
+    let pal = ribbon_pal(P, P.palette_shift + off * P.spread + (part.seed - 0.5) * 0.04 * P.spread) * 1.3;
     let col = mix(own, pal, P.palette_mix) * fade;
 
     var out: VsOut;

@@ -679,6 +679,33 @@ impl Default for LayerTint {
     }
 }
 
+/// Layer blend mode. Add is order-free; the others let a higher layer
+/// cover, lighten or mask what is beneath it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Blend {
+    #[default]
+    Add,
+    /// Bright parts cover what is below (brightness is the coverage).
+    Over,
+    /// Lightens what is below without blowing out.
+    Screen,
+    /// Masks what is below: dark parts of this layer darken it.
+    Multiply,
+}
+
+impl Blend {
+    pub const ALL: [Blend; 4] = [Blend::Add, Blend::Over, Blend::Screen, Blend::Multiply];
+    pub fn name(self) -> &'static str {
+        match self {
+            Blend::Add => "add",
+            Blend::Over => "over",
+            Blend::Screen => "screen",
+            Blend::Multiply => "multiply",
+        }
+    }
+}
+
 /// Which part of the spectrum a layer reacts to.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -720,6 +747,8 @@ pub struct Layer {
     pub enabled: bool,
     /// 0 = off, 1 = as rendered, up to 2 = boosted.
     pub opacity: f32,
+    /// How this layer meets the ones below it (layer 1 is on top).
+    pub blend: Blend,
     pub band: AudioBand,
     pub tint: LayerTint,
     /// Colour palette the visual and the palette modifier draw from.
@@ -738,7 +767,7 @@ pub struct Layer {
 
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default() }
+        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default() }
     }
 }
 

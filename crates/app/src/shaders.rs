@@ -25,6 +25,7 @@ shader_table!(
     "present.wgsl",
     "mix.wgsl",
     "layer.wgsl",
+    "layer_blend.wgsl",
     "layer_down.wgsl",
     "layer_meter.wgsl",
     "fold.wgsl",

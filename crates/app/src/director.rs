@@ -27,9 +27,10 @@ use crate::shaders::ShaderSet;
 struct LayerParams {
     opacity: f32,
     dt: f32,
-    /// bit0: apply the layer's levelling gain.
+    /// bit0: apply the layer's levelling gain; bit1: first layer (meets black).
     flags: u32,
-    _pad: f32,
+    /// `settings::Blend` as u32.
+    blend: u32,
 }
 
 /// Per-layer meter state: a 1/8 downsample and a ping-ponged 1x1 gain texture.
@@ -160,7 +161,7 @@ fn hue_rotate(c: [f32; 3], deg: f32) -> [f32; 3] {
 }
 
 struct LayerPipelines {
-    add: wgpu::RenderPipeline,
+    blend: wgpu::RenderPipeline,
     copy: wgpu::RenderPipeline,
     down: wgpu::RenderPipeline,
     meter: wgpu::RenderPipeline,
@@ -200,6 +201,9 @@ pub struct Director {
     mix_buf: wgpu::Buffer,
     one_buf: wgpu::Buffer,
     composite: wgpu::TextureView,
+    /// The other half of the composite ping-pong (blend passes read one, write the other).
+    composite_b: wgpu::TextureView,
+    blend_layout: wgpu::BindGroupLayout,
     prev: wgpu::TextureView,
     width: u32,
     height: u32,
@@ -358,7 +362,8 @@ impl Director {
     pub fn new(device: &wgpu::Device, shaders: &ShaderSet, width: u32, height: u32, settings: &Settings) -> Result<Self, String> {
         let sampler = scene::linear_sampler(device);
         let layer_layout = scene::tex_layout(device, "layer", 1);
-        let layer_pipelines = build_layer(device, shaders, &layer_layout)?;
+        let blend_layout = scene::tex_layout(device, "layer blend", 2);
+        let layer_pipelines = build_layer(device, shaders, &layer_layout, &blend_layout)?;
         let mix_layout = scene::tex_layout(device, "mix", 1);
         let mix_pipeline = build_mix(device, shaders, &mix_layout)?;
         let mix_buf = scene::uniform_buffer(device, "mix params", std::mem::size_of::<MixParams>() as u64);
@@ -402,6 +407,8 @@ impl Director {
             mix_buf,
             one_buf,
             composite: hdr_texture(device, "composite", width, height),
+            composite_b: hdr_texture(device, "composite b", width, height),
+            blend_layout,
             prev: hdr_texture(device, "composite prev", width, height),
             width,
             height,
@@ -525,6 +532,7 @@ impl Director {
             s.resize(device, width, height);
         }
         self.composite = hdr_texture(device, "composite", width, height);
+        self.composite_b = hdr_texture(device, "composite b", width, height);
         self.prev = hdr_texture(device, "composite prev", width, height);
         for (i, m) in self.meters.iter_mut().enumerate() {
             m.down = hdr_texture(device, &format!("layer {i} down"), width / 8, height / 8);
@@ -537,7 +545,7 @@ impl Director {
 
     pub fn reload_shaders(&mut self, device: &wgpu::Device, shaders: &ShaderSet) {
         let mut errors = Vec::new();
-        match build_layer(device, shaders, &self.layer_layout) {
+        match build_layer(device, shaders, &self.layer_layout, &self.blend_layout) {
             Ok(p) => self.layer_pipelines = p,
             Err(e) => errors.push(format!("layer: {e}")),
         }
@@ -559,7 +567,7 @@ impl Director {
     /// Render every enabled layer and composite into `target`.
     #[allow(clippy::too_many_arguments)]
     pub fn render(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, settings: &Settings, features: &FeatureFrame, points: &[[f32; 2]], sample_rate: u32, tint: [f32; 3], art: Option<[f32; 3]>, art_image: Option<&ArtImage>, art_id: u64, dt: f32, time: f32, auto_gain: f32, target: &wgpu::TextureView) {
-        queue.write_buffer(&self.one_buf, 0, bytemuck::bytes_of(&LayerParams { opacity: 1.0, dt, flags: 0, _pad: 0.0 }));
+        queue.write_buffer(&self.one_buf, 0, bytemuck::bytes_of(&LayerParams { opacity: 1.0, dt, flags: 0, blend: 0 }));
         // Levelling: with auto exposure on, each layer is brought to its own
         // dark-field mean before mixing, so opacity is the mix ratio and a dim
         // layer is not lost under a bright one.
@@ -571,12 +579,20 @@ impl Director {
             self.dissolve = Some((0.0, secs));
         }
 
-        let mut first = true;
-        for i in 0..MAX_LAYERS.min(self.layers.len()) {
+        // Layers meet the composite bottom to top, so slot 1 ends on top. The
+        // composite ping-pongs between two textures; the last pass lands in
+        // `composite`.
+        let active: Vec<usize> = (0..MAX_LAYERS.min(self.layers.len()))
+            .rev()
+            .filter(|&i| {
+                let l = settings.layer(i);
+                l.enabled && l.opacity > 0.0 && !settings.solo.is_some_and(|k| k != i)
+            })
+            .collect();
+        let n_active = active.len();
+        for (pass, &i) in active.iter().enumerate() {
             let layer = settings.layer(i);
-            if !layer.enabled || layer.opacity <= 0.0 || settings.solo.is_some_and(|k| k != i) {
-                continue;
-            }
+            let first = pass == 0;
             let band = layer.band;
             let filtered_features;
             let feats: &FeatureFrame = if band.enabled {
@@ -623,7 +639,7 @@ impl Director {
             let (pal_table, pal_shift, pal_amount) = (&self.palettes[i].table, self.palettes[i].shift, if pal_active { layer.palette.amount } else { 0.0 });
             let ctx = FrameCtx { features: feats, tint: self.tints[i], dt, time, width: self.width, height: self.height, points: pts, auto_gain, art: art_image, art_id, photos_folder: &settings.photos_folder, palette: pal_active.then_some(pal_table), palette_shift: pal_shift, palette_amount: pal_amount };
             self.layers[i].render(queue, encoder, &ctx, &layer);
-            queue.write_buffer(&self.layer_bufs[i], 0, bytemuck::bytes_of(&LayerParams { opacity: layer.opacity, dt, flags: level as u32, _pad: 0.0 }));
+            queue.write_buffer(&self.layer_bufs[i], 0, bytemuck::bytes_of(&LayerParams { opacity: layer.opacity, dt, flags: level as u32 | if first { 2 } else { 0 }, blend: layer.blend as u32 }));
 
             // Modifier chain: advance every slot's state and write its uniform
             // first (mutable), then run the passes (immutable borrows only).
@@ -690,18 +706,17 @@ impl Director {
                 let g = scene::tex_group(device, &self.layer_layout, &[&m.down, &m.state[prev_s]], &self.sampler, &self.layer_bufs[i]);
                 fullscreen_pass(encoder, "layer meter", &m.state[cur_s], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.layer_pipelines.meter, &g);
             }
-            let group = scene::tex_group(device, &self.layer_layout, &[out, &m.state[cur_s]], &self.sampler, &self.layer_bufs[i]);
-            let load = if first { wgpu::LoadOp::Clear(wgpu::Color::BLACK) } else { wgpu::LoadOp::Load };
-            fullscreen_pass(encoder, "layer", &self.composite, load, &self.layer_pipelines.add, &group);
+            let (dst_read, dst_write) = if (n_active - 1 - pass) % 2 == 0 { (&self.composite_b, &self.composite) } else { (&self.composite, &self.composite_b) };
+            let group = scene::tex_group(device, &self.blend_layout, &[out, &m.state[cur_s], dst_read], &self.sampler, &self.layer_bufs[i]);
+            fullscreen_pass(encoder, "layer", dst_write, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.layer_pipelines.blend, &group);
             if level {
                 self.meters[i].cur = cur_s;
             }
             if hist_flip {
                 self.chains[i].hist_cur = 1 - self.chains[i].hist_cur;
             }
-            first = false;
         }
-        if first {
+        if n_active == 0 {
             scene::clear_pass(encoder, "layers (none)", &self.composite);
         }
 
@@ -747,13 +762,14 @@ fn build_mods(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGro
     })
 }
 
-fn build_layer(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Result<LayerPipelines, String> {
+fn build_layer(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout, blend_layout: &wgpu::BindGroupLayout) -> Result<LayerPipelines, String> {
     scene::guarded(device, || {
         let m = scene::shader(device, shaders, "layer.wgsl");
+        let b = scene::shader(device, shaders, "layer_blend.wgsl");
         let d = scene::shader(device, shaders, "layer_down.wgsl");
         let g = scene::shader(device, shaders, "layer_meter.wgsl");
         LayerPipelines {
-            add: scene::pipeline(device, "layer add", layout, &m, HDR_FORMAT, Some(scene::ADDITIVE)),
+            blend: scene::pipeline(device, "layer blend", blend_layout, &b, HDR_FORMAT, None),
             copy: scene::pipeline(device, "layer copy", layout, &m, HDR_FORMAT, None),
             down: scene::pipeline(device, "layer down", layout, &d, HDR_FORMAT, None),
             meter: scene::pipeline(device, "layer meter", layout, &g, HDR_FORMAT, None),

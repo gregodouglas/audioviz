@@ -12,7 +12,7 @@ use crate::overlays::CalibrationView;
 use crate::scene::Scene;
 use crate::scene_store::SceneDef;
 use crate::color;
-use crate::settings::{AudioBand, ChromaSplit, Edge, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
+use crate::settings::{AudioBand, Blend, ChromaSplit, Edge, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
 use crate::widgets::{self, chip, dropdown, ghost_button, group, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
@@ -620,6 +620,8 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
     if section_header(ui, "Layers", None, Some("Hide UI (H)")) {
         a.hide_ui = true;
     }
+    hint(ui, "1 is on top. Each layer meets the ones below by its blend (Visual tab): add is order-free, over covers, screen lightens, multiply masks.");
+    ui.add_space(4.0);
     let editing = settings.editing.min(MAX_LAYERS - 1);
     if state.mod_layer != editing {
         state.mod_layer = editing;
@@ -798,6 +800,16 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, layers: &mut [Box<dyn 
     if l.band.enabled {
         hint(ui, "The scope draws only this band of the waveform; other visuals take their energy, onsets and spectrum from it.");
     }
+    let blends: Vec<&str> = Blend::ALL.iter().map(|b| b.name()).collect();
+    if let Some(i) = dropdown(ui, "Blend", &blends, Blend::ALL.iter().position(|b| *b == l.blend)) {
+        l.blend = Blend::ALL[i];
+    }
+    hint(ui, match l.blend {
+        Blend::Add => "Add: light sums with the layers below; order does not matter.",
+        Blend::Over => "Over: this layer's bright parts cover the layers below it (1 is on top).",
+        Blend::Screen => "Screen: lightens the layers below without blowing out.",
+        Blend::Multiply => "Multiply: masks the layers below; its dark parts darken them.",
+    });
     ui.add_space(8.0);
     let kind = l.visual;
     if let Some(scene) = layers.get_mut(editing) {

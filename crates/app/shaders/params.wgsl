@@ -52,8 +52,8 @@ struct PostParams {
 struct LayerParams {
     opacity: f32,
     dt: f32,
-    flags: u32,       // bit0 (1): apply the layer's levelling gain
-    _pad0: f32,
+    flags: u32,       // bit0 (1): apply the layer's levelling gain; bit1 (2): first layer (nothing beneath)
+    blend: u32,       // 0 add, 1 over, 2 screen, 3 multiply
 };
 
 // Layer modifier params (director.rs::ModParams, 80 bytes). Each modifier

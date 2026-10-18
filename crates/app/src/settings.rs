@@ -418,13 +418,14 @@ pub enum Modifier {
     Lumi(Luminescence),
     Grade(Grade),
     Halftone(Halftone),
+    Warp(Warp),
 }
 
 pub const MAX_MODS: usize = 6;
 
 impl Modifier {
     /// Every kind with a constructor, in the order the panel offers them.
-    pub const KINDS: [(&'static str, fn() -> Modifier); 11] = [
+    pub const KINDS: [(&'static str, fn() -> Modifier); 12] = [
         ("Palette", || Modifier::Grade(Grade::default())),
         ("Kaleidoscope", || Modifier::Fold(Fold::default())),
         ("Fractal", || Modifier::Fractal(Fractal::default())),
@@ -436,6 +437,7 @@ impl Modifier {
         ("Chroma split", || Modifier::Chroma(ChromaSplit::default())),
         ("Mask", || Modifier::Mask(Mask::default())),
         ("Halftone", || Modifier::Halftone(Halftone::default())),
+        ("Warp", || Modifier::Warp(Warp::default())),
     ];
 
     pub fn name(&self) -> &'static str {
@@ -451,6 +453,7 @@ impl Modifier {
             Modifier::Lumi(_) => "Luminescence",
             Modifier::Grade(_) => "Palette",
             Modifier::Halftone(_) => "Halftone",
+            Modifier::Warp(_) => "Warp",
         }
     }
 
@@ -471,6 +474,7 @@ impl Modifier {
             Modifier::Lumi(k) => k.mix,
             Modifier::Grade(k) => k.mix,
             Modifier::Halftone(k) => k.mix,
+            Modifier::Warp(k) => k.mix,
         }
     }
 
@@ -488,6 +492,7 @@ impl Modifier {
             Modifier::Lumi(k) => k.band,
             Modifier::Grade(k) => k.band,
             Modifier::Halftone(k) => k.band,
+            Modifier::Warp(k) => k.band,
         }
     }
 
@@ -504,6 +509,7 @@ impl Modifier {
             Modifier::Lumi(k) => &mut k.band,
             Modifier::Grade(k) => &mut k.band,
             Modifier::Halftone(k) => &mut k.band,
+            Modifier::Warp(k) => &mut k.band,
         }
     }
 
@@ -530,6 +536,7 @@ impl Modifier {
             Modifier::Lumi(k) => &mut k.mix,
             Modifier::Grade(k) => &mut k.mix,
             Modifier::Halftone(k) => &mut k.mix,
+            Modifier::Warp(k) => &mut k.mix,
         }
     }
 
@@ -548,6 +555,7 @@ impl Modifier {
             Modifier::Lumi(_) => Modifier::Lumi(Luminescence::default()),
             Modifier::Grade(_) => Modifier::Grade(Grade::default()),
             Modifier::Halftone(_) => Modifier::Halftone(Halftone::default()),
+            Modifier::Warp(_) => Modifier::Warp(Warp::default()),
         };
         *self.enabled_mut() = enabled;
     }
@@ -565,6 +573,7 @@ impl Modifier {
             Modifier::Lumi(m) => &m.enabled,
             Modifier::Grade(m) => &m.enabled,
             Modifier::Halftone(m) => &m.enabled,
+            Modifier::Warp(m) => &m.enabled,
         }
     }
 
@@ -581,6 +590,7 @@ impl Modifier {
             Modifier::Lumi(m) => &mut m.enabled,
             Modifier::Grade(m) => &mut m.enabled,
             Modifier::Halftone(m) => &mut m.enabled,
+            Modifier::Warp(m) => &mut m.enabled,
         }
     }
 }
@@ -638,6 +648,35 @@ pub struct Halftone {
 impl Default for Halftone {
     fn default() -> Self {
         Self { enabled: true, mix: 1.0, band: None, shape: HalftoneShape::Dot, cell: 9.0, angle: 15.0, mono: 0.5, drift: 0.6, gamma: 1.4, palette: true, invert: false, react: 1.0 }
+    }
+}
+
+/// Warp modifier: the picture pulled through a flowing field of smooth noise.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Warp {
+    pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
+    /// Displacement at rest, pixels.
+    pub amount: f32,
+    /// Field detail: noise cycles across the screen.
+    pub scale: f32,
+    /// How fast the field flows.
+    pub speed: f32,
+    /// How much the field turns on itself.
+    pub twist: f32,
+    /// Noise octaves (1 = soft swells, 4 = churn).
+    pub octaves: u32,
+    /// Bass swells the displacement; onsets kick the flow.
+    pub react: f32,
+}
+
+impl Default for Warp {
+    fn default() -> Self {
+        Self { enabled: true, mix: 1.0, band: None, amount: 24.0, scale: 3.0, speed: 0.25, twist: 0.5, octaves: 2, react: 1.0 }
     }
 }
 

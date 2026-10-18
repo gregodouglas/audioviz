@@ -164,7 +164,7 @@ impl Chain {
 }
 
 /// One pipeline per modifier kind, in `MOD_SHADERS` order.
-const MOD_SHADERS: [&str; 11] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl", "fractal.wgsl", "lumi.wgsl", "grade.wgsl", "halftone.wgsl"];
+const MOD_SHADERS: [&str; 12] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl", "fractal.wgsl", "lumi.wgsl", "grade.wgsl", "halftone.wgsl", "warp.wgsl"];
 /// Pipeline indices with special plumbing: both keep a history pair.
 const MOD_FEEDBACK: usize = 1;
 const MOD_LUMI: usize = 8;
@@ -190,6 +190,7 @@ fn mod_index(m: &Modifier) -> usize {
         Modifier::Lumi(_) => 8,
         Modifier::Grade(_) => 9,
         Modifier::Halftone(_) => 10,
+        Modifier::Warp(_) => 11,
     }
 }
 
@@ -535,6 +536,13 @@ fn mod_params(m: &Modifier, st: &mut ModState, f: &FeatureFrame, tint: [f32; 3],
             p.p0 = [cell, k.angle.to_radians(), shape, mono];
             p.p1 = [tint[0], tint[1], tint[2], k.invert as u32 as f32];
             p.p2 = [0.0, k.palette as u32 as f32, k.gamma, 0.0];
+        }
+        Modifier::Warp(k) => {
+            // The field's clock runs with the music: energy speeds it, onsets kick it.
+            st.angle += dt * k.speed * (0.5 + 0.5 * energy * k.react) + dt * 2.0 * k.react * onset;
+            let amount = k.amount * (1.0 + 0.6 * k.react * bass.max(0.0));
+            p.p0 = [amount, k.scale.max(0.1), st.angle, k.twist];
+            p.p1 = [k.octaves.clamp(1, 5) as f32, 0.0, 0.0, 0.0];
         }
         Modifier::Mask(k) => {
             let radius = (k.radius * (1.0 + 0.1 * k.react * bass)).max(0.01);

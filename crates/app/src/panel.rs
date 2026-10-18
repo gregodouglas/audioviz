@@ -12,7 +12,7 @@ use crate::overlays::CalibrationView;
 use crate::scene::Scene;
 use crate::scene_store::SceneDef;
 use crate::color;
-use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
+use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
 use crate::widgets::{self, chip, dropdown, ghost_button, group, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
@@ -661,6 +661,16 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             toggle_row(ui, "Invert", &mut k.invert);
             slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "A print screen: each cell's mark grows with the brightness under it. One ink prints in the tint or the palette; drift lets it wander between the picture's colours and one ink, and onsets push it there. After the halftone in Felix Turner's Uberviz.");
+        }
+        Modifier::Warp(k) => {
+            let d = Warp::default();
+            slider_def(ui, "Amount", &mut k.amount, Some(d.amount), 0.0..=200.0, |v| format!("{v:.0} px"), true);
+            slider_def(ui, "Scale", &mut k.scale, Some(d.scale), 0.3..=20.0, |v| format!("{v:.1}"), true);
+            slider_def(ui, "Speed", &mut k.speed, Some(d.speed), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Twist", &mut k.twist, Some(d.twist), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Detail", &mut k.octaves, Some(d.octaves), 1..=5, |v| format!("{v:.0}"), false);
+            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Pulls the picture through a flowing field: small amounts are heat haze, large ones liquid. The bass swells it; onsets kick the flow.");
         }
         Modifier::Mask(k) => {
             let d = Mask::default();

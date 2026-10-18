@@ -25,15 +25,20 @@ Greg: "I want to focus on adding visuals." Shipping is deferred (below) except t
 
 Inspiration Greg handed over (2026-10-18 late), credits kept in `docs/INSPIRATION.md`: **soniaboller/audible-visuals** (three.js; port the visuals worth it, credit the author), and **Uberviz** by Felix Turner (uberviz.io; the Crystal visualizer, the halftone, the colour/monotone drift). Uberviz's licence is unknown, so it is inspiration only unless a licensed repo turns up.
 
-Visual candidates, in the order to try:
+Visual candidates, in the order to try (reordered 2026-10-18 late on the research; details in `docs/INSPIRATION.md`):
 
 - ~~Waves~~ **built 2026-10-18** (waveform or spectrum rows in perspective, hidden-line fill, palette by age or level; built-in scene). Awaiting Greg's look.
+- **Crystal** (after Uberviz): tumbling translucent tetrahedra, loudness-scaled, beat-retargeted shards, a flung-out mode; palette facets with glowing edges. Greg named this one.
+- **Loop** (after Uberviz): concentric waveform rings, each lagging the last; the most line-friendly of the lot.
+- **Eclipse** (after Uberviz): a black disc ringed by spectrum glow dots; one fragment pass.
+- **Ripples** (after Uberviz): a noise-displaced plane printed with contour lines or dots.
+- **Spiral** (after audible-visuals, Apache-2.0): parametric spirals, slow parameter drift, waveform displacement, drawn as a polyline.
 - **Tunnel**: a wireframe tunnel of rings flown through, each ring's radius the spectrum at the moment it was born; lines only.
 - **Strings**: chords of the chroma drawn as taut lines between points on a circle (string art); a chord change re-strings it.
 - **Harmonograph**: damped Lissajous of the two strongest pitch classes, drawn as one long line.
 - **Interference**: a few sinusoid line fields driven by bands, moiré where they cross.
 
-Modifier candidates: **warp** (noise displacement, bass-driven), ~~halftone~~ (built 2026-10-18; dither still open), **glitch** (block displacement and channel tears on onsets), **posterize / hue cycle**, **scanlines / CRT**, **echo** (a delayed copy under the picture, reusing the history pair).
+Modifier candidates: ~~warp~~ (built 2026-10-18), ~~halftone~~ (built 2026-10-18; dither still open), **colorify** (one drifting ink, the other half of Uberviz's colour/mono look), **beat roll** (a per-layer scheduler that flips modifiers on random beats, after Uberviz autoMode), **glitch** (block displacement and channel tears on onsets), **posterize / hue cycle**, **scanlines / CRT**, **echo** (a delayed copy under the picture, reusing the history pair).
 
 ## Done: visuals and sound (the previous "Next" list)
 

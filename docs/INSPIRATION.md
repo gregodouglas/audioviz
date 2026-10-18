@@ -19,11 +19,11 @@ audioviz borrows ideas, never code, unless a licence says otherwise and the entr
 | Glow modifier | the glow / bloom frame of Uberviz's Lantern | Felix Turner | none | the idea: the bright parts blurred wide and added back. Written fresh: levelled soft-knee threshold, quarter-size separable Gaussian, music-swelled amount. |
 | Vignette modifier | the vignette of Uberviz's Lantern | Felix Turner | none | the idea: darkened edges. Written fresh: rectangle-to-circle superellipse, bass opening. |
 | Colorify modifier | the colorify pass in Uberviz (alteredq's three.js example) | Felix Turner; alteredq | none / MIT | the idea: luminance kept, colour replaced by one ink. Written fresh: saturated tint ink with a hue drift, or palette ink by levelled brightness. |
+| Loop visual | the Loop visualizer in Uberviz | Felix Turner | none | the idea: concentric waveform rings, each lagging the previous, lightness by level. Written fresh: seamless closed rings, age or level palette, twist and spin, beat kick. |
 | Waves visual | the stacked-waveform landscape made famous by the *Unknown Pleasures* cover (Peter Saville, after a pulsar plot by Harold Craft) | | | the look only |
 
 ## Queued ports (from the 2026-10-18 research), with what each takes
 
-- **Loop** (Uberviz): sixty concentric waveform rings, each lagging the previous frame's, lightness by level.
 - **Eclipse** (Uberviz Lantern): sixteen glow dots on a ring reading the spectrum, the disc masked black.
 - **Ripples** (Uberviz BBNG / Lantern): a noise-displaced plane printed with contour lines or dots, depth-darkened.
 - **Spiral family, Sphere (urchin), Waveform stack** (audible-visuals): parametric spirals with a slow parameter drift displaced by the waveform; radial spikes banded by magnitude.

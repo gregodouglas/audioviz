@@ -23,10 +23,11 @@ pub enum VisualKind {
     Waves,
     Crystal,
     Wheel,
+    Loop,
 }
 
 impl VisualKind {
-    pub const ALL: [VisualKind; 8] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield, VisualKind::Kaleido, VisualKind::Sigil, VisualKind::Waves, VisualKind::Crystal, VisualKind::Wheel];
+    pub const ALL: [VisualKind; 9] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield, VisualKind::Kaleido, VisualKind::Sigil, VisualKind::Waves, VisualKind::Crystal, VisualKind::Wheel, VisualKind::Loop];
     pub fn name(self) -> &'static str {
         match self {
             VisualKind::Scope => "Phosphor scope",
@@ -37,6 +38,7 @@ impl VisualKind {
             VisualKind::Waves => "Waves",
             VisualKind::Crystal => "Crystal",
             VisualKind::Wheel => "Spectrum wheel",
+            VisualKind::Loop => "Loop",
         }
     }
     /// Short display name (bar pips, stack rows, breadcrumb).
@@ -50,6 +52,7 @@ impl VisualKind {
             VisualKind::Waves => "Waves",
             VisualKind::Crystal => "Crystal",
             VisualKind::Wheel => "Wheel",
+            VisualKind::Loop => "Loop",
         }
     }
 }
@@ -1298,6 +1301,44 @@ impl Default for WheelParams {
     }
 }
 
+/// Loop: concentric waveform rings, the newest at the centre, each older one
+/// further out, so a sound travels outward ring by ring (`scenes/loops.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LoopParams {
+    pub rings: u32,
+    /// New rings per second; lower is a longer lag between rings.
+    pub rate: f32,
+    /// Radius of the newest ring, fraction of the short half-side.
+    pub inner: f32,
+    /// Radius of the oldest ring.
+    pub outer: f32,
+    /// How far the waveform pushes a ring in and out.
+    pub amp: f32,
+    pub gain: f32,
+    /// Line width, pixels.
+    pub width: f32,
+    /// How dim the oldest rings get.
+    pub fade: f32,
+    /// 0 = every ring equally bright, 1 = brightness by the ring's level.
+    pub level: f32,
+    /// Turn speed.
+    pub spin: f32,
+    /// Degrees each ring is turned against the one inside it.
+    pub twist: f32,
+    /// Smoothing passes over each ring.
+    pub smooth: u32,
+    pub colour: WavesColour,
+    /// Beats kick the amplitude.
+    pub react: f32,
+}
+
+impl Default for LoopParams {
+    fn default() -> Self {
+        Self { rings: 60, rate: 30.0, inner: 0.08, outer: 0.95, amp: 0.1, gain: 1.0, width: 1.5, fade: 0.6, level: 0.8, spin: 0.1, twist: 0.0, smooth: 2, colour: WavesColour::Age, react: 0.5 }
+    }
+}
+
 /// How a director runs: by hand, by the system, or by a saved sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -1458,11 +1499,13 @@ pub struct Layer {
     pub waves: WavesParams,
     pub crystal: CrystalParams,
     pub wheel: WheelParams,
+    #[serde(rename = "loop")]
+    pub loops: LoopParams,
 }
 
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), director: EffectsDirector::default(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default(), waves: WavesParams::default(), crystal: CrystalParams::default(), wheel: WheelParams::default() }
+        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), director: EffectsDirector::default(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default(), waves: WavesParams::default(), crystal: CrystalParams::default(), wheel: WheelParams::default(), loops: LoopParams::default() }
     }
 }
 

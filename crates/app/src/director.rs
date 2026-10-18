@@ -24,6 +24,7 @@ use crate::scenes::starfield::Starfield;
 use crate::scenes::waves::Waves;
 use crate::scenes::crystal::Crystal;
 use crate::scenes::wheel::Wheel;
+use crate::scenes::loops::Loop;
 use crate::rng::Rng;
 use crate::settings::{DirectorMode, EdgeColour, FoldMode, FractalMode, HalftoneShape, Layer, MirrorSide, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
 use crate::shaders::ShaderSet;
@@ -451,6 +452,7 @@ fn make(kind: VisualKind, device: &wgpu::Device, w: u32, h: u32, shaders: &Shade
         VisualKind::Waves => Box::new(Waves::new(device, w, h, shaders)?),
         VisualKind::Crystal => Box::new(Crystal::new(device, w, h, shaders)?),
         VisualKind::Wheel => Box::new(Wheel::new(device, w, h, shaders)?),
+        VisualKind::Loop => Box::new(Loop::new(device, w, h, shaders)?),
     })
 }
 

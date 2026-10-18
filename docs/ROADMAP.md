@@ -31,7 +31,7 @@ Visual candidates, in the order to try (reordered 2026-10-18 late on the researc
 
 - ~~Waves~~ **built 2026-10-18** (waveform or spectrum rows in perspective, hidden-line fill, palette by age or level; built-in scene). Awaiting Greg's look.
 - ~~Crystal~~ **built 2026-10-18** (after Uberviz, written fresh): tumbling glass shards, loudness-scaled, one shard eased to a new pose per beat, scatter over the bar, palette facets and glowing edges; built-in scene. Awaiting Greg's look.
-- **Loop** (after Uberviz): concentric waveform rings, each lagging the last; the most line-friendly of the lot.
+- ~~Loop~~ **built 2026-10-18** (after Uberviz): concentric waveform rings, each lagging the last, brightness by level; factory scene Loop. Awaiting Greg's look.
 - **Eclipse** (after Uberviz): a black disc ringed by spectrum glow dots; one fragment pass.
 - **Ripples** (after Uberviz): a noise-displaced plane printed with contour lines or dots.
 - ~~Wheel~~ **built 2026-10-18** (after Uberviz): spectrum wedges, rays, beat jumps, walking bands; backdrop of the built-in Lantern scene.

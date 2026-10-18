@@ -22,6 +22,8 @@ shader_table!(
     "crystal.wgsl",
     "wheel_params.wgsl",
     "wheel.wgsl",
+    "loop_params.wgsl",
+    "loop.wgsl",
     "waves.wgsl",
     "decay.wgsl",
     "beam.wgsl",

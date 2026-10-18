@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::settings::{Layer, Settings, VisualKind, Fold, Modifier};
+use crate::settings::{Blend, Fold, Layer, Lines, Modifier, Settings, VisualKind};
 
 #[derive(Clone)]
 pub struct SceneDef {
@@ -194,6 +194,32 @@ pub fn builtin() -> Vec<SceneDef> {
         |s| {
             s.tint = [0.55, 0.35, 1.0];
             s.post.bloom = 0.18;
+            s.post.look = crate::settings::Look::Neon;
+        },
+    ));
+    v.push(scene(
+        "Lantern",
+        vec![
+            {
+                let mut l = Layer::new(VisualKind::Crystal, true, 1.0);
+                l.blend = Blend::Over;
+                l.palette.name = "neon".into();
+                l.modifiers.push(Modifier::Lines(Lines::default()));
+                l.modifiers.push(Modifier::Chroma(crate::settings::ChromaSplit { amount: 0.004, ..Default::default() }));
+                l
+            },
+            {
+                let mut l = Layer::new(VisualKind::Wheel, true, 0.6);
+                l.palette.name = "neon".into();
+                l.palette.cycle = 0.02;
+                l.modifiers.push(Modifier::Lines(Lines::default()));
+                l
+            },
+            Layer::new(VisualKind::Scope, false, 0.5),
+        ],
+        |s| {
+            s.tint = [1.0, 0.35, 0.8];
+            s.post.bloom = 0.3;
             s.post.look = crate::settings::Look::Neon;
         },
     ));

@@ -32,13 +32,14 @@ Visual candidates, in the order to try (reordered 2026-10-18 late on the researc
 - **Loop** (after Uberviz): concentric waveform rings, each lagging the last; the most line-friendly of the lot.
 - **Eclipse** (after Uberviz): a black disc ringed by spectrum glow dots; one fragment pass.
 - **Ripples** (after Uberviz): a noise-displaced plane printed with contour lines or dots.
+- ~~Wheel~~ **built 2026-10-18** (after Uberviz): spectrum wedges, rays, beat jumps, walking bands; backdrop of the built-in Lantern scene.
 - **Spiral** (after audible-visuals, Apache-2.0): parametric spirals, slow parameter drift, waveform displacement, drawn as a polyline.
 - **Tunnel**: a wireframe tunnel of rings flown through, each ring's radius the spectrum at the moment it was born; lines only.
 - **Strings**: chords of the chroma drawn as taut lines between points on a circle (string art); a chord change re-strings it.
 - **Harmonograph**: damped Lissajous of the two strongest pitch classes, drawn as one long line.
 - **Interference**: a few sinusoid line fields driven by bands, moiré where they cross.
 
-Modifier candidates: ~~warp~~ (built 2026-10-18), ~~halftone~~ (built 2026-10-18; dither still open), ~~scanlines~~ (built 2026-10-18), **colorify** (one drifting ink, the other half of Uberviz's colour/mono look), **beat roll** (a per-layer scheduler that flips modifiers on random beats, after Uberviz autoMode), **glitch** (block displacement and channel tears on onsets), **posterize / hue cycle**, **scanlines / CRT**, **echo** (a delayed copy under the picture, reusing the history pair).
+Modifier candidates: ~~warp~~ (built 2026-10-18), ~~halftone~~ (built 2026-10-18; dither still open), ~~scanlines~~ (built 2026-10-18), **glow** and **vignette** as modifiers (the heavy Uberviz frame), **colorify** (one drifting ink, the other half of Uberviz's colour/mono look), **beat roll** (a per-layer scheduler that flips modifiers on random beats, after Uberviz autoMode), **glitch** (block displacement and channel tears on onsets), **posterize / hue cycle**, **scanlines / CRT**, **echo** (a delayed copy under the picture, reusing the history pair).
 
 ## Done: visuals and sound (the previous "Next" list)
 

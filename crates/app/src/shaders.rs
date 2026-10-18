@@ -20,6 +20,8 @@ shader_table!(
     "waves_params.wgsl",
     "crystal_params.wgsl",
     "crystal.wgsl",
+    "wheel_params.wgsl",
+    "wheel.wgsl",
     "waves.wgsl",
     "decay.wgsl",
     "beam.wgsl",

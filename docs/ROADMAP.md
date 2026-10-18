@@ -33,7 +33,7 @@ Visual candidates, in the order to try (reordered 2026-10-18 late on the researc
 - ~~Crystal~~ **built 2026-10-18** (after Uberviz, written fresh): tumbling glass shards, loudness-scaled, one shard eased to a new pose per beat, scatter over the bar, palette facets and glowing edges; built-in scene. Awaiting Greg's look.
 - ~~Loop~~ **built 2026-10-18** (after Uberviz): concentric waveform rings, each lagging the last, brightness by level; factory scene Loop. Awaiting Greg's look.
 - ~~Eclipse~~ **built 2026-10-18** (after Uberviz): a black disc ringed by spectrum glow dots with a bass corona; one fragment pass; factory scene Eclipse. Awaiting Greg's look.
-- **Ripples** (after Uberviz): a noise-displaced plane printed with contour lines or dots.
+- ~~Ripples~~ **built 2026-10-18** (after Uberviz): a flowing noise-displaced plane printed with contours, dots or a grid, rings on beats, depth-darkened; factory scene Ripples. Awaiting Greg's look.
 - ~~Wheel~~ **built 2026-10-18** (after Uberviz): spectrum wedges, rays, beat jumps, walking bands; backdrop of the built-in Lantern scene.
 - **Spiral** (after audible-visuals, Apache-2.0): parametric spirals, slow parameter drift, waveform displacement, drawn as a polyline.
 - **Tunnel**: a wireframe tunnel of rings flown through, each ring's radius the spectrum at the moment it was born; lines only.

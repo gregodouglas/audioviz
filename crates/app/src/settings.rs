@@ -25,10 +25,11 @@ pub enum VisualKind {
     Wheel,
     Loop,
     Eclipse,
+    Ripples,
 }
 
 impl VisualKind {
-    pub const ALL: [VisualKind; 10] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield, VisualKind::Kaleido, VisualKind::Sigil, VisualKind::Waves, VisualKind::Crystal, VisualKind::Wheel, VisualKind::Loop, VisualKind::Eclipse];
+    pub const ALL: [VisualKind; 11] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield, VisualKind::Kaleido, VisualKind::Sigil, VisualKind::Waves, VisualKind::Crystal, VisualKind::Wheel, VisualKind::Loop, VisualKind::Eclipse, VisualKind::Ripples];
     pub fn name(self) -> &'static str {
         match self {
             VisualKind::Scope => "Phosphor scope",
@@ -41,6 +42,7 @@ impl VisualKind {
             VisualKind::Wheel => "Spectrum wheel",
             VisualKind::Loop => "Loop",
             VisualKind::Eclipse => "Eclipse",
+            VisualKind::Ripples => "Ripples",
         }
     }
     /// Short display name (bar pips, stack rows, breadcrumb).
@@ -56,6 +58,7 @@ impl VisualKind {
             VisualKind::Wheel => "Wheel",
             VisualKind::Loop => "Loop",
             VisualKind::Eclipse => "Eclipse",
+            VisualKind::Ripples => "Ripples",
         }
     }
 }
@@ -1377,6 +1380,63 @@ impl Default for EclipseParams {
     }
 }
 
+/// How the Ripples plane is printed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RipplesPrint {
+    /// Contour lines of the height, like a topographic map.
+    #[default]
+    Contours,
+    /// A grid of dots on the surface.
+    Dots,
+    /// Lines along both axes of the surface.
+    Grid,
+}
+
+impl RipplesPrint {
+    pub const ALL: [RipplesPrint; 3] = [RipplesPrint::Contours, RipplesPrint::Dots, RipplesPrint::Grid];
+    pub fn name(self) -> &'static str {
+        match self {
+            RipplesPrint::Contours => "Contours",
+            RipplesPrint::Dots => "Dots",
+            RipplesPrint::Grid => "Grid",
+        }
+    }
+}
+
+/// Ripples: a noise-displaced plane in perspective, printed with contour
+/// lines, dots or a grid, darker with distance; beats drop rings into it
+/// (`scenes/ripples.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RipplesParams {
+    pub print: RipplesPrint,
+    /// Height of the hills.
+    pub height: f32,
+    /// Noise scale: higher is smaller hills.
+    pub scale: f32,
+    /// How fast the surface flows toward the viewer.
+    pub speed: f32,
+    /// Contour lines per unit of height, or dots / grid lines per unit of ground.
+    pub density: f32,
+    /// Line width or dot size, pixels.
+    pub width: f32,
+    /// Camera pitch: 0 low over the surface, 1 looking straight down.
+    pub tilt: f32,
+    /// How dark the far surface gets.
+    pub fade: f32,
+    /// Strength of the rings beats drop into the surface.
+    pub rings: f32,
+    /// The bass swells the hills.
+    pub react: f32,
+}
+
+impl Default for RipplesParams {
+    fn default() -> Self {
+        Self { print: RipplesPrint::Contours, height: 0.35, scale: 1.2, speed: 0.15, density: 10.0, width: 1.3, tilt: 0.35, fade: 0.7, rings: 1.0, react: 1.0 }
+    }
+}
+
 /// How a director runs: by hand, by the system, or by a saved sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -1540,11 +1600,12 @@ pub struct Layer {
     #[serde(rename = "loop")]
     pub loops: LoopParams,
     pub eclipse: EclipseParams,
+    pub ripples: RipplesParams,
 }
 
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), director: EffectsDirector::default(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default(), waves: WavesParams::default(), crystal: CrystalParams::default(), wheel: WheelParams::default(), loops: LoopParams::default(), eclipse: EclipseParams::default() }
+        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), director: EffectsDirector::default(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default(), waves: WavesParams::default(), crystal: CrystalParams::default(), wheel: WheelParams::default(), loops: LoopParams::default(), eclipse: EclipseParams::default(), ripples: RipplesParams::default() }
     }
 }
 

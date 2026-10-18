@@ -1,6 +1,7 @@
 //! Audio capture for audioviz.
 //!
-//! The product listens to whatever the OS is playing (Spotify first). Every
+//! The product listens to whatever the OS is playing (Spotify first), or to
+//! the room through a microphone when the music plays elsewhere. Every
 //! platform backend implements [`AudioSource`] and delivers interleaved f32
 //! stereo chunks over a channel. The rest of the app never touches a
 //! platform API.
@@ -40,6 +41,8 @@ pub enum CaptureTarget {
     Process(String),
     /// Capture everything the default output endpoint is playing.
     Endpoint,
+    /// Listen to the room through the default microphone.
+    Microphone,
 }
 
 /// How the active capture is actually running, for the UI.
@@ -48,6 +51,7 @@ pub enum CaptureMode {
     Starting,
     Process { name: String, pid: u32 },
     Endpoint { device: String },
+    Microphone { device: String },
     Failed(String),
 }
 

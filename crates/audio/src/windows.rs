@@ -1,6 +1,7 @@
 //! WASAPI backend: per-process loopback (Windows 10 20348+ / Windows 11) with
-//! fallback to default-endpoint loopback, and automatic reconnection when the
-//! target process restarts (new PID) or appears after we fell back.
+//! fallback to default-endpoint loopback, automatic reconnection when the
+//! target process restarts (new PID) or appears after we fell back, and the
+//! default microphone for listening to the room.
 
 use std::collections::VecDeque;
 use std::ffi::OsStr;
@@ -64,6 +65,18 @@ fn find_process(name: &str) -> Option<u32> {
 /// endpoint. Returns the client and the mode we ended up in.
 fn open_client(target: &CaptureTarget, format: &WaveFormat) -> anyhow::Result<(AudioClient, CaptureMode)> {
     let mode = StreamMode::EventsShared { autoconvert: true, buffer_duration_hns: 0 };
+
+    if *target == CaptureTarget::Microphone {
+        // Shared mode with auto-conversion brings a mono or 44.1 kHz mic to
+        // our stereo 48 kHz float format.
+        let enumerator = wasapi::DeviceEnumerator::new().map_err(|e| anyhow!("{e}"))?;
+        let device = enumerator.get_default_device(&Direction::Capture).map_err(|e| anyhow!("no microphone: {e}"))?;
+        let device_name = device.get_friendlyname().unwrap_or_else(|_| "default microphone".into());
+        let mut client = device.get_iaudioclient().map_err(|e| anyhow!("{e}"))?;
+        client.initialize_client(format, &Direction::Capture, &mode).map_err(|e| anyhow!("{e}"))?;
+        info!("microphone capture on '{device_name}'");
+        return Ok((client, CaptureMode::Microphone { device: device_name }));
+    }
 
     if let CaptureTarget::Process(name) = target {
         match find_process(name) {

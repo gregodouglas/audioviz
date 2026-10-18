@@ -192,6 +192,7 @@ impl Chrome {
                 CaptureMode::Starting => ("Starting".to_string(), TEXT_3, Section::Sync),
                 CaptureMode::Process { .. } => (input.target_short.to_string(), input.accent, Section::Sync),
                 CaptureMode::Endpoint { .. } => ("System audio".to_string(), TEXT_2, Section::Sync),
+                CaptureMode::Microphone { .. } => ("Room mic".to_string(), input.accent, Section::Sync),
                 CaptureMode::Failed(_) => ("No audio".to_string(), ERROR, Section::Sync),
             };
             let chips: [(String, Color32, Section); 3] = [

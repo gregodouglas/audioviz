@@ -993,6 +993,8 @@ pub struct Settings {
     pub flash_rise: f32,
     // ---- audio ----
     pub audio_delay_ms: f32,
+    /// What the visualizer listens to: a player on this PC or the room.
+    pub source: AudioSourceKind,
     pub target_process: String,
     // ---- display ----
     pub fps_cap: u32,
@@ -1010,6 +1012,27 @@ pub struct Settings {
     pub ui_open: std::collections::BTreeMap<String, bool>,
     pub developer: bool,
     pub onboarded: bool,
+}
+
+/// What the visualizer listens to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioSourceKind {
+    /// A player on this PC (`target_process`), by loopback.
+    #[default]
+    Player,
+    /// The room, through the default microphone.
+    Microphone,
+}
+
+impl AudioSourceKind {
+    pub const ALL: [AudioSourceKind; 2] = [AudioSourceKind::Player, AudioSourceKind::Microphone];
+    pub fn name(self) -> &'static str {
+        match self {
+            AudioSourceKind::Player => "A player on this PC",
+            AudioSourceKind::Microphone => "The room",
+        }
+    }
 }
 
 /// Tabs of the layer inspector.
@@ -1081,6 +1104,7 @@ impl Default for Settings {
             reduce_flashing: true,
             flash_rise: 2.0,
             audio_delay_ms: 0.0,
+            source: AudioSourceKind::Player,
             target_process: "Spotify.exe".into(),
             fps_cap: 60,
             monitor: 0,

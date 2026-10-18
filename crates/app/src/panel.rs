@@ -12,7 +12,7 @@ use crate::overlays::CalibrationView;
 use crate::scene::Scene;
 use crate::scene_store::SceneDef;
 use crate::color;
-use crate::settings::{AudioBand, Blend, ChromaSplit, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
+use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
 use crate::widgets::{self, chip, dropdown, ghost_button, group, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
@@ -93,6 +93,7 @@ pub struct Actions {
     pub copy_diagnostics: bool,
     pub launch_spotify: bool,
     pub set_target: Option<String>,
+    pub set_source: Option<AudioSourceKind>,
     pub show_shortcuts: bool,
     pub rerun_first_run: bool,
     pub hide_ui: bool,
@@ -974,14 +975,24 @@ fn sync_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelSta
 
     ui.add_space(12.0);
     small_caps(ui, "Source");
+    let names: Vec<&str> = AudioSourceKind::ALL.iter().map(|s| s.name()).collect();
+    if let Some(i) = segmented(ui, &names, AudioSourceKind::ALL.iter().position(|s| *s == settings.source).unwrap_or(0)) {
+        a.set_source = Some(AudioSourceKind::ALL[i]);
+    }
     let cap = match &stats.capture {
         CaptureMode::Starting => ("Starting…".to_string(), TEXT_3),
         CaptureMode::Process { name, pid } => (format!("{name} (pid {pid})"), ACCENT),
         CaptureMode::Endpoint { device } => (format!("{} not running · listening to '{device}'", settings.target_process), TEXT_2),
+        CaptureMode::Microphone { device } => (format!("Listening to the room through '{device}'"), ACCENT),
         CaptureMode::Failed(e) => (format!("no audio: {e}"), ERROR),
     };
     ui.label(egui::RichText::new(cap.0).color(cap.1).font(theme::mono(11.5)));
     ui.add_space(4.0);
+    if settings.source == AudioSourceKind::Microphone {
+        hint(ui, "For music that plays somewhere else: a TV, a Sonos, a hi-fi. The mic hears it when you do, so the delay above wants 0 unless you calibrate. Bass and beat tracking are only as good as the microphone.");
+        hint(ui, &format!("{} Hz", stats.sample_rate));
+        return;
+    }
     ui.horizontal(|ui| {
         ui.label("Listen to");
         if !state.target_editing {

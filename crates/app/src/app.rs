@@ -21,7 +21,7 @@ use crate::platform;
 use crate::post::{Post, PostParams};
 use crate::scene_store::{self, SceneDef};
 use crate::scenes::scope::MAX_POINTS;
-use crate::settings::{MAX_LAYERS, Section, Settings};
+use crate::settings::{AudioSourceKind, MAX_LAYERS, Section, Settings};
 use crate::shaders::ShaderSet;
 use crate::strip::Strip;
 use crate::theme::{self, PANEL_W, STRIP_H};
@@ -240,7 +240,7 @@ impl Running {
         let egui_state = egui_winit::State::new(egui_ctx.clone(), egui::ViewportId::ROOT, &*window, Some(window.scale_factor() as f32), window.theme(), Some(gpu.device.limits().max_texture_dimension_2d as usize));
         let egui_renderer = egui_wgpu::Renderer::new(&gpu.device, gpu.ui_format, egui_wgpu::RendererOptions::default());
 
-        let engine = Engine::start(CaptureTarget::Process(settings.target_process.clone()))?;
+        let engine = Engine::start(capture_target(&settings))?;
         if settings.audio_delay_ms > 0.0 {
             engine.set_delay_ms(settings.audio_delay_ms);
         }
@@ -451,18 +451,39 @@ impl Running {
         if target.is_empty() || target == self.settings.target_process {
             return;
         }
-        match Engine::start(CaptureTarget::Process(target.clone())) {
+        self.settings.target_process = target.clone();
+        if self.restart_capture() {
+            let filter = target.trim_end_matches(".exe").to_lowercase();
+            if let Ok(m) = audioviz_metadata::default_source().start(&filter) {
+                self.metadata = m;
+            }
+        }
+    }
+
+    /// Player or the room. The now-playing metadata keeps following the
+    /// player either way (Spotify still reports what it plays elsewhere).
+    fn set_source(&mut self, source: AudioSourceKind) {
+        if source == self.settings.source {
+            return;
+        }
+        self.settings.source = source;
+        self.restart_capture();
+    }
+
+    /// Start a new engine on the settings' source; on failure keep the old
+    /// one running and say so.
+    fn restart_capture(&mut self) -> bool {
+        match Engine::start(capture_target(&self.settings)) {
             Ok(engine) => {
                 engine.set_delay_ms(self.settings.audio_delay_ms);
                 self.engine = engine;
-                let filter = target.trim_end_matches(".exe").to_lowercase();
-                if let Ok(m) = audioviz_metadata::default_source().start(&filter) {
-                    self.metadata = m;
-                }
-                self.settings.target_process = target;
                 self.last_capture = CaptureMode::Starting;
+                true
             }
-            Err(e) => self.capture_notice = Some((format!("Could not switch capture: {e}"), Instant::now(), false)),
+            Err(e) => {
+                self.capture_notice = Some((format!("Could not switch capture: {e}"), Instant::now(), false));
+                false
+            }
         }
     }
 
@@ -752,7 +773,7 @@ impl Running {
             }
             if empty {
                 let device = match &capture {
-                    CaptureMode::Endpoint { device } => device.clone(),
+                    CaptureMode::Endpoint { device } | CaptureMode::Microphone { device } => device.clone(),
                     _ => String::new(),
                 };
                 empty_actions = overlays::empty_state(ctx, &settings.target_process, &device, spotify_installed);
@@ -936,6 +957,9 @@ impl Running {
         }
         if let Some(t) = panel_actions.set_target {
             self.set_target(t);
+        }
+        if let Some(s) = panel_actions.set_source {
+            self.set_source(s);
         }
         if panel_actions.show_shortcuts || strip_actions.shortcuts {
             self.show_shortcuts = true;
@@ -1173,5 +1197,13 @@ impl ApplicationHandler for App {
         if let Some(st) = self.state.as_mut() {
             st.maybe_save(true);
         }
+    }
+}
+
+/// What the engine captures for these settings.
+fn capture_target(settings: &Settings) -> CaptureTarget {
+    match settings.source {
+        AudioSourceKind::Player => CaptureTarget::Process(settings.target_process.clone()),
+        AudioSourceKind::Microphone => CaptureTarget::Microphone,
     }
 }

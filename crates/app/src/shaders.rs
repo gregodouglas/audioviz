@@ -41,6 +41,7 @@ shader_table!(
     "blit.wgsl",
     "lumi.wgsl",
     "grade.wgsl",
+    "halftone.wgsl",
     "ribbons_params.wgsl",
     "ribbons_update.wgsl",
     "ribbons_draw.wgsl",

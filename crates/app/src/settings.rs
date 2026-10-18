@@ -417,13 +417,14 @@ pub enum Modifier {
     Fractal(Fractal),
     Lumi(Luminescence),
     Grade(Grade),
+    Halftone(Halftone),
 }
 
 pub const MAX_MODS: usize = 6;
 
 impl Modifier {
     /// Every kind with a constructor, in the order the panel offers them.
-    pub const KINDS: [(&'static str, fn() -> Modifier); 10] = [
+    pub const KINDS: [(&'static str, fn() -> Modifier); 11] = [
         ("Palette", || Modifier::Grade(Grade::default())),
         ("Kaleidoscope", || Modifier::Fold(Fold::default())),
         ("Fractal", || Modifier::Fractal(Fractal::default())),
@@ -434,6 +435,7 @@ impl Modifier {
         ("Edge", || Modifier::Edge(Edge::default())),
         ("Chroma split", || Modifier::Chroma(ChromaSplit::default())),
         ("Mask", || Modifier::Mask(Mask::default())),
+        ("Halftone", || Modifier::Halftone(Halftone::default())),
     ];
 
     pub fn name(&self) -> &'static str {
@@ -448,6 +450,7 @@ impl Modifier {
             Modifier::Fractal(_) => "Fractal",
             Modifier::Lumi(_) => "Luminescence",
             Modifier::Grade(_) => "Palette",
+            Modifier::Halftone(_) => "Halftone",
         }
     }
 
@@ -467,6 +470,7 @@ impl Modifier {
             Modifier::Fractal(k) => k.mix,
             Modifier::Lumi(k) => k.mix,
             Modifier::Grade(k) => k.mix,
+            Modifier::Halftone(k) => k.mix,
         }
     }
 
@@ -483,6 +487,7 @@ impl Modifier {
             Modifier::Fractal(k) => k.band,
             Modifier::Lumi(k) => k.band,
             Modifier::Grade(k) => k.band,
+            Modifier::Halftone(k) => k.band,
         }
     }
 
@@ -498,6 +503,7 @@ impl Modifier {
             Modifier::Fractal(k) => &mut k.band,
             Modifier::Lumi(k) => &mut k.band,
             Modifier::Grade(k) => &mut k.band,
+            Modifier::Halftone(k) => &mut k.band,
         }
     }
 
@@ -523,6 +529,7 @@ impl Modifier {
             Modifier::Fractal(k) => &mut k.mix,
             Modifier::Lumi(k) => &mut k.mix,
             Modifier::Grade(k) => &mut k.mix,
+            Modifier::Halftone(k) => &mut k.mix,
         }
     }
 
@@ -540,6 +547,7 @@ impl Modifier {
             Modifier::Fractal(_) => Modifier::Fractal(Fractal::default()),
             Modifier::Lumi(_) => Modifier::Lumi(Luminescence::default()),
             Modifier::Grade(_) => Modifier::Grade(Grade::default()),
+            Modifier::Halftone(_) => Modifier::Halftone(Halftone::default()),
         };
         *self.enabled_mut() = enabled;
     }
@@ -556,6 +564,7 @@ impl Modifier {
             Modifier::Fractal(m) => &m.enabled,
             Modifier::Lumi(m) => &m.enabled,
             Modifier::Grade(m) => &m.enabled,
+            Modifier::Halftone(m) => &m.enabled,
         }
     }
 
@@ -571,7 +580,64 @@ impl Modifier {
             Modifier::Fractal(m) => &mut m.enabled,
             Modifier::Lumi(m) => &mut m.enabled,
             Modifier::Grade(m) => &mut m.enabled,
+            Modifier::Halftone(m) => &mut m.enabled,
         }
+    }
+}
+
+/// Mark shape of the halftone screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum HalftoneShape {
+    #[default]
+    Dot,
+    Line,
+    Cross,
+}
+
+impl HalftoneShape {
+    pub const ALL: [HalftoneShape; 3] = [HalftoneShape::Dot, HalftoneShape::Line, HalftoneShape::Cross];
+    pub fn name(self) -> &'static str {
+        match self {
+            HalftoneShape::Dot => "Dots",
+            HalftoneShape::Line => "Lines",
+            HalftoneShape::Cross => "Crosses",
+        }
+    }
+}
+
+/// Halftone modifier: the picture re-printed as a screen of marks on a
+/// rotated grid, in its own colours or one ink, drifting between the two.
+/// Inspired by the halftone pass in Felix Turner's Uberviz.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Halftone {
+    pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
+    pub shape: HalftoneShape,
+    /// Screen cell size, pixels.
+    pub cell: f32,
+    /// Screen angle, degrees.
+    pub angle: f32,
+    /// 0 = the picture's colours, 1 = one ink (the tint, or the palette by brightness).
+    pub mono: f32,
+    /// How far `mono` wanders on its own and with the music.
+    pub drift: f32,
+    /// Brightness curve into the mark size.
+    pub gamma: f32,
+    /// Use the layer palette as the ink.
+    pub palette: bool,
+    pub invert: bool,
+    /// Cells breathe with the bass; onsets flash toward one ink.
+    pub react: f32,
+}
+
+impl Default for Halftone {
+    fn default() -> Self {
+        Self { enabled: true, mix: 1.0, band: None, shape: HalftoneShape::Dot, cell: 9.0, angle: 15.0, mono: 0.5, drift: 0.6, gamma: 1.4, palette: true, invert: false, react: 1.0 }
     }
 }
 

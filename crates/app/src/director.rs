@@ -22,7 +22,7 @@ use crate::scenes::scope::Scope;
 use crate::scenes::sigil::Sigil;
 use crate::scenes::starfield::Starfield;
 use crate::scenes::waves::Waves;
-use crate::settings::{EdgeColour, FoldMode, FractalMode, Layer, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
+use crate::settings::{EdgeColour, FoldMode, FractalMode, HalftoneShape, Layer, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
 use crate::shaders::ShaderSet;
 
 #[repr(C)]
@@ -164,7 +164,7 @@ impl Chain {
 }
 
 /// One pipeline per modifier kind, in `MOD_SHADERS` order.
-const MOD_SHADERS: [&str; 10] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl", "fractal.wgsl", "lumi.wgsl", "grade.wgsl"];
+const MOD_SHADERS: [&str; 11] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl", "fractal.wgsl", "lumi.wgsl", "grade.wgsl", "halftone.wgsl"];
 /// Pipeline indices with special plumbing: both keep a history pair.
 const MOD_FEEDBACK: usize = 1;
 const MOD_LUMI: usize = 8;
@@ -189,6 +189,7 @@ fn mod_index(m: &Modifier) -> usize {
         Modifier::Fractal(_) => 7,
         Modifier::Lumi(_) => 8,
         Modifier::Grade(_) => 9,
+        Modifier::Halftone(_) => 10,
     }
 }
 
@@ -519,6 +520,21 @@ fn mod_params(m: &Modifier, st: &mut ModState, f: &FeatureFrame, tint: [f32; 3],
             // p0.z (shift) is filled in by the caller from the layer's palette state.
             let amount = (k.amount * (1.0 + 0.15 * k.react * onset)).clamp(0.0, 1.0);
             p.p0 = [k.by_hue as u32 as f32, amount, 0.0, k.react];
+        }
+        Modifier::Halftone(k) => {
+            // p2.x (palette shift) is filled in by the caller from the layer's palette state.
+            let cell = (k.cell * (1.0 + 0.12 * k.react * bass)).max(2.0);
+            // Mono wanders slowly on its own and jumps toward one ink on onsets.
+            let wander = 0.5 * k.drift * ((time * 0.37).sin() * 0.6 + (time * 0.11).sin() * 0.4);
+            let mono = (k.mono + wander + 0.6 * k.drift * k.react * onset).clamp(0.0, 1.0);
+            let shape = match k.shape {
+                HalftoneShape::Dot => 0.0,
+                HalftoneShape::Line => 1.0,
+                HalftoneShape::Cross => 2.0,
+            };
+            p.p0 = [cell, k.angle.to_radians(), shape, mono];
+            p.p1 = [tint[0], tint[1], tint[2], k.invert as u32 as f32];
+            p.p2 = [0.0, k.palette as u32 as f32, k.gamma, 0.0];
         }
         Modifier::Mask(k) => {
             let radius = (k.radius * (1.0 + 0.1 * k.react * bass)).max(0.01);
@@ -894,12 +910,12 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
                 Some(_) => fr.features,
             };
             let mut p = mod_params(m, &mut chain.states[j], mf, slot.tint, dt, time, fr.width, fr.height);
-            if matches!(m, Modifier::Grade(_) | Modifier::Edge(_)) {
-                // Both read the palette table; grade shifts in p0.z, edge in p0.w.
-                if matches!(m, Modifier::Grade(_)) {
-                    p.p0[2] = pal_shift;
-                } else {
-                    p.p0[3] = pal_shift;
+            if matches!(m, Modifier::Grade(_) | Modifier::Edge(_) | Modifier::Halftone(_)) {
+                // All three read the palette table; the shift goes where each shader documents.
+                match m {
+                    Modifier::Grade(_) => p.p0[2] = pal_shift,
+                    Modifier::Edge(_) => p.p0[3] = pal_shift,
+                    _ => p.p2[0] = pal_shift,
                 }
                 queue.write_buffer(&chain.bufs[j], 0, bytemuck::bytes_of(&GradeParams { m: p, pal: *pal_table }));
             } else {

@@ -23,6 +23,8 @@ eleaseudioviz.exe` or builds the installer himself when he wants one. A tagged 
 
 Greg: "I want to focus on adding visuals." Shipping is deferred (below) except the measured default delay. Taste to build against: spacey, lines, post-modern, neon palettes, striking over realistic; every new piece is an ordinary layer (bands, tint, palette, modifiers, blend) and gets a built-in scene. One per commit, a snapshot to Greg before any tuning.
 
+Inspiration Greg handed over (2026-10-18 late), credits kept in `docs/INSPIRATION.md`: **soniaboller/audible-visuals** (three.js; port the visuals worth it, credit the author), and **Uberviz** by Felix Turner (uberviz.io; the Crystal visualizer, the halftone, the colour/monotone drift). Uberviz's licence is unknown, so it is inspiration only unless a licensed repo turns up.
+
 Visual candidates, in the order to try:
 
 - ~~Waves~~ **built 2026-10-18** (waveform or spectrum rows in perspective, hidden-line fill, palette by age or level; built-in scene). Awaiting Greg's look.
@@ -31,7 +33,7 @@ Visual candidates, in the order to try:
 - **Harmonograph**: damped Lissajous of the two strongest pitch classes, drawn as one long line.
 - **Interference**: a few sinusoid line fields driven by bands, moiré where they cross.
 
-Modifier candidates: **warp** (noise displacement, bass-driven), **halftone / dither** (print feel), **glitch** (block displacement and channel tears on onsets), **posterize / hue cycle**, **scanlines / CRT**, **echo** (a delayed copy under the picture, reusing the history pair).
+Modifier candidates: **warp** (noise displacement, bass-driven), ~~halftone~~ (built 2026-10-18; dither still open), **glitch** (block displacement and channel tears on onsets), **posterize / hue cycle**, **scanlines / CRT**, **echo** (a delayed copy under the picture, reusing the history pair).
 
 ## Done: visuals and sound (the previous "Next" list)
 

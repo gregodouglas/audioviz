@@ -12,7 +12,7 @@ use crate::overlays::CalibrationView;
 use crate::scene::Scene;
 use crate::scene_store::SceneDef;
 use crate::color;
-use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
+use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
 use crate::widgets::{self, chip, dropdown, ghost_button, group, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
@@ -644,6 +644,23 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             slider_def(ui, "Amount", &mut k.amount, Some(d.amount), 0.0..=1.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Recolours this layer's picture through its palette (choose one above; none = phosphor). By brightness is a gradient map: dark to the first colours, bright to the last.");
+        }
+        Modifier::Halftone(k) => {
+            let d = Halftone::default();
+            small_caps(ui, "Marks");
+            let names: Vec<&str> = HalftoneShape::ALL.iter().map(|s| s.name()).collect();
+            if let Some(i) = segmented(ui, &names, HalftoneShape::ALL.iter().position(|s| *s == k.shape).unwrap_or(0)) {
+                k.shape = HalftoneShape::ALL[i];
+            }
+            slider_def(ui, "Cell", &mut k.cell, Some(d.cell), 3.0..=40.0, |v| format!("{v:.0} px"), false);
+            slider_def(ui, "Angle", &mut k.angle, Some(d.angle), -90.0..=90.0, |v| format!("{v:.0}°"), false);
+            slider_def(ui, "Gamma", &mut k.gamma, Some(d.gamma), 0.3..=4.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "One ink", &mut k.mono, Some(d.mono), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Drift", &mut k.drift, Some(d.drift), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            toggle_row(ui, "Ink from the palette", &mut k.palette);
+            toggle_row(ui, "Invert", &mut k.invert);
+            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "A print screen: each cell's mark grows with the brightness under it. One ink prints in the tint or the palette; drift lets it wander between the picture's colours and one ink, and onsets push it there. After the halftone in Felix Turner's Uberviz.");
         }
         Modifier::Mask(k) => {
             let d = Mask::default();

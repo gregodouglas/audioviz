@@ -19,9 +19,10 @@ use crate::overlays::{self, CALIBRATION_MIN_TAPS, CalibrationView, FirstRun};
 use crate::panel::{self, CastView, MonitorInfo, PanelState, Stats, UpdateStatus};
 use crate::platform;
 use crate::post::{Post, PostParams};
+use crate::preset_store::{self, PresetDef};
 use crate::scene_store::{self, SceneDef};
 use crate::scenes::scope::MAX_POINTS;
-use crate::settings::{AudioSourceKind, MAX_LAYERS, Section, Settings};
+use crate::settings::{AudioSourceKind, Layer, MAX_LAYERS, Section, Settings};
 use crate::shaders::ShaderSet;
 use crate::strip::Strip;
 use crate::theme::{self, PANEL_W, STRIP_H};
@@ -135,6 +136,7 @@ struct Running {
     last_track: Option<u64>,
     toast: Option<(String, String, Instant)>,
     scenes: Vec<SceneDef>,
+    presets: Vec<PresetDef>,
     update: Arc<Mutex<UpdateStatus>>,
     /// Smoothed effective tint (follows the art when enabled).
     tint_current: [f32; 3],
@@ -288,6 +290,7 @@ impl Running {
             last_track: None,
             toast: None,
             scenes: scene_store::all(),
+            presets: preset_store::all(),
             update: Arc::new(Mutex::new(UpdateStatus::Idle)),
             art_tint: None,
             occluded: false,
@@ -725,6 +728,7 @@ impl Running {
             now_playing: now_playing.as_ref().map(|n| format!("{} — {}{}", n.artist, n.title, if n.playing { "" } else { " (paused)" })),
             calibration: self.calibration.as_ref().map(|c| c.view()),
             scenes: self.scenes.clone(),
+            presets: self.presets.clone(),
             update: self.update.lock().map(|u| u.clone()).unwrap_or_default(),
             diagnostics: self.diagnostics(),
             on_battery: self.battery,
@@ -904,6 +908,29 @@ impl Running {
         }
         if let Some(name) = panel_actions.apply_scene {
             self.apply_scene_named(&name, FADE_MANUAL);
+        }
+        if let Some((i, name)) = panel_actions.apply_preset {
+            if name.is_empty() {
+                // "Defaults": the visual's own defaults, the layer otherwise untouched.
+                let kind = self.settings.layer(i).visual;
+                let fresh = Layer::new(kind, true, 1.0);
+                let def = PresetDef { name: String::new(), visual: kind, params: preset_store::params_of(&fresh), builtin: true };
+                let _ = preset_store::apply(self.settings.layer_mut(i), &def);
+            } else if let Some(p) = self.presets.iter().find(|p| p.name == name && p.visual == self.settings.layer(i).visual).cloned() {
+                if let Err(e) = preset_store::apply(self.settings.layer_mut(i), &p) {
+                    self.calibration_result = Some((format!("Could not apply preset: {e}"), Instant::now()));
+                }
+            }
+        }
+        if let Some((i, name)) = panel_actions.save_preset {
+            match preset_store::save(&name, &self.settings.layer(i)) {
+                Ok(n) => {
+                    self.panel_state.preset_name.clear();
+                    self.presets = preset_store::all();
+                    self.calibration_result = Some((format!("Preset saved: {n}"), Instant::now()));
+                }
+                Err(e) => self.calibration_result = Some((format!("Could not save preset: {e}"), Instant::now())),
+            }
         }
         if let Some(name) = panel_actions.save_scene {
             match scene_store::save(&name, &self.settings) {

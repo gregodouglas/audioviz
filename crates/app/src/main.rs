@@ -16,6 +16,7 @@ mod panel;
 mod platform;
 mod post;
 mod scene;
+mod preset_store;
 mod scene_store;
 mod scenes;
 mod settings;

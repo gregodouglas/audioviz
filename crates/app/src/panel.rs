@@ -10,6 +10,7 @@ use egui::{Align2, Color32, Rect, Sense, pos2, vec2};
 
 use crate::overlays::CalibrationView;
 use crate::scene::Scene;
+use crate::preset_store::PresetDef;
 use crate::scene_store::SceneDef;
 use crate::color;
 use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
@@ -66,6 +67,7 @@ pub struct Stats {
     pub now_playing: Option<String>,
     pub calibration: Option<CalibrationView>,
     pub scenes: Vec<SceneDef>,
+    pub presets: Vec<PresetDef>,
     pub update: UpdateStatus,
     pub diagnostics: String,
     pub on_battery: Option<bool>,
@@ -84,6 +86,9 @@ pub struct Actions {
     pub remove_modifier: Option<(usize, usize)>,
     pub apply_scene: Option<String>,
     pub save_scene: Option<String>,
+    /// (layer, preset name) to apply; (layer, name) to save the layer's visual parameters as.
+    pub apply_preset: Option<(usize, String)>,
+    pub save_preset: Option<(usize, String)>,
     pub delete_scene: Option<String>,
     pub calibrate_toggle: bool,
     pub calibrate_apply: bool,
@@ -108,6 +113,7 @@ pub struct Actions {
 #[derive(Default)]
 pub struct PanelState {
     pub scene_name: String,
+    pub preset_name: String,
     /// Which modifier of the edited layer shows its controls, and whether
     /// its page is open in place of the layer tabs.
     pub editing_mod: usize,
@@ -770,7 +776,7 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
             modifier_page(ui, settings, state, editing, a);
         } else {
             match settings.layer_tab {
-                LayerTab::Visual => visual_tab(ui, settings, layers, editing),
+                LayerTab::Visual => visual_tab(ui, settings, state, stats, layers, editing, a),
                 LayerTab::Colour => colour_tab(ui, settings, editing),
                 LayerTab::Effects => effects_tab(ui, settings, state, editing, a),
             }
@@ -879,7 +885,7 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
     }
 }
 
-fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, layers: &mut [Box<dyn Scene>], editing: usize) {
+fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, layers: &mut [Box<dyn Scene>], editing: usize, a: &mut Actions) {
     let l = settings.layer_mut(editing);
     let names: Vec<&str> = VisualKind::ALL.iter().map(|k| k.name()).collect();
     if let Some(i) = dropdown(ui, "Visual", &names, VisualKind::ALL.iter().position(|k| *k == l.visual)) {
@@ -889,6 +895,27 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, layers: &mut [Box<dyn 
         if k == VisualKind::Kaleido && !l.has_fold() {
             l.modifiers.insert(0, Modifier::Fold(Default::default()));
         }
+    }
+    // Visual presets: built in and saved, for this visual only.
+    {
+        let kind = l.visual;
+        let mine: Vec<&PresetDef> = stats.presets.iter().filter(|p| p.visual == kind).collect();
+        let mut items: Vec<String> = mine.iter().map(|p| if p.builtin { p.name.clone() } else { format!("{} (mine)", p.name) }).collect();
+        items.push("Defaults".into());
+        let refs: Vec<&str> = items.iter().map(String::as_str).collect();
+        if let Some(i) = dropdown(ui, "Preset", &refs, None) {
+            a.apply_preset = Some((editing, if i < mine.len() { mine[i].name.clone() } else { String::new() }));
+        }
+        ui.horizontal(|ui| {
+            ui.set_max_width(ui.available_width());
+            ui.add_space(108.0);
+            let w = (ui.available_width() - 64.0).max(60.0);
+            ui.add(egui::TextEdit::singleline(&mut state.preset_name).desired_width(w).hint_text("Save as"));
+            if ghost_button(ui, "Save", false).clicked() && !state.preset_name.trim().is_empty() {
+                a.save_preset = Some((editing, state.preset_name.trim().to_string()));
+            }
+        });
+        hint(ui, "A preset is this visual's own controls, nothing else: the palette, band, blend and effects stay as they are.");
     }
     // Audio band: full mix, a preset, or a custom range.
     let mut items: Vec<&str> = vec!["Full mix"];

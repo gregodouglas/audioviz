@@ -25,7 +25,7 @@ Greg: "I want to focus on adding visuals." Shipping is deferred (below) except t
 
 Inspiration Greg handed over (2026-10-18 late), credits kept in `docs/INSPIRATION.md`: **soniaboller/audible-visuals** (three.js; port the visuals worth it, credit the author), and **Uberviz** by Felix Turner (uberviz.io; the Crystal visualizer, the halftone, the colour/monotone drift). Uberviz's licence is unknown, so it is inspiration only unless a licensed repo turns up.
 
-Also queued (Greg, 2026-10-18 night): **visual presets**, named parameter sets per visual, built-in plus user-saved, with his ribbons starfield (max particles, persistence 0.001/s, slow and small) as the first.
+~~Visual presets~~ built 2026-10-18 night (`preset_store.rs`: built-in plus saved per visual; Ribbons › Starfield is Greg's). More built-ins welcome as looks get found.
 
 Visual candidates, in the order to try (reordered 2026-10-18 late on the research; details in `docs/INSPIRATION.md`):
 

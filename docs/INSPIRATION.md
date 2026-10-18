@@ -16,6 +16,9 @@ audioviz borrows ideas, never code, unless a licence says otherwise and the entr
 | Scanlines modifier | the "Lines" pass in Uberviz | Felix Turner | none | the idea: a sine stripe over the frame. Written fresh: pitch, angle, cut and glow, crawling with the music. |
 | Wheel visual | the Wheel in Uberviz (Lantern) | Felix Turner | none | the idea: a disc of spectrum wedges, brightness by level squared, hue round the wheel, beat jumps and a walking band mapping. Written fresh: rays past the rim, soft edges, centre hole, palette span. |
 | Mirror modifier | the Mirror pass in Uberviz | Felix Turner | none | the idea: one side reflected across the middle, picked per beat. Written fresh: five sides, additive mode, beat flips. |
+| Glow modifier | the glow / bloom frame of Uberviz's Lantern | Felix Turner | none | the idea: the bright parts blurred wide and added back. Written fresh: levelled soft-knee threshold, quarter-size separable Gaussian, music-swelled amount. |
+| Vignette modifier | the vignette of Uberviz's Lantern | Felix Turner | none | the idea: darkened edges. Written fresh: rectangle-to-circle superellipse, bass opening. |
+| Colorify modifier | the colorify pass in Uberviz (alteredq's three.js example) | Felix Turner; alteredq | none / MIT | the idea: luminance kept, colour replaced by one ink. Written fresh: saturated tint ink with a hue drift, or palette ink by levelled brightness. |
 | Waves visual | the stacked-waveform landscape made famous by the *Unknown Pleasures* cover (Peter Saville, after a pulsar plot by Harold Craft) | | | the look only |
 
 ## Queued ports (from the 2026-10-18 research), with what each takes

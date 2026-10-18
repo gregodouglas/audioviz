@@ -115,6 +115,8 @@ struct Chain {
     hist_cur: Vec<usize>,
     /// Mip pyramid of a fractal slot's input, made on demand.
     pyramid: Vec<Option<Pyramid>>,
+    /// A glow slot's quarter-size pair and sub-pass uniforms, made on demand.
+    glow: Vec<Option<GlowTex>>,
     /// Wet/dry uniforms, one per slot.
     mix_bufs: Vec<wgpu::Buffer>,
     bufs: Vec<wgpu::Buffer>,
@@ -129,6 +131,7 @@ impl Chain {
             hist: (0..MAX_MODS).map(|_| None).collect(),
             hist_cur: vec![0; MAX_MODS],
             pyramid: (0..MAX_MODS).map(|_| None).collect(),
+            glow: (0..MAX_MODS).map(|_| None).collect(),
             mix_bufs: (0..MAX_MODS).map(|j| scene::uniform_buffer(device, &format!("layer {i} mix {j}"), std::mem::size_of::<MixParams>() as u64)).collect(),
             bufs: (0..MAX_MODS).map(|j| scene::uniform_buffer(device, &format!("layer {i} mod {j}"), std::mem::size_of::<GradeParams>() as u64)).collect(),
             states: vec![ModState::default(); MAX_MODS],
@@ -141,6 +144,24 @@ impl Chain {
         // History and pyramids are remade on demand at the new size.
         self.hist = (0..MAX_MODS).map(|_| None).collect();
         self.pyramid = (0..MAX_MODS).map(|_| None).collect();
+        self.glow = (0..MAX_MODS).map(|_| None).collect();
+    }
+
+    /// Give slot `j` a glow pair (or take it away) to match its modifier.
+    fn want_glow(&mut self, device: &wgpu::Device, j: usize, want: bool, width: u32, height: u32) {
+        match (want, self.glow[j].is_some()) {
+            (true, false) => {
+                let i = self.index;
+                let (w, h) = ((width / 4).max(1), (height / 4).max(1));
+                self.glow[j] = Some(GlowTex {
+                    a: hdr_texture(device, &format!("layer {i} glow {j} a"), w, h),
+                    b: hdr_texture(device, &format!("layer {i} glow {j} b"), w, h),
+                    bufs: std::array::from_fn(|k| scene::uniform_buffer(device, &format!("layer {i} glow {j} pass {k}"), std::mem::size_of::<ModParams>() as u64)),
+                });
+            }
+            (false, true) => self.glow[j] = None,
+            _ => {}
+        }
     }
 
     /// Give slot `j` a mip pyramid (or take it away) to match its modifier.
@@ -166,13 +187,25 @@ impl Chain {
     }
 }
 
+/// A glow slot's quarter-size ping-pong and the uniforms of its three
+/// sub-passes (prefilter, horizontal blur, vertical blur).
+struct GlowTex {
+    a: wgpu::TextureView,
+    b: wgpu::TextureView,
+    bufs: [wgpu::Buffer; 3],
+}
+
 /// One pipeline per modifier kind, in `MOD_SHADERS` order.
-const MOD_SHADERS: [&str; 14] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl", "fractal.wgsl", "lumi.wgsl", "grade.wgsl", "halftone.wgsl", "warp.wgsl", "lines.wgsl", "mirror.wgsl"];
+const MOD_SHADERS: [&str; 17] = ["fold.wgsl", "feedback.wgsl", "polar.wgsl", "ripple.wgsl", "edge.wgsl", "chroma.wgsl", "mask.wgsl", "fractal.wgsl", "lumi.wgsl", "grade.wgsl", "halftone.wgsl", "warp.wgsl", "lines.wgsl", "mirror.wgsl", "glow.wgsl", "vignette.wgsl", "colorify.wgsl"];
 /// Pipeline indices with special plumbing: both keep a history pair.
 const MOD_FEEDBACK: usize = 1;
 const MOD_LUMI: usize = 8;
 
 const MOD_FRACTAL: usize = 7;
+/// Glow blurs a quarter-size copy in sub-passes before its composite.
+const MOD_GLOW: usize = 14;
+/// Colorify reads the layer meter (levelled brightness picks the palette place).
+const MOD_COLORIFY: usize = 16;
 /// Mip levels a fractal's input keeps: 1.9^5 of magnification is lod 4.6.
 const PYRAMID_LEVELS: u32 = 6;
 
@@ -196,6 +229,9 @@ fn mod_index(m: &Modifier) -> usize {
         Modifier::Warp(_) => 11,
         Modifier::Lines(_) => 12,
         Modifier::Mirror(_) => 13,
+        Modifier::Glow(_) => 14,
+        Modifier::Vignette(_) => 15,
+        Modifier::Colorify(_) => 16,
     }
 }
 
@@ -348,6 +384,8 @@ struct Pipes {
     mod_pipelines: Vec<wgpu::RenderPipeline>,
     /// Copy / 2x box downsample on the modifier layout (builds pyramids).
     blit: wgpu::RenderPipeline,
+    /// Glow's prefilter and blur sub-passes, on the modifier layout.
+    glow_blur: wgpu::RenderPipeline,
     mirror_sampler: wgpu::Sampler,
     sampler: wgpu::Sampler,
     layer_layout: wgpu::BindGroupLayout,
@@ -596,6 +634,23 @@ fn mod_params(m: &Modifier, st: &mut ModState, f: &FeatureFrame, tint: [f32; 3],
             };
             p.p0 = [side, k.additive as u32 as f32, st.wander, 0.0];
         }
+        Modifier::Glow(k) => {
+            // p1 (threshold, level on) and the blur width go to the sub-passes; the caller writes those.
+            let amount = k.amount * (1.0 + k.react * (0.5 * (energy - 1.0).clamp(-1.0, 1.5) + 0.8 * onset));
+            p.p0 = [amount.max(0.0), 0.0, 0.0, 0.0];
+        }
+        Modifier::Vignette(k) => {
+            // The frame opens a little on the bass.
+            let open = 0.15 * k.react * bass.max(0.0);
+            p.p0 = [k.amount, k.softness, k.roundness, open];
+        }
+        Modifier::Colorify(k) => {
+            // p0.w (level on) and p1.w (palette shift) are filled in by the caller.
+            st.angle = (st.angle + dt * k.speed / 360.0 * (0.5 + 0.5 * energy * k.react) + 0.3 * k.react * onset * dt).rem_euclid(1.0);
+            let strength = (k.strength * (1.0 + 0.2 * k.react * onset)).clamp(0.0, 1.0);
+            p.p0 = [strength, k.palette as u32 as f32, st.angle, 0.0];
+            p.p1 = [tint[0], tint[1], tint[2], 0.0];
+        }
         Modifier::Mask(k) => {
             let radius = (k.radius * (1.0 + 0.1 * k.react * bass)).max(0.01);
             let shape = match k.shape {
@@ -627,6 +682,7 @@ impl Director {
         let mod_layout = scene::tex_layout(device, "mod", 1);
         let mod_pipelines = build_mods(device, shaders, &mod_layout)?;
         let blit = build_blit(device, shaders, &mod_layout)?;
+        let glow_blur = build_glow_blur(device, shaders, &mod_layout)?;
         let mirror_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("mod mirror"),
             address_mode_u: wgpu::AddressMode::MirrorRepeat,
@@ -641,7 +697,7 @@ impl Director {
             slots,
             outgoing: (0..MAX_LAYERS).map(|_| None).collect(),
             last_layers: (0..MAX_LAYERS).map(|i| settings.layer(i)).collect(),
-            pipes: Pipes { mod_layout, mod_pipelines, blit, mirror_sampler, sampler, layer_layout, layer_pipelines, mix_layout, mix_pipeline, blend_layout },
+            pipes: Pipes { mod_layout, mod_pipelines, blit, glow_blur, mirror_sampler, sampler, layer_layout, layer_pipelines, mix_layout, mix_pipeline, blend_layout },
             one_buf,
             composite: hdr_texture(device, "composite", width, height),
             composite_b: hdr_texture(device, "composite b", width, height),
@@ -708,6 +764,8 @@ impl Director {
                 c.hist.insert(to, h);
                 let y = c.pyramid.remove(from);
                 c.pyramid.insert(to, y);
+                let g = c.glow.remove(from);
+                c.glow.insert(to, g);
                 let k = c.hist_cur.remove(from);
                 c.hist_cur.insert(to, k);
             }
@@ -724,6 +782,8 @@ impl Director {
                 c.hist.push(None);
                 c.pyramid.remove(at);
                 c.pyramid.push(None);
+                c.glow.remove(at);
+                c.glow.push(None);
                 c.hist_cur.remove(at);
                 c.hist_cur.push(0);
             }
@@ -811,6 +871,10 @@ impl Director {
         match build_blit(device, shaders, &self.pipes.mod_layout) {
             Ok(p) => self.pipes.blit = p,
             Err(e) => errors.push(format!("blit: {e}")),
+        }
+        match build_glow_blur(device, shaders, &self.pipes.mod_layout) {
+            Ok(p) => self.pipes.glow_blur = p,
+            Err(e) => errors.push(format!("glow: {e}")),
         }
         if let Err(e) = build_mix(device, shaders, &self.pipes.mix_layout).map(|p| self.pipes.mix_pipeline = p) {
             errors.push(format!("mix: {e}"));
@@ -1003,10 +1067,12 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
             if !m.enabled() || gates[j] < 0.002 {
                 chain.want_history(device, j, false, fr.width, fr.height);
                 chain.want_pyramid(device, j, false, fr.width, fr.height);
+                chain.want_glow(device, j, false, fr.width, fr.height);
                 continue;
             }
             chain.want_history(device, j, uses_history(mod_index(m)), fr.width, fr.height);
             chain.want_pyramid(device, j, mod_index(m) == MOD_FRACTAL, fr.width, fr.height);
+            chain.want_glow(device, j, mod_index(m) == MOD_GLOW, fr.width, fr.height);
             // The modifier follows the layer's band unless it has its own.
             let own_band;
             let mf: &FeatureFrame = match m.band() {
@@ -1018,11 +1084,23 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
                 Some(_) => fr.features,
             };
             let mut p = mod_params(m, &mut chain.states[j], mf, slot.tint, dt, time, fr.width, fr.height);
-            if matches!(m, Modifier::Grade(_) | Modifier::Edge(_) | Modifier::Halftone(_)) {
-                // All three read the palette table; the shift goes where each shader documents.
+            if let (Modifier::Glow(k), Some(g)) = (m, chain.glow[j].as_ref()) {
+                // Blur width in quarter-size texels: size 1 is a sigma of 0.7% of the height per side, ~40 px at 1440p full size.
+                let sigma = (k.size.max(0.05) * 0.007 * fr.height as f32).max(0.5);
+                let sub = |mode: f32, dir: [f32; 2]| ModParams { p0: [mode, dir[0], dir[1], sigma], p1: [k.threshold, fr.level as u32 as f32, 0.0, 0.0], ..p };
+                queue.write_buffer(&g.bufs[0], 0, bytemuck::bytes_of(&sub(0.0, [0.0, 0.0])));
+                queue.write_buffer(&g.bufs[1], 0, bytemuck::bytes_of(&sub(1.0, [1.0, 0.0])));
+                queue.write_buffer(&g.bufs[2], 0, bytemuck::bytes_of(&sub(1.0, [0.0, 1.0])));
+            }
+            if let Modifier::Colorify(_) = m {
+                p.p0[3] = fr.level as u32 as f32;
+            }
+            if matches!(m, Modifier::Grade(_) | Modifier::Edge(_) | Modifier::Halftone(_) | Modifier::Colorify(_)) {
+                // All four read the palette table; the shift goes where each shader documents.
                 match m {
                     Modifier::Grade(_) => p.p0[2] = pal_shift,
                     Modifier::Edge(_) => p.p0[3] = pal_shift,
+                    Modifier::Colorify(_) => p.p1[3] = pal_shift,
                     _ => p.p2[0] = pal_shift,
                 }
                 queue.write_buffer(&chain.bufs[j], 0, bytemuck::bytes_of(&GradeParams { m: p, pal: *pal_table }));
@@ -1037,6 +1115,8 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
         }
     }
     let chain = &slot.chain;
+    // Last frame's levelling gain, for the passes that measure brightness.
+    let meter_state = &slot.meter.state[slot.meter.cur];
     let mut src: &wgpu::TextureView = visual.output();
     let mut pp = 0usize;
     let mut flips: Vec<usize> = Vec::new();
@@ -1046,7 +1126,21 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
         // read the texture the other is writing.
         let hist = chain.hist[j].as_ref();
         let (hist_prev, hist_cur) = (chain.hist_cur[j], 1 - chain.hist_cur[j]);
-        let second: &wgpu::TextureView = hist.map_or(src, |h| &h[hist_prev]);
+        let mut second: &wgpu::TextureView = hist.map_or(src, |h| &h[hist_prev]);
+        if pi == MOD_COLORIFY {
+            second = meter_state;
+        }
+        // Glow: threshold into the quarter-size pair, blur across then down;
+        // the composite reads the result as its second texture.
+        if let (MOD_GLOW, Some(gt)) = (pi, chain.glow[j].as_ref()) {
+            let g = scene::tex_group(device, &pipes.mod_layout, &[src, meter_state], &pipes.sampler, &gt.bufs[0]);
+            fullscreen_pass(encoder, "glow prefilter", &gt.a, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.glow_blur, &g);
+            let g = scene::tex_group(device, &pipes.mod_layout, &[&gt.a, &gt.a], &pipes.sampler, &gt.bufs[1]);
+            fullscreen_pass(encoder, "glow blur x", &gt.b, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.glow_blur, &g);
+            let g = scene::tex_group(device, &pipes.mod_layout, &[&gt.b, &gt.b], &pipes.sampler, &gt.bufs[2]);
+            fullscreen_pass(encoder, "glow blur y", &gt.a, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.glow_blur, &g);
+            second = &gt.a;
+        }
         // A fractal reads a mip pyramid of its input: copy, then halve level
         // by level (the blit's one linear tap at half size is a 2x2 box).
         let mut first_tex = src;
@@ -1145,6 +1239,13 @@ fn build_blit(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGro
     scene::guarded(device, || {
         let m = scene::shader(device, shaders, "blit.wgsl");
         scene::pipeline(device, "blit", layout, &m, HDR_FORMAT, None)
+    })
+}
+
+fn build_glow_blur(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Result<wgpu::RenderPipeline, String> {
+    scene::guarded(device, || {
+        let m = scene::shader(device, shaders, "glow_blur.wgsl");
+        scene::pipeline(device, "glow blur", layout, &m, HDR_FORMAT, None)
     })
 }
 

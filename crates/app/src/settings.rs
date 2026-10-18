@@ -447,13 +447,16 @@ pub enum Modifier {
     Warp(Warp),
     Lines(Lines),
     Mirror(Mirror),
+    Glow(Glow),
+    Vignette(Vignette),
+    Colorify(Colorify),
 }
 
-pub const MAX_MODS: usize = 6;
+pub const MAX_MODS: usize = 8;
 
 impl Modifier {
     /// Every kind with a constructor, in the order the panel offers them.
-    pub const KINDS: [(&'static str, fn() -> Modifier); 14] = [
+    pub const KINDS: [(&'static str, fn() -> Modifier); 17] = [
         ("Palette", || Modifier::Grade(Grade::default())),
         ("Kaleidoscope", || Modifier::Fold(Fold::default())),
         ("Fractal", || Modifier::Fractal(Fractal::default())),
@@ -468,6 +471,9 @@ impl Modifier {
         ("Warp", || Modifier::Warp(Warp::default())),
         ("Scanlines", || Modifier::Lines(Lines::default())),
         ("Mirror", || Modifier::Mirror(Mirror::default())),
+        ("Glow", || Modifier::Glow(Glow::default())),
+        ("Vignette", || Modifier::Vignette(Vignette::default())),
+        ("Colorify", || Modifier::Colorify(Colorify::default())),
     ];
 
     pub fn name(&self) -> &'static str {
@@ -486,6 +492,9 @@ impl Modifier {
             Modifier::Warp(_) => "Warp",
             Modifier::Lines(_) => "Scanlines",
             Modifier::Mirror(_) => "Mirror",
+            Modifier::Glow(_) => "Glow",
+            Modifier::Vignette(_) => "Vignette",
+            Modifier::Colorify(_) => "Colorify",
         }
     }
 
@@ -509,6 +518,9 @@ impl Modifier {
             Modifier::Warp(k) => k.mix,
             Modifier::Lines(k) => k.mix,
             Modifier::Mirror(k) => k.mix,
+            Modifier::Glow(k) => k.mix,
+            Modifier::Vignette(k) => k.mix,
+            Modifier::Colorify(k) => k.mix,
         }
     }
 
@@ -529,6 +541,9 @@ impl Modifier {
             Modifier::Warp(k) => k.band,
             Modifier::Lines(k) => k.band,
             Modifier::Mirror(k) => k.band,
+            Modifier::Glow(k) => k.band,
+            Modifier::Vignette(k) => k.band,
+            Modifier::Colorify(k) => k.band,
         }
     }
 
@@ -548,6 +563,9 @@ impl Modifier {
             Modifier::Warp(k) => &mut k.band,
             Modifier::Lines(k) => &mut k.band,
             Modifier::Mirror(k) => &mut k.band,
+            Modifier::Glow(k) => &mut k.band,
+            Modifier::Vignette(k) => &mut k.band,
+            Modifier::Colorify(k) => &mut k.band,
         }
     }
 
@@ -568,6 +586,9 @@ impl Modifier {
             Modifier::Warp(k) => k.pinned,
             Modifier::Lines(k) => k.pinned,
             Modifier::Mirror(k) => k.pinned,
+            Modifier::Glow(k) => k.pinned,
+            Modifier::Vignette(k) => k.pinned,
+            Modifier::Colorify(k) => k.pinned,
         }
     }
 
@@ -587,6 +608,9 @@ impl Modifier {
             Modifier::Warp(k) => &mut k.pinned,
             Modifier::Lines(k) => &mut k.pinned,
             Modifier::Mirror(k) => &mut k.pinned,
+            Modifier::Glow(k) => &mut k.pinned,
+            Modifier::Vignette(k) => &mut k.pinned,
+            Modifier::Colorify(k) => &mut k.pinned,
         }
     }
 
@@ -616,6 +640,9 @@ impl Modifier {
             Modifier::Warp(k) => &mut k.mix,
             Modifier::Lines(k) => &mut k.mix,
             Modifier::Mirror(k) => &mut k.mix,
+            Modifier::Glow(k) => &mut k.mix,
+            Modifier::Vignette(k) => &mut k.mix,
+            Modifier::Colorify(k) => &mut k.mix,
         }
     }
 
@@ -637,6 +664,9 @@ impl Modifier {
             Modifier::Warp(_) => Modifier::Warp(Warp::default()),
             Modifier::Lines(_) => Modifier::Lines(Lines::default()),
             Modifier::Mirror(_) => Modifier::Mirror(Mirror::default()),
+            Modifier::Glow(_) => Modifier::Glow(Glow::default()),
+            Modifier::Vignette(_) => Modifier::Vignette(Vignette::default()),
+            Modifier::Colorify(_) => Modifier::Colorify(Colorify::default()),
         };
         *self.enabled_mut() = enabled;
     }
@@ -657,6 +687,9 @@ impl Modifier {
             Modifier::Warp(m) => &m.enabled,
             Modifier::Lines(m) => &m.enabled,
             Modifier::Mirror(m) => &m.enabled,
+            Modifier::Glow(m) => &m.enabled,
+            Modifier::Vignette(m) => &m.enabled,
+            Modifier::Colorify(m) => &m.enabled,
         }
     }
 
@@ -676,6 +709,9 @@ impl Modifier {
             Modifier::Warp(m) => &mut m.enabled,
             Modifier::Lines(m) => &mut m.enabled,
             Modifier::Mirror(m) => &mut m.enabled,
+            Modifier::Glow(m) => &mut m.enabled,
+            Modifier::Vignette(m) => &mut m.enabled,
+            Modifier::Colorify(m) => &mut m.enabled,
         }
     }
 }
@@ -851,6 +887,91 @@ pub struct Mirror {
 impl Default for Mirror {
     fn default() -> Self {
         Self { enabled: true, mix: 1.0, band: None, pinned: false, side: MirrorSide::Left, additive: false, flip: 0.0, react: 1.0 }
+    }
+}
+
+/// Glow modifier: the bright parts of the picture blurred wide and added back
+/// over it, the heavy halo frame of Uberviz's Lantern. A soft threshold picks
+/// what glows; the blur runs at quarter resolution, separably.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Glow {
+    pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
+    /// How much of the blur is added back.
+    pub amount: f32,
+    /// Blur width, 1 = about 40 px at 1440p.
+    pub size: f32,
+    /// Brightness below which nothing glows (soft knee).
+    pub threshold: f32,
+    /// The glow swells with the energy and onsets.
+    pub react: f32,
+}
+
+impl Default for Glow {
+    fn default() -> Self {
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, amount: 0.8, size: 1.0, threshold: 0.2, react: 0.5 }
+    }
+}
+
+/// Vignette modifier: the edges of the frame darkened toward black.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Vignette {
+    pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
+    /// How dark the corners go.
+    pub amount: f32,
+    /// Width of the fall-off.
+    pub softness: f32,
+    /// 0 follows the frame's rectangle, 1 is a circle.
+    pub roundness: f32,
+    /// The frame opens a little on the bass.
+    pub react: f32,
+}
+
+impl Default for Vignette {
+    fn default() -> Self {
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, amount: 0.6, softness: 0.5, roundness: 0.6, react: 0.3 }
+    }
+}
+
+/// Colorify modifier: the picture reprinted in one ink by its luminance, the
+/// ink being the tint or a place on the palette, drifting in hue. The other
+/// half of Uberviz's colour / monochrome look.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Colorify {
+    pub enabled: bool,
+    /// Wet/dry: 1 = the pass's full effect, 0 = the picture untouched.
+    pub mix: f32,
+    /// Audio band this effect follows; none = the layer's own.
+    pub band: Option<AudioBand>,
+    /// Always on: kept out of the effects director's pool.
+    pub pinned: bool,
+    /// 1 = one ink, 0 = the picture's own colours.
+    pub strength: f32,
+    /// Ink from the palette (by luminance) instead of the tint.
+    pub palette: bool,
+    /// Hue drift, degrees per second (in palette mode, a turn is the whole palette).
+    pub speed: f32,
+    /// Energy speeds the drift, onsets kick it.
+    pub react: f32,
+}
+
+impl Default for Colorify {
+    fn default() -> Self {
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, strength: 1.0, palette: false, speed: 12.0, react: 0.5 }
     }
 }
 

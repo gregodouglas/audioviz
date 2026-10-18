@@ -41,7 +41,7 @@ Visual candidates, in the order to try (reordered 2026-10-18 late on the researc
 - **Harmonograph**: damped Lissajous of the two strongest pitch classes, drawn as one long line.
 - **Interference**: a few sinusoid line fields driven by bands, moiré where they cross.
 
-Modifier candidates: ~~warp~~ (built 2026-10-18), ~~halftone~~ (built 2026-10-18; dither still open), ~~scanlines~~ and ~~mirror~~ (built 2026-10-18), **glow** and **vignette** as modifiers (the heavy Uberviz frame), **colorify** (one drifting ink, the other half of Uberviz's colour/mono look), ~~beat roll~~ (built 2026-10-18 as the **effects director**, `docs/model.md`), **glitch** (block displacement and channel tears on onsets), **posterize / hue cycle**, **scanlines / CRT**, **echo** (a delayed copy under the picture, reusing the history pair).
+Modifier candidates: ~~warp~~ (built 2026-10-18), ~~halftone~~ (built 2026-10-18; dither still open), ~~scanlines~~ and ~~mirror~~ (built 2026-10-18), ~~glow~~, ~~vignette~~ and ~~colorify~~ (built 2026-10-18 late night; Lantern's Crystal runs Glow and Vignette pinned, Colorify in the pool), ~~beat roll~~ (built 2026-10-18 as the **effects director**, `docs/model.md`), **glitch** (block displacement and channel tears on onsets), **posterize / hue cycle**, **scanlines / CRT**, **echo** (a delayed copy under the picture, reusing the history pair).
 
 ## Done: visuals and sound (the previous "Next" list)
 

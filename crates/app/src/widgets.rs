@@ -221,6 +221,11 @@ pub fn title(s: &str) -> String {
     }
 }
 
+/// The width `chip` will take for `text`.
+pub fn chip_width(ui: &Ui, text: &str) -> f32 {
+    ui.painter().layout_no_wrap(text.to_string(), theme::mono(10.5), Color32::WHITE).size().x + 10.0
+}
+
 /// A small rounded tag in a colour; returns the response (clickable).
 pub fn chip(ui: &mut Ui, text: &str, color: Color32, clickable: bool) -> Response {
     let galley = ui.painter().layout_no_wrap(text.to_string(), theme::mono(10.5), color);

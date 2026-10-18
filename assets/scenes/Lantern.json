@@ -93,6 +93,28 @@
           "react": 1.0
         },
         {
+          "kind": "colorify",
+          "enabled": true,
+          "mix": 1.0,
+          "band": null,
+          "pinned": false,
+          "strength": 1.0,
+          "palette": false,
+          "speed": 12.0,
+          "react": 0.5
+        },
+        {
+          "kind": "glow",
+          "enabled": true,
+          "mix": 1.0,
+          "band": null,
+          "pinned": true,
+          "amount": 0.8,
+          "size": 1.0,
+          "threshold": 0.2,
+          "react": 0.5
+        },
+        {
           "kind": "lines",
           "enabled": true,
           "mix": 1.0,
@@ -113,6 +135,17 @@
           "amount": 0.004,
           "radial": true,
           "react": 1.0
+        },
+        {
+          "kind": "vignette",
+          "enabled": true,
+          "mix": 1.0,
+          "band": null,
+          "pinned": true,
+          "amount": 0.6,
+          "softness": 0.5,
+          "roundness": 0.6,
+          "react": 0.3
         }
       ],
       "director": {

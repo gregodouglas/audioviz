@@ -13,9 +13,9 @@ use crate::scene::Scene;
 use crate::preset_store::PresetDef;
 use crate::scene_store::SceneDef;
 use crate::color;
-use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind};
+use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind, Glow, Vignette, Colorify};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
-use crate::widgets::{self, chip, dropdown, ghost_button, group, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
+use crate::widgets::{self, chip, chip_width, dropdown, ghost_button, group, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
 const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
@@ -414,7 +414,7 @@ fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelStat
     let l = settings.layer_mut(editing);
     let n = l.modifiers.len();
     if n == 0 {
-        hint(ui, "Modifiers are passes over this layer's picture, run in order: mirrors, fractal recursion, luminescent afterglow, echo, polar wrap, ripples, edges, colour fringes, a mask, a palette recolour.");
+        hint(ui, "Modifiers are passes over this layer's picture, run in order: mirrors, fractal recursion, luminescent afterglow, echo, polar wrap, ripples, edges, colour fringes, a mask, a palette recolour, glow, a vignette, one ink.");
         ui.add_space(4.0);
     }
     let dragging = egui::DragAndDrop::has_payload_of_type::<ModDrag>(ui.ctx());
@@ -478,7 +478,7 @@ fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelStat
             state.mod_open = true;
         }
     } else {
-        hint(ui, "Six modifiers is the most a layer runs.");
+        hint(ui, "Eight modifiers is the most a layer runs.");
     }
     if n > 0 {
         hint(ui, "Order matters: each pass sees the one above it. Click a name to open its controls; Esc comes back.");
@@ -726,6 +726,30 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "One side reflected across the middle: instant symmetry on anything. Add keeps both sides and lays the reflection over them.");
         }
+        Modifier::Glow(k) => {
+            let d = Glow::default();
+            slider_def(ui, "Amount", &mut k.amount, Some(d.amount), 0.0..=4.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Size", &mut k.size, Some(d.size), 0.1..=3.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Threshold", &mut k.threshold, Some(d.threshold), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "The bright parts blurred wide and added back, in their own colours. Threshold picks what glows (measured after levelling, so it means the same on any layer); energy and onsets swell it. After the glow in Felix Turner's Uberviz.");
+        }
+        Modifier::Vignette(k) => {
+            let d = Vignette::default();
+            slider_def(ui, "Amount", &mut k.amount, Some(d.amount), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Softness", &mut k.softness, Some(d.softness), 0.02..=1.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Roundness", &mut k.roundness, Some(d.roundness), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Darkens the edges of this layer: 0 roundness follows the frame, 1 is a circle. The frame opens a little on the bass. On the bottom layer, or on every layer, it frames the whole picture.");
+        }
+        Modifier::Colorify(k) => {
+            let d = Colorify::default();
+            slider_def(ui, "Strength", &mut k.strength, Some(d.strength), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            toggle_row(ui, "Ink from the palette", &mut k.palette);
+            slider_def(ui, "Hue drift", &mut k.speed, Some(d.speed), -90.0..=90.0, |v| format!("{v:.0}°/s"), false);
+            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            hint(ui, "Reprints the picture in one ink, keeping its brightness: the layer tint turning round the colour wheel, or the palette by brightness drifting along it. Put it in the effects director's pool to flip between colour and one ink. After the colorify in Felix Turner's Uberviz.");
+        }
         Modifier::Mask(k) => {
             let d = Mask::default();
             small_caps(ui, "Shape");
@@ -855,12 +879,28 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
             }
         });
         if has_chain {
-            // Chips wrap inside the column; a long chain never widens the panel.
-            ui.horizontal_wrapped(|ui| {
-                ui.set_max_width(ui.available_width());
+            // One line of chips: as many as fit, then "+N" for the rest (it
+            // opens the Effects tab), so a long chain never wraps or widens.
+            let mut open_tab = false;
+            ui.horizontal(|ui| {
                 ui.add_space(24.0);
+                let gap = ui.spacing().item_spacing.x;
                 let l = settings.layer(i);
-                for (j, m) in l.modifiers.iter().enumerate() {
+                let names: Vec<&str> = l.modifiers.iter().map(|m| m.name()).collect();
+                let widths: Vec<f32> = names.iter().map(|n| chip_width(ui, n) + gap).collect();
+                let more_w = chip_width(ui, &format!("+{}", names.len())) + gap;
+                let avail = ui.available_width();
+                let total: f32 = widths.iter().sum();
+                let fit = if total <= avail {
+                    names.len()
+                } else {
+                    let mut used = 0.0;
+                    widths.iter().take_while(|w| {
+                        used += **w;
+                        used + more_w <= avail
+                    }).count()
+                };
+                for (j, m) in l.modifiers.iter().enumerate().take(fit) {
                     let c = if m.enabled() { hue } else { TEXT_3 };
                     if chip(ui, m.name(), c, true).on_hover_text("Open its controls").clicked() {
                         a.select_layer = Some(i);
@@ -869,7 +909,18 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
                         state.mod_layer = i;
                     }
                 }
+                if fit < names.len() {
+                    let rest = names[fit..].join(", ");
+                    if chip(ui, &format!("+{}", names.len() - fit), hue, true).on_hover_text(rest).clicked() {
+                        a.select_layer = Some(i);
+                        state.mod_open = false;
+                        open_tab = true;
+                    }
+                }
             });
+            if open_tab {
+                settings.layer_tab = LayerTab::Effects;
+            }
         }
         if dragging {
             let bottom = ui.cursor().top();

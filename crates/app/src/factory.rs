@@ -52,8 +52,14 @@ pub fn install(prefix: &str, force: bool) -> anyhow::Result<usize> {
 /// Whether `rel` is a factory file, and whether the file on disk still
 /// matches the embedded copy.
 pub fn status(rel: &str, on_disk: &str) -> (bool, bool) {
+    status_with(rel, on_disk, same_json)
+}
+
+/// `status` with the caller's idea of "the same" (scenes compare what they
+/// mean, so a file in an older shape is not marked edited).
+pub fn status_with(rel: &str, on_disk: &str, same: impl Fn(&str, &str) -> bool) -> (bool, bool) {
     match FACTORY.iter().find(|(r, _)| *r == rel) {
-        Some((_, text)) => (true, same_json(text, on_disk)),
+        Some((_, text)) => (true, same(text, on_disk)),
         None => (false, false),
     }
 }

@@ -372,6 +372,7 @@ What a frame costs (release build, RTX 2070 Super, 2560x1440):
 | Polygon | 0.12 |
 | Comet (three heads, feedback) | 0.24 |
 | Pulse (five rings) | 0.44 |
+| Spectrum wheel (64 wedges, state and colours in `prepare`) | 0.16 (compiled in, it was 0.18) |
 | Harmonograph (a 6000-point line) | 0.19 |
 | Eclipse (16 dots, a loop with a halo per dot, levels in `prepare`) | 0.69 |
 | Eclipse at 64 dots | 2.7 |

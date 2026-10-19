@@ -201,7 +201,8 @@ impl ParamDef {
                 let i = name.and_then(|n| self.options.iter().position(|o| o.to_lowercase() == n)).unwrap_or(0);
                 Value::String(self.options[i].to_lowercase())
             }
-            ParamKind::Integer => Value::from(v.as_f64().or(self.default.as_f64()).unwrap_or(self.min as f64).round()),
+            // Whole numbers stay whole in saved files ("count": 64, not 64.0).
+            ParamKind::Integer => Value::from(v.as_f64().or(self.default.as_f64()).unwrap_or(self.min as f64).round() as i64),
             ParamKind::Slider => Value::from(v.as_f64().or(self.default.as_f64()).unwrap_or(self.min as f64)),
         }
     }
@@ -959,8 +960,7 @@ impl Scene for ShaderVisual {
                             if !p.help.is_empty() {
                                 r.on_hover_text(&p.help);
                             }
-                            let x = if int { x.round() } else { x };
-                            values.insert(p.id.clone(), Value::from(x as f64));
+                            values.insert(p.id.clone(), if int { Value::from(x.round() as i64) } else { Value::from(x as f64) });
                         }
                     }
                 }
@@ -1013,7 +1013,7 @@ mod tests {
         let d = parse(JSON, "fn shade(uv: vec2<f32>) -> vec3<f32> { return vec3<f32>(0.0); }", None).unwrap();
         let full = d.params_json(None);
         assert_eq!(full["radius"], 0.5);
-        assert_eq!(full["count"], 4.0);
+        assert_eq!(full["count"], 4);
         assert_eq!(full["mirror"], true);
         assert_eq!(full["print"], "dots");
         assert_eq!(d.params[3].number(Some(&Value::String("dots".into()))), 1.0);

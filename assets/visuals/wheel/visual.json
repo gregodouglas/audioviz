@@ -1,0 +1,23 @@
+{
+  "id": "wheel",
+  "name": "Spectrum wheel",
+  "short": "Wheel",
+  "summary": "A disc of spectrum wedges with rays past the rim; jumps and walks on beats. A backdrop.",
+  "credit": "After the Wheel in Felix Turner's Uberviz (https://uberviz.io). No code used; written fresh.",
+  "hint": "Each wedge is a band of the spectrum; quiet bands go dark. A backdrop for other layers.",
+  "items": 65,
+  "params": [
+    { "id": "count", "label": "Wedges", "type": "integer", "group": "Disc", "min": 4, "max": 64, "default": 64 },
+    { "id": "radius", "label": "Radius", "group": "Disc", "min": 0.1, "max": 2.0, "default": 0.75 },
+    { "id": "rays", "label": "Rays", "group": "Disc", "min": 0.0, "max": 2.0, "default": 0.6 },
+    { "id": "hole", "label": "Centre hole", "group": "Disc", "min": 0.0, "max": 0.95, "default": 0.0 },
+    { "id": "soft", "label": "Edge softness", "group": "Disc", "min": 0.0, "max": 0.5, "default": 0.08 },
+    { "id": "gain", "label": "Gain", "group": "Music", "min": 0.2, "max": 4.0, "default": 1.0, "log": true },
+    { "id": "curve", "label": "Curve", "group": "Music", "min": 0.3, "max": 4.0, "default": 2.0, "help": "Brightness is the level to this power: higher darkens quiet bands." },
+    { "id": "range", "label": "Palette span", "group": "Music", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "speed", "label": "Turn", "group": "Music", "min": -4.0, "max": 4.0, "default": 0.3 },
+    { "id": "jump", "label": "Jump on beats", "group": "Music", "min": 0.0, "max": 1.0, "default": 0.5, "help": "The chance, on each beat, that the wheel jumps to a new angle." },
+    { "id": "walk", "label": "Bands walk round on beats", "type": "toggle", "group": "Music", "default": true },
+    { "id": "react", "label": "Reacts", "group": "Music", "min": 0.0, "max": 3.0, "default": 1.0, "help": "At 0 the beats do nothing." }
+  ]
+}

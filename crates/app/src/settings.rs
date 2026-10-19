@@ -1246,39 +1246,6 @@ impl Default for CrystalParams {
     }
 }
 
-/// Wheel: a disc of spectrum wedges (`scenes/wheel.rs`).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct WheelParams {
-    pub count: u32,
-    /// Disc radius, fraction of the short half-side.
-    pub radius: f32,
-    /// How far wedges continue past the rim as fading rays.
-    pub rays: f32,
-    /// Dark centre, fraction of the disc.
-    pub hole: f32,
-    /// Wedge edge softness, fraction of a wedge.
-    pub soft: f32,
-    pub gain: f32,
-    /// Brightness = level ^ curve.
-    pub curve: f32,
-    /// Fraction of the palette the wheel spans.
-    pub range: f32,
-    /// Turn speed.
-    pub speed: f32,
-    /// Chance of a random jump on each beat.
-    pub jump: f32,
-    /// Bands step one wedge round on every beat.
-    pub walk: bool,
-    pub react: f32,
-}
-
-impl Default for WheelParams {
-    fn default() -> Self {
-        Self { count: 64, radius: 0.75, rays: 0.6, hole: 0.0, soft: 0.08, gain: 1.0, curve: 2.0, range: 1.0, speed: 0.3, jump: 0.5, walk: true, react: 1.0 }
-    }
-}
-
 /// Loop: concentric waveform rings, the newest at the centre, each older one
 /// further out, so a sound travels outward ring by ring (`scenes/loops.rs`).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

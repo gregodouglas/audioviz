@@ -20,8 +20,6 @@ shader_table!(
     "waves_params.wgsl",
     "crystal_params.wgsl",
     "crystal.wgsl",
-    "wheel_params.wgsl",
-    "wheel.wgsl",
     "loop_params.wgsl",
     "loop.wgsl",
     "ripples_params.wgsl",

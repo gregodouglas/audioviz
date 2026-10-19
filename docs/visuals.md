@@ -106,7 +106,7 @@ The colour is linear HDR light (values above 1 are fine; levelling, effects and 
 
 A loaded visual sees only the shared `params.wgsl` prelude and this API, not the built-in visuals' own helpers, so their names never collide with yours. `cargo test -p audioviz factory_visuals_compile` compiles every factory visual the way the engine does.
 
-Factory examples, each a worked example in the guide: **Polygon** (a still shape), **Pulse** (bands, beats, onsets, the music clock), **Comet** (feedback trails), **Eclipse** (a prepare step), **Harmonograph** (a line, with state in a prepare step).
+Factory examples, each a worked example in the guide: **Polygon** (a still shape), **Pulse** (bands, beats, onsets, the music clock), **Comet** (feedback trails), **Eclipse** (a prepare step), **Harmonograph** (a line, with state in a prepare step). **Spectrum wheel** (`assets/visuals/wheel/`) is the second port of a compiled-in visual: its CPU state (turn, beat jumps, the walking band offset, smoothed wedge levels) lives in a prepare step, item 0 for the wheel and one item per wedge holding its finished colour.
 
 How the prepare step runs: a compute pass (`cs_main`, generated after the visual's code, 64 per workgroup) writes one of two item buffers while reading the other through `item()`; the fragment pass then reads the one just written. Eclipse moved its dot levels, positions and colours there: 1.1 → 0.69 ms at 16 dots and 4.5 → 2.7 at 64 (2560x1440, release), under the old compiled-in Eclipse's 0.8 and 3.5.
 

@@ -14,6 +14,7 @@ scenes/Deep field.json 654b5fabf89e6fed
 scenes/Eclipse.json 5d27bd8aff9e5f85
 scenes/Eclipse.json b88e1fe1ea1400b6
 scenes/Harmonograph.json fefa1b43690af818
+scenes/Jellyfish.json db3d0632fa91a0c5
 scenes/Kaleidoscope.json 579a60634c495148
 scenes/Kaleidoscope.json 5d870f2232b99e9b
 scenes/Lantern.json 22eaca7d10529ade
@@ -54,6 +55,8 @@ visuals/eclipse/visual.wgsl d19bd98f6a6ffb3d
 visuals/harmonograph/visual.json 548d04f846e1fcb4
 visuals/harmonograph/visual.wgsl 3ea8bf81525e9a66
 visuals/harmonograph/visual.wgsl cdfe8fe68fcd9536
+visuals/jellyfish/visual.json 837f24cda13524c0
+visuals/jellyfish/visual.wgsl 73bc208e278951de
 visuals/kaleido/visual.json 61603cabff3e5530
 visuals/kaleido/visual.wgsl 069d6bcf431d8c05
 visuals/loop/visual.json 5ba7be6418b67ffc

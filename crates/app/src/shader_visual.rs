@@ -30,7 +30,7 @@ use crate::shaders::ShaderSet;
 
 pub const MAX_PARAMS: usize = 16;
 /// Most items a prepare step may compute.
-pub const MAX_ITEMS: u32 = 4096;
+pub const MAX_ITEMS: u32 = 16384;
 /// Most points a loaded visual's line may have.
 pub const MAX_LINE: u32 = 65536;
 const PREPARE_GROUP: u32 = 64;
@@ -151,7 +151,17 @@ pub struct ShaderDef {
     pub dir: Option<PathBuf>,
 }
 
-const RESERVED: &[&str] = &["array", "bool", "break", "case", "const", "continue", "default", "discard", "else", "enable", "f32", "fn", "for", "i32", "if", "let", "loop", "mat2x2", "override", "ptr", "return", "struct", "switch", "true", "false", "type", "u32", "var", "vec2", "vec3", "vec4", "while", "target", "patch", "self", "super", "static", "move", "mod", "macro", "texture", "sampler", "uniform", "storage", "private", "function", "workgroup"];
+/// WGSL keywords and type names: never a control id.
+const RESERVED: &[&str] = &["array", "bool", "break", "case", "const", "continue", "default", "discard", "else", "enable", "f32", "fn", "for", "i32", "if", "let", "loop", "mat2x2", "override", "ptr", "return", "struct", "switch", "true", "false", "type", "u32", "var", "vec2", "vec3", "vec4", "while", "texture", "sampler", "uniform", "storage", "private", "function", "workgroup"];
+
+/// WGSL's reserved words. A control may carry one as its id, since saved
+/// files use it (Loop's "smooth"); in the shader it is `id_`.
+const WGSL_RESERVED: &[&str] = &["alias", "attribute", "active", "asm", "auto", "await", "become", "binding_array", "cast", "catch", "class", "co_await", "co_return", "co_yield", "coherent", "column_major", "common", "compile", "compile_fragment", "concept", "const_cast", "consteval", "constexpr", "constinit", "crate", "debugger", "decltype", "delete", "demote", "demote_to_helper", "do", "dynamic_cast", "enum", "explicit", "export", "extends", "extern", "external", "fallthrough", "filter", "final", "finally", "friend", "from", "fxgroup", "get", "goto", "groupshared", "highp", "impl", "implements", "import", "inline", "instanceof", "interface", "layout", "lowp", "macro", "macro_rules", "match", "mediump", "meta", "mod", "module", "move", "mut", "mutable", "namespace", "new", "nil", "noexcept", "noinline", "nointerpolation", "noperspective", "null", "nullptr", "of", "operator", "package", "packoffset", "partition", "pass", "patch", "pixelfragment", "precise", "precision", "premerge", "priv", "protected", "pub", "public", "readonly", "ref", "regardless", "register", "reinterpret_cast", "require", "resource", "restrict", "self", "set", "shared", "sizeof", "smooth", "snorm", "static", "static_assert", "static_cast", "std", "subroutine", "super", "target", "template", "this", "thread_local", "throw", "trait", "try", "typedef", "typeid", "typename", "typeof", "union", "unless", "unorm", "unsafe", "unsized", "use", "using", "varying", "virtual", "volatile", "wgsl", "where", "with", "writeonly", "yield", "flat", "linear", "perspective", "centroid"];
+
+/// A control's name in the shader: its id, or `id_` for a WGSL reserved word.
+fn field(id: &str) -> String {
+    if WGSL_RESERVED.contains(&id) { format!("{id}_") } else { id.to_string() }
+}
 
 /// Whether the code defines `fn <name>(`, ignoring line comments.
 fn defines(wgsl: &str, name: &str) -> bool {
@@ -270,7 +280,7 @@ impl ShaderDef {
     fn generated(&self) -> String {
         let mut s = format!("// Generated from visual.json.\nconst ITEMS: u32 = {}u;\nconst LINE_POINTS: u32 = {}u;\n\nstruct Params {{\n", self.items, self.line);
         for p in &self.params {
-            s.push_str(&format!("    {}: f32,\n", p.id));
+            s.push_str(&format!("    {}: f32,\n", field(&p.id)));
         }
         if self.params.is_empty() {
             s.push_str("    none: f32,\n");
@@ -1083,6 +1093,8 @@ mod tests {
         let stored = serde_json::json!({"radius": 1.5});
         assert_eq!(d.params_json(Some(&stored))["radius"], 1.5);
         assert!(d.generated().contains("fn params() -> Params"));
+        let r = parse(r#"{"id": "x", "name": "x", "params": [{"id": "smooth", "label": "Smoothing"}]}"#, "fn shade(uv: vec2<f32>) -> vec3<f32> { return vec3<f32>(0.0); }", None).unwrap();
+        assert!(r.generated().contains("smooth_: f32"), "a reserved word gets an underscore in the shader");
     }
 
     #[test]

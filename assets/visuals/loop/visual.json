@@ -1,0 +1,26 @@
+{
+  "id": "loop",
+  "name": "Loop",
+  "short": "Loop",
+  "summary": "Waveform rings born at the centre and pushed outward, each lagging the last; quiet slices leave dark rings.",
+  "credit": "After the Loop in Felix Turner's Uberviz (https://uberviz.io). No code used; written fresh.",
+  "hint": "Each ring is one slice of the waveform, born at the centre and pushed outward by the next, so a sound ripples out ring by ring; quiet slices leave dark rings. Twist turns each ring against the last for a spiral.",
+  "items": 7802,
+  "line": 30960,
+  "params": [
+    { "id": "rings", "label": "Rings", "type": "integer", "group": "Rings", "min": 4, "max": 120, "default": 60 },
+    { "id": "rate", "label": "Rate", "group": "Rings", "min": 2.0, "max": 90.0, "default": 30.0, "unit": "/s", "help": "New rings per second; lower is a longer lag between rings." },
+    { "id": "inner", "label": "Inner radius", "group": "Rings", "min": 0.0, "max": 1.0, "default": 0.08 },
+    { "id": "outer", "label": "Outer radius", "group": "Rings", "min": 0.1, "max": 2.0, "default": 0.95 },
+    { "id": "amp", "label": "Amplitude", "group": "Rings", "min": 0.0, "max": 0.5, "default": 0.1 },
+    { "id": "spin", "label": "Spin", "group": "Rings", "min": -2.0, "max": 2.0, "default": 0.1 },
+    { "id": "twist", "label": "Twist", "group": "Rings", "min": -20.0, "max": 20.0, "default": 0.0, "unit": "°" },
+    { "id": "width", "label": "Width", "group": "Line", "min": 0.5, "max": 6.0, "default": 1.5, "unit": "px" },
+    { "id": "gain", "label": "Gain", "group": "Line", "min": 0.1, "max": 4.0, "default": 1.0, "log": true },
+    { "id": "smooth", "label": "Smoothing", "type": "integer", "group": "Line", "min": 0, "max": 8, "default": 2 },
+    { "id": "level", "label": "Brightness by level", "group": "Line", "min": 0.0, "max": 1.0, "default": 0.8 },
+    { "id": "fade", "label": "Age fade", "group": "Line", "min": 0.0, "max": 1.0, "default": 0.6 },
+    { "id": "react", "label": "Reacts", "group": "Line", "min": 0.0, "max": 3.0, "default": 0.5, "help": "Beats kick the amplitude." },
+    { "id": "colour", "label": "Palette by", "type": "choice", "group": "Line", "options": ["Age", "Level"], "default": "age" }
+  ]
+}

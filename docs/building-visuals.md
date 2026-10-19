@@ -64,7 +64,7 @@ Each entry in `params`:
 
 | Field | What it does |
 |---|---|
-| `id` | The name in your shader (`params().sides`) and in saved files. A lowercase identifier (`a-z`, `0-9`, `_`), not a WGSL keyword. Like the visual's id, keep it stable: renaming it resets everyone's saved value. |
+| `id` | The name in your shader (`params().sides`) and in saved files. A lowercase identifier (`a-z`, `0-9`, `_`), not a WGSL keyword; a word WGSL only reserves (`smooth`, `filter`, `target`...) is allowed and reads `P.smooth_` in the shader. Like the visual's id, keep it stable: renaming it resets everyone's saved value. |
 | `label` | The control's label. Sentence case ("Line width"), no underscores. |
 | `type` | `slider` (the default), `integer`, `toggle` or `choice`. |
 | `group` | A heading. Controls with the same group sit together, groups in order of first use. Without groups everything lands under "Controls". |
@@ -299,7 +299,7 @@ Anything in `shade` that does not depend on the pixel (a dot's band level, its p
 fn prepare(i: u32) -> vec4<f32> { ... }
 ```
 
-and say in `visual.json` how many items it makes: `"items": 128`. The engine calls `prepare(i)` once for each `i` below that number at the start of every frame (on the GPU, all at once), stores the four numbers each returns, and `shade` reads them with `item(i)`. `prepare` sees everything `shade` does: `V`, `params()`, `band_at`, `colour`. What it cannot do is depend on a pixel: it has no `uv`.
+and say in `visual.json` how many items it makes: `"items": 128` (up to 16384). The engine calls `prepare(i)` once for each `i` below that number at the start of every frame (on the GPU, all at once), stores the four numbers each returns, and `shade` reads them with `item(i)`. `prepare` sees everything `shade` does: `V`, `params()`, `band_at`, `colour`. What it cannot do is depend on a pixel: it has no `uv`.
 
 Eclipse uses it for its dots. Each dot needs a position, a size, a level and a colour: five or more numbers, so each dot takes two items:
 
@@ -344,7 +344,7 @@ fn prepare(i: u32) -> vec4<f32> {
 }
 ```
 
-Use `V.dt` for anything that accumulates, so it runs at the same speed at every frame rate. Items are not saved: they start from zero when the app starts or the visual is picked again.
+Use `V.dt` for anything that accumulates, so it runs at the same speed at every frame rate. Items run in parallel, so one item cannot see another's value from *this* frame; when many items depend on one shared decision (Loop's ring clock), have each of them work it out from last frame's state the same way. And keep each item's work modest: a few thousand reads in one item can make the shader take the driver a long time to compile (Loop's first version did not start). Items are not saved: they start from zero when the app starts or the visual is picked again.
 
 ## Drawing a line
 

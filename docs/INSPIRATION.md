@@ -23,6 +23,7 @@ audioviz borrows ideas, never code, unless a licence says otherwise and the entr
 | Eclipse visual (a loaded visual, `assets/visuals/eclipse/`) | the Eclipse in Uberviz (Lantern) | Felix Turner | none | the idea: glow dots on a ring reading the spectrum, the disc masked black. Written fresh: mirrored bands, swelling and pushing dots, Lorentzian halos, a bass corona. |
 | Ripples visual | the Ripples in Uberviz (BBNG, Lantern) | Felix Turner | none | the idea: a noise-displaced plane printed with contour lines or dots, depth-darkened. Written fresh: vertex-built mesh in painter's order, beat-dropped rings, contours / dots / grid, palette by height. |
 | Spiral visual | the spiral family in audible-visuals | Sonia Boller | Apache-2.0 | the idea: parametric spirals whose parameter drifts slowly, displaced by the waveform, drawn as a line. No code ported. Written fresh: Vogel spiral and Maurer rose, drift multiplied along the line, palette along it, beat kick. |
+| Polygon and Pulse visuals (loaded, `assets/visuals/polygon/`, `pulse/`; examples in `docs/building-visuals.md`) | sdRegularPolygon from Inigo Quilez's 2D distance functions, https://iquilezles.org/articles/distfunctions2d/ | Inigo Quilez | MIT | the polygon distance function, translated to WGSL with its credit in the code. The visuals themselves are ours. |
 | Waves visual | the stacked-waveform landscape made famous by the *Unknown Pleasures* cover (Peter Saville, after a pulsar plot by Harold Craft) | | | the look only |
 
 ## Queued ports (from the 2026-10-18 research), with what each takes

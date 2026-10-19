@@ -1,5 +1,7 @@
 # Visuals: the registry and how to add one
 
+The reference. For a walk-through (a first visual, three worked examples, a performance budget, debugging and sharing), read [`docs/building-visuals.md`](building-visuals.md).
+
 A **visual** is the generator inside a layer (see `docs/model.md`). Everything else a layer has belongs to the engine and applies to any visual without the visual knowing: the band it reacts to, its tint and palette, blend and opacity, the effect chain and its director, presets, scene files, levelling, and the Performance timings.
 
 ## The registry (`crates/app/src/visuals.rs`)
@@ -93,7 +95,12 @@ The colour is linear HDR light (values above 1 are fine; levelling, effects and 
 | `wave(t)`, `wave_mono(t)` | the last 1024 samples (t 0 oldest .. 1 newest), auto-gained |
 | `colour(t)` | the layer's palette at t (moving with its cycle) over its tint |
 | `prev(uv)` | last frame (with `feedback`) |
-| `centred(uv)`, `pixel()`, `TAU` | coordinates, one pixel in them |
+| `centred(uv)`, `uncentred(p)`, `pixel()`, `TAU` | coordinates (short side's half-extent 1, y up) and back to uv, one pixel in them |
+| `rotate(p, a)`, `noise(p)` | turn a point by `a` radians; smooth value noise 0..1 |
 | `hash21`, `hash22`, `ign` | hashes and interleaved gradient noise from the shared prelude |
+
+A loaded visual sees only the shared `params.wgsl` prelude and this API, not the built-in visuals' own helpers, so their names never collide with yours. `cargo test -p audioviz factory_visuals_compile` compiles every factory visual the way the engine does.
+
+Factory examples, each a worked example in the guide: **Polygon** (a still shape), **Pulse** (bands, beats, onsets, the music clock), **Comet** (feedback trails).
 
 What a loaded visual cannot do yet: keep CPU-side state (everything is a function of the inputs above and, with feedback, last frame), draw meshes, lines or particles (Loop, Spiral, Ribbons and Crystal stay built in), or read the album art. Each is a possible extension of the format; the most useful first is a per-frame `prepare` step that computes per-item values once (the built-in Eclipse did its dot levels on the CPU, which is why the loaded one costs 1.1 ms against 0.8 at 16 dots and 2560x1440).

@@ -112,7 +112,32 @@ fn centred(uv: vec2<f32>) -> vec2<f32> {
     return (uv * 2.0 - 1.0) * vec2<f32>(V.resolution.x / short, -V.resolution.y / short);
 }
 
+// The inverse of centred(): back to uv, for reading prev() at a moved place.
+fn uncentred(p: vec2<f32>) -> vec2<f32> {
+    let short = min(V.resolution.x, V.resolution.y);
+    return (p / vec2<f32>(V.resolution.x / short, -V.resolution.y / short)) * 0.5 + 0.5;
+}
+
 // One pixel in centred units.
 fn pixel() -> f32 {
     return 2.0 / min(V.resolution.x, V.resolution.y);
+}
+
+// p turned by angle a (radians, counter-clockwise).
+fn rotate(p: vec2<f32>, a: f32) -> vec2<f32> {
+    let c = cos(a);
+    let s = sin(a);
+    return vec2<f32>(c * p.x - s * p.y, s * p.x + c * p.y);
+}
+
+// Smooth value noise, 0..1, one feature per unit of p.
+fn noise(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let u = f * f * (3.0 - 2.0 * f);
+    let a = hash21(i);
+    let b = hash21(i + vec2<f32>(1.0, 0.0));
+    let c = hash21(i + vec2<f32>(0.0, 1.0));
+    let d = hash21(i + vec2<f32>(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }

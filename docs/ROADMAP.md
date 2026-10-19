@@ -41,6 +41,15 @@ Visual candidates, in the order to try (reordered 2026-10-18 late on the researc
 - **Harmonograph**: damped Lissajous of the two strongest pitch classes, drawn as one long line.
 - **Interference**: a few sinusoid line fields driven by bands, moiré where they cross.
 
+### Pluggable visuals (Greg, 2026-10-18 night)
+
+The engine and the visuals are separate: a visual is a registry entry (`docs/visuals.md`), built in or loaded from a folder (`visual.json` + `visual.wgsl`). Eclipse was the first port. In order:
+
+1. ~~**Building visuals guide**~~ **done 2026-10-18**: `docs/building-visuals.md` (layout, manifest, API with units, conventions, three worked examples shipped as factory visuals Polygon, Pulse and Comet, a performance budget, debugging, sharing, limits). The API gained `uncentred`, `rotate` and `noise`, and loaded visuals now see only the API (not the built-ins' helper names); a test compiles every factory visual through naga.
+2. **Panel support for authoring**: Open visuals folder, New visual (from a starter template), Restore factory visuals, a quiet marker for loaded visuals in the Visual list.
+3. **A per-frame `prepare` step** (per-item values computed once a frame, read by `shade` via `item(i)`); Eclipse's dot levels move into it and are measured against its 1.1 ms. Then, in order: the album art as a texture, a line/polyline drawing mode.
+4. **A second port** (Wheel: fragment-only), compared side by side and measured before the built-in is retired; same id and parameter names.
+
 Modifier candidates: ~~warp~~ (built 2026-10-18), ~~halftone~~ (built 2026-10-18; dither still open), ~~scanlines~~ and ~~mirror~~ (built 2026-10-18), ~~glow~~, ~~vignette~~ and ~~colorify~~ (built 2026-10-18 late night; Lantern's Crystal runs Glow and Vignette pinned, Colorify in the pool), ~~beat roll~~ (built 2026-10-18 as the **effects director**, `docs/model.md`), **glitch** (block displacement and channel tears on onsets), **posterize / hue cycle**, **scanlines / CRT**, **echo** (a delayed copy under the picture, reusing the history pair).
 
 ## Done: visuals and sound (the previous "Next" list)

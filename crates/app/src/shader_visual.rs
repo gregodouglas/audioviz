@@ -200,7 +200,7 @@ impl ShaderDef {
     /// The text in front of the visual's own code (its first line is the
     /// next one), so errors can point into visual.wgsl.
     fn prefix(&self, shaders: &ShaderSet) -> String {
-        format!("{}\n{}\n// ---- visual.wgsl ----\n", shaders.source("visual_api.wgsl"), self.generated())
+        format!("{}\n{}\n// ---- visual.wgsl ----\n", shaders.source_base("visual_api.wgsl"), self.generated())
     }
 
     fn source(&self, shaders: &ShaderSet, wgsl: &str) -> String {
@@ -703,6 +703,20 @@ mod tests {
     fn factory_visuals_parse() {
         for d in embedded() {
             assert!(!d.wgsl.is_empty(), "{}", d.id);
+        }
+    }
+
+    /// Every factory visual compiles against the API as the engine composes it.
+    #[test]
+    fn factory_visuals_compile() {
+        use wgpu::naga;
+        let shaders = ShaderSet::load();
+        let all = embedded();
+        assert!(all.len() >= 4);
+        for d in all {
+            let src = d.source(&shaders, &d.wgsl);
+            let module = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| panic!("{}: {}", d.id, visual_lines(&e.emit_to_string(&src), d.prefix(&shaders).lines().count())));
+            naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::empty()).validate(&module).unwrap_or_else(|e| panic!("{}: {e:?}", d.id));
         }
     }
 }

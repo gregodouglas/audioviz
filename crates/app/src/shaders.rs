@@ -109,6 +109,14 @@ impl ShaderSet {
         out
     }
 
+    /// The shared `params.wgsl` plus the file, without the visuals' own
+    /// preludes: loaded visuals see only the API, so a built-in's helper
+    /// names never collide with theirs.
+    pub fn source_base(&self, name: &str) -> String {
+        let i = NAMES.iter().position(|n| *n == name).unwrap_or_else(|| panic!("unknown shader {name}"));
+        format!("{}\n{}", self.sources[0], self.sources[i])
+    }
+
     fn read_all(&mut self) {
         let Some(dir) = &self.dir else { return };
         for (i, name) in NAMES.iter().enumerate() {

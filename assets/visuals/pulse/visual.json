@@ -1,0 +1,19 @@
+{
+  "id": "pulse",
+  "name": "Pulse",
+  "short": "Pulse",
+  "summary": "Nested polygons, one per slice of the spectrum, that swell with their band, jump on the beat and flash on hits.",
+  "credit": "Example 2 of docs/building-visuals.md. The polygon distance function follows Inigo Quilez's sdRegularPolygon (MIT).",
+  "hint": "The innermost ring is the bass, the outermost the treble. Each ring swells and brightens with its own band; the beat kicks them all outward and hits flash them.",
+  "params": [
+    { "id": "rings", "label": "Rings", "type": "integer", "group": "Shape", "min": 1, "max": 8, "default": 5 },
+    { "id": "sides", "label": "Sides", "type": "integer", "group": "Shape", "min": 3, "max": 12, "default": 6 },
+    { "id": "radius", "label": "Radius", "group": "Shape", "min": 0.2, "max": 1.2, "default": 0.85, "help": "The outer ring's radius at rest." },
+    { "id": "twist", "label": "Twist", "group": "Shape", "min": -1.0, "max": 1.0, "default": 0.15, "help": "Neighbouring rings turn against each other, faster when the music is loud." },
+    { "id": "width", "label": "Line width", "group": "Light", "min": 1.0, "max": 12.0, "default": 2.5, "unit": "px" },
+    { "id": "glow", "label": "Glow", "group": "Light", "min": 0.0, "max": 2.0, "default": 0.6 },
+    { "id": "gain", "label": "Gain", "group": "Music", "min": 0.1, "max": 4.0, "default": 1.0, "log": true, "unit": "x" },
+    { "id": "kick", "label": "Beat kick", "group": "Music", "min": 0.0, "max": 2.0, "default": 1.0, "help": "How far the rings jump outward on each beat." },
+    { "id": "flash", "label": "Hit flash", "group": "Music", "min": 0.0, "max": 2.0, "default": 0.6, "help": "How much every ring brightens on an onset." }
+  ]
+}

@@ -129,6 +129,8 @@ struct Running {
     start: Instant,
     last_frame: Instant,
     fps: f32,
+    /// The longest frame since the last debug line, ms (stalls show here, not in fps).
+    worst_ms: f32,
     points_per_sec: f32,
     auto_gain_value: f32,
     post_error: Option<String>,
@@ -242,6 +244,13 @@ impl Running {
         }
         let timer = crate::gpu_timer::GpuTimer::new(&gpu.device, &gpu.queue);
         let director = Director::new(&gpu.device, &shaders, w, h, &settings).map_err(|e| anyhow::anyhow!("director: {e}"))?;
+        // Compile in the background what is likely to be picked: the visuals
+        // of every scene, then the rest of the list (the layers on screen are
+        // already queued ahead of these).
+        let scenes = scene_store::all();
+        let mut warm: Vec<String> = scenes.iter().flat_map(|s| (0..MAX_LAYERS).map(|i| s.settings.layer(i)).filter(|l| l.enabled).map(|l| l.visual)).collect();
+        warm.extend(crate::visuals::all().iter().map(|d| d.id.to_string()));
+        crate::shader_visual::prewarm(&gpu.device, &shaders, warm.iter().map(String::as_str));
         let post = Post::new(&gpu.device, gpu.config.format, w, h, &shaders).map_err(|e| anyhow::anyhow!("post: {e}"))?;
 
         let egui_ctx = egui::Context::default();
@@ -288,6 +297,7 @@ impl Running {
             start: Instant::now(),
             last_frame: Instant::now(),
             fps: 0.0,
+            worst_ms: 0.0,
             points_per_sec: 0.0,
             auto_gain_value: 1.0,
             post_error: None,
@@ -299,7 +309,7 @@ impl Running {
             show_shortcuts: false,
             last_track: None,
             toast: None,
-            scenes: scene_store::all(),
+            scenes,
             presets: preset_store::all(),
             update: Arc::new(Mutex::new(UpdateStatus::Idle)),
             art_tint: None,
@@ -602,6 +612,7 @@ impl Running {
 
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f32().clamp(1e-4, 0.25);
+        self.worst_ms = self.worst_ms.max((now - self.last_frame).as_secs_f32() * 1000.0);
         self.last_frame = now;
         self.fps = self.fps * 0.95 + (1.0 / dt) * 0.05;
 
@@ -614,7 +625,8 @@ impl Running {
         let features = self.engine.features();
         let now_playing = self.metadata.latest();
         if tracing::enabled!(tracing::Level::DEBUG) && (time_floor(self.start.elapsed().as_secs_f32()) != time_floor(self.start.elapsed().as_secs_f32() - dt)) {
-            tracing::debug!("peak {:.3} rms {:.3} auto_gain {:.2} points {} silent {} fps {:.0} cpu {:.2} ms gpu {:.2} ms {:?} {:?}", features.peak, features.rms, self.auto_gain_value, self.pending_points.len(), features.silent, self.fps, self.cpu_ms, self.timer.frame_ms, crate::platform::usage(), self.timer.ms.iter().map(|(p, v)| format!("{p:?}={v:.2}")).collect::<Vec<_>>());
+            tracing::debug!("peak {:.3} rms {:.3} auto_gain {:.2} points {} silent {} fps {:.0} worst {:.1} ms cpu {:.2} ms gpu {:.2} ms {:?} {:?}", features.peak, features.rms, self.auto_gain_value, self.pending_points.len(), features.silent, self.fps, self.worst_ms, self.cpu_ms, self.timer.frame_ms, crate::platform::usage(), self.timer.ms.iter().map(|(p, v)| format!("{p:?}={v:.2}")).collect::<Vec<_>>());
+            self.worst_ms = 0.0;
         }
         let target = if features.peak > 0.0005 { (0.9 / features.peak).clamp(0.3, 200.0) } else { self.auto_gain_value };
         self.auto_gain_value += (target - self.auto_gain_value) * (1.0 - (-dt / 1.5).exp());

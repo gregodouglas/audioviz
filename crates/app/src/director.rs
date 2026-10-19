@@ -360,6 +360,9 @@ struct Slot {
     tint: [f32; 3],
     buf: wgpu::Buffer,
     fade: Fade,
+    /// A scene switch's (seconds, delay) for a visual that was not ready
+    /// when it came, used once it is.
+    held: Option<(f32, f32)>,
     fx: FxState,
 }
 
@@ -373,6 +376,7 @@ impl Slot {
             tint: layer.tint.color,
             buf: scene::uniform_buffer(device, &format!("layer {i}"), std::mem::size_of::<LayerParams>() as u64),
             fade: Fade::at(level),
+            held: None,
             fx: FxState::default(),
         }
     }
@@ -919,18 +923,29 @@ impl Director {
         let pending = self.pending.take();
         let mut entries: Vec<(bool, usize, f32)> = Vec::new(); // (outgoing, slot, level)
         for i in (0..MAX_LAYERS.min(self.layers.len())).rev() {
+            // A visual still compiling holds its slot dark, and the visual it
+            // replaced stays as it is, until it can draw.
+            let ready = self.layers[i].ready();
             if let Some(o) = self.outgoing[i].as_mut() {
-                let level = o.slot.fade.step(dt);
+                let level = if ready { o.slot.fade.step(dt) } else { o.slot.fade.level() };
                 if level > 0.0 {
                     entries.push((true, i, level));
                 }
             }
             let to = target_of(settings, i);
             let slot = &mut self.slots[i];
-            let (secs, delay) = match pending {
-                Some((secs, stagger)) => (secs, stagger_delay(stagger, i)),
-                None if (slot.fade.to > 0.0) != (to > 0.0) => (FADE_MANUAL_S, 0.0),
-                None => (FADE_SLIDER_S, 0.0),
+            if !ready {
+                if let Some((secs, stagger)) = pending {
+                    slot.held = Some((secs, stagger_delay(stagger, i)));
+                }
+                slot.fade = Fade::at(0.0);
+                continue;
+            }
+            let (secs, delay) = match (pending, slot.held.take()) {
+                (Some((secs, stagger)), _) => (secs, stagger_delay(stagger, i)),
+                (None, Some(held)) => held,
+                (None, None) if (slot.fade.to > 0.0) != (to > 0.0) => (FADE_MANUAL_S, 0.0),
+                (None, None) => (FADE_SLIDER_S, 0.0),
             };
             slot.fade.aim(to, secs, delay);
             let level = slot.fade.step(dt);

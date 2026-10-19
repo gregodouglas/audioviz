@@ -50,6 +50,11 @@ pub trait Scene {
     /// Called every frame with the device: a visual loaded from a folder
     /// checks its files here and recompiles when they changed.
     fn poll(&mut self, _device: &wgpu::Device, _shaders: &ShaderSet) {}
+    /// Whether it can draw yet (a loaded visual's pipelines compile on a
+    /// worker thread; the director holds its layer dark until then).
+    fn ready(&self) -> bool {
+        true
+    }
     /// Visual-specific controls in the panel.
     fn ui(&mut self, _ui: &mut egui::Ui, _layer: &mut Layer) {}
 }

@@ -14,9 +14,14 @@
 //!
 //! A shader runs inside wgpu's validation: it can draw, nothing else (no
 //! files, no network), so a visual folder is safe to share.
+//!
+//! Pipelines are compiled on a worker thread (see "building off the render
+//! thread" below), so picking a heavy visual never stalls the picture.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Instant, SystemTime};
 
 use bytemuck::{Pod, Zeroable};
@@ -392,6 +397,23 @@ impl ShaderDef {
     }
 }
 
+impl ShaderDef {
+    /// What the worker needs to compile this visual's pipelines.
+    fn job(&self, shaders: &ShaderSet) -> Job {
+        let src = self.source(shaders, &self.wgsl);
+        let (prepare, line, mesh, trail) = (self.items > 0, self.line > 0, self.triangles > 0, self.trail);
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (&src, prepare, line, mesh, trail).hash(&mut h);
+        let line_src = line.then(|| {
+            let text = shaders.source("visual_lines.wgsl");
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            text.hash(&mut h);
+            (h.finish(), text)
+        });
+        Job { key: h.finish(), id: self.id.clone(), src, prepare, line, mesh, trail, line_src }
+    }
+}
+
 fn prepare_after(prepare: &str, mut s: String) -> String {
     s.push_str(prepare);
     s
@@ -625,6 +647,201 @@ struct Uniform {
     chroma_slow: [[f32; 4]; 3],
 }
 
+// ------------------------------------------------------------ building off the render thread
+//
+// Compiling a visual's pipelines takes 0.1 to 1.6 s on D3D12 (FXC, then the
+// driver). One worker thread does it, so the app keeps drawing: a layer whose
+// pipelines have not arrived draws nothing (`Scene::ready` is false, and the
+// director keeps the visual it replaced on screen meanwhile). Results are
+// kept by source, so each version of a visual is compiled once a run and
+// every layer showing it shares the pipelines; `prewarm` compiles the
+// scenes' visuals before they are needed. A layer waiting for its visual
+// goes ahead of the prewarm queue.
+
+/// The bind group layouts every loaded visual uses (shared, so one compiled
+/// pipeline serves every layer that shows the visual), and the worker's queue.
+struct Shared {
+    device: wgpu::Device,
+    layout: wgpu::BindGroupLayout,
+    out_layout: wgpu::BindGroupLayout,
+    line_layout: wgpu::BindGroupLayout,
+    work: Mutex<Work>,
+    wake: Condvar,
+}
+
+#[derive(Default)]
+struct Work {
+    jobs: VecDeque<Job>,
+    queued: HashSet<u64>,
+    done: HashMap<u64, Result<Arc<Built>, String>>,
+    /// The engine's line pipeline by the hash of `visual_lines.wgsl`.
+    lines: HashMap<u64, Option<wgpu::RenderPipeline>>,
+}
+
+struct Job {
+    key: u64,
+    id: String,
+    src: String,
+    prepare: bool,
+    line: bool,
+    mesh: bool,
+    trail: bool,
+    line_src: Option<(u64, String)>,
+}
+
+/// A visual's compiled pipelines.
+struct Built {
+    picture: wgpu::RenderPipeline,
+    prepare: Option<wgpu::ComputePipeline>,
+    line: Option<wgpu::ComputePipeline>,
+    mesh: Option<wgpu::RenderPipeline>,
+    line_draw: Option<wgpu::RenderPipeline>,
+}
+
+fn shared(device: &wgpu::Device) -> Arc<Shared> {
+    static SHARED: OnceLock<Arc<Shared>> = OnceLock::new();
+    SHARED
+        .get_or_init(|| {
+            let entry = |binding: u32, ty: wgpu::BindingType| wgpu::BindGroupLayoutEntry { binding, visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::COMPUTE, ty, count: None };
+            let texture = wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false };
+            let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("loaded visual"),
+                entries: &[
+                    entry(0, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }),
+                    entry(1, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }),
+                    entry(2, texture),
+                    entry(3, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
+                    entry(4, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }),
+                    entry(5, texture),
+                    entry(6, texture),
+                    entry(7, texture),
+                    entry(8, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
+                    entry(9, texture),
+                ],
+            });
+            let out_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("loaded visual items out"),
+                entries: &[wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: false }, has_dynamic_offset: false, min_binding_size: None }, count: None }],
+            });
+            let line_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("loaded visual line draw"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None },
+                    wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::VERTEX, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
+                ],
+            });
+            let sh = Arc::new(Shared { device: device.clone(), layout, out_layout, line_layout, work: Mutex::new(Work::default()), wake: Condvar::new() });
+            let worker = sh.clone();
+            if let Err(e) = std::thread::Builder::new().name("visual builder".into()).spawn(move || worker.run()) {
+                tracing::error!("could not start the visual builder: {e}");
+            }
+            sh
+        })
+        .clone()
+}
+
+impl Shared {
+    /// Queue a job (unless it is done or queued already); `urgent` puts it,
+    /// or moves it, to the front. Returns its key.
+    fn request(&self, job: Job, urgent: bool) -> u64 {
+        let key = job.key;
+        let Ok(mut w) = self.work.lock() else { return key };
+        if w.done.contains_key(&key) {
+            return key;
+        }
+        if w.queued.contains(&key) {
+            if urgent {
+                if let Some(at) = w.jobs.iter().position(|j| j.key == key) {
+                    if let Some(j) = w.jobs.remove(at) {
+                        w.jobs.push_front(j);
+                    }
+                }
+            }
+            return key;
+        }
+        w.queued.insert(key);
+        if urgent { w.jobs.push_front(job) } else { w.jobs.push_back(job) }
+        self.wake.notify_one();
+        key
+    }
+
+    fn result(&self, key: u64) -> Option<Result<Arc<Built>, String>> {
+        self.work.lock().ok()?.done.get(&key).cloned()
+    }
+
+    fn run(&self) {
+        loop {
+            let job = {
+                let Ok(mut w) = self.work.lock() else { return };
+                while w.jobs.is_empty() {
+                    w = match self.wake.wait(w) {
+                        Ok(w) => w,
+                        Err(_) => return,
+                    };
+                }
+                w.jobs.pop_front().expect("a job")
+            };
+            let started = Instant::now();
+            let line_draw = job.line_src.as_ref().map(|(k, src)| {
+                if let Some(p) = self.work.lock().ok().and_then(|w| w.lines.get(k).cloned()) {
+                    return p;
+                }
+                let p = scene::guarded(&self.device, || {
+                    let m = self.device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("visual_lines.wgsl"), source: wgpu::ShaderSource::Wgsl(src.as_str().into()) });
+                    scene::pipeline(&self.device, "loaded visual line", &self.line_layout, &m, HDR_FORMAT, Some(scene::ADDITIVE))
+                })
+                .map_err(|e| tracing::warn!("visual_lines.wgsl: {e}"))
+                .ok();
+                if let Ok(mut w) = self.work.lock() {
+                    w.lines.insert(*k, p.clone());
+                }
+                p
+            });
+            let built = self.compile(&job).map(|(picture, prepare, line, mesh)| Arc::new(Built { picture, prepare, line, mesh, line_draw: line_draw.flatten() }));
+            match &built {
+                Ok(_) => tracing::debug!("visual {} built in {} ms", job.id, started.elapsed().as_millis()),
+                Err(e) => tracing::debug!("visual {} failed to build: {e}", job.id),
+            }
+            if let Ok(mut w) = self.work.lock() {
+                w.queued.remove(&job.key);
+                w.done.insert(job.key, built);
+            }
+        }
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn compile(&self, job: &Job) -> Result<(wgpu::RenderPipeline, Option<wgpu::ComputePipeline>, Option<wgpu::ComputePipeline>, Option<wgpu::RenderPipeline>), String> {
+        let (device, layout, out_layout) = (&self.device, &self.layout, &self.out_layout);
+        scene::guarded(device, || {
+            let m = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(&job.id), source: wgpu::ShaderSource::Wgsl(job.src.as_str().into()) });
+            let compute = |label: &str, entry: &str| {
+                let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some(label), bind_group_layouts: &[Some(layout), Some(out_layout)], immediate_size: 0 });
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some(label), layout: Some(&pl), module: &m, entry_point: Some(entry), compilation_options: Default::default(), cache: None })
+            };
+            let prepare = job.prepare.then(|| compute("loaded visual prepare", "cs_main"));
+            let line = job.line.then(|| compute("loaded visual line points", "cs_line"));
+            let mesh = job.mesh.then(|| mesh_pipeline(device, layout, &m));
+            let picture = if job.trail { scene::pipeline2(device, &job.id, layout, &m, HDR_FORMAT) } else { scene::pipeline(device, &job.id, layout, &m, HDR_FORMAT, None) };
+            (picture, prepare, line, mesh)
+        })
+    }
+}
+
+/// Compile visuals `ids` in the background, in order, behind anything a layer
+/// is waiting for, so picking them later finds them ready.
+pub fn prewarm<'a>(device: &wgpu::Device, shaders: &ShaderSet, ids: impl IntoIterator<Item = &'a str>) {
+    let sh = shared(device);
+    let mut seen = HashSet::new();
+    for id in ids {
+        if !seen.insert(id.to_string()) {
+            continue;
+        }
+        if let Some(crate::visuals::Source::Loaded(d)) = crate::visuals::get(id).map(|v| &v.source) {
+            sh.request(d.job(shaders), false);
+        }
+    }
+}
+
 pub struct ShaderVisual {
     def: &'static ShaderDef,
     /// The manifest and code in use (reloaded from the folder when it changes).
@@ -634,6 +851,10 @@ pub struct ShaderVisual {
     last_poll: Instant,
     layout: wgpu::BindGroupLayout,
     pipeline: Option<wgpu::RenderPipeline>,
+    /// The worker's job for the live code, until its pipelines arrive, and
+    /// the line count of the code in front of visual.wgsl (for its errors).
+    waiting: Option<u64>,
+    prefix_lines: usize,
     /// The prepare step: its output layout, pipeline, the two item buffers
     /// (this frame's and last frame's) and a bind group writing each.
     out_layout: wgpu::BindGroupLayout,
@@ -770,16 +991,6 @@ fn line_buffer(device: &wgpu::Device, n: u32) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor { label: Some("loaded visual line"), size: n.max(1) as u64 * 32, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false })
 }
 
-/// The engine's line pipeline (`visual_lines.wgsl`), additive over the picture.
-fn line_pipeline(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Option<wgpu::RenderPipeline> {
-    scene::guarded(device, || {
-        let m = scene::shader(device, shaders, "visual_lines.wgsl");
-        scene::pipeline(device, "loaded visual line", layout, &m, HDR_FORMAT, Some(scene::ADDITIVE))
-    })
-    .map_err(|e| tracing::warn!("visual_lines.wgsl: {e}"))
-    .ok()
-}
-
 /// The points buffer as the point pass writes it and as the draw reads it.
 fn line_groups(device: &wgpu::Device, out_layout: &wgpu::BindGroupLayout, layout: &wgpu::BindGroupLayout, points: &wgpu::Buffer, uniform: &wgpu::Buffer) -> (wgpu::BindGroup, wgpu::BindGroup) {
     let out = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("loaded visual line out"), layout: out_layout, entries: &[wgpu::BindGroupEntry { binding: 0, resource: points.as_entire_binding() }] });
@@ -807,38 +1018,12 @@ fn stamp(dir: &Path) -> Option<(SystemTime, SystemTime)> {
 
 impl ShaderVisual {
     pub fn new(device: &wgpu::Device, width: u32, height: u32, shaders: &ShaderSet, def: &'static ShaderDef) -> Result<Self, String> {
-        let entry = |binding: u32, ty: wgpu::BindingType| wgpu::BindGroupLayoutEntry { binding, visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::COMPUTE, ty, count: None };
-        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("loaded visual"),
-            entries: &[
-                entry(0, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }),
-                entry(1, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }),
-                entry(2, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
-                entry(3, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
-                entry(4, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }),
-                entry(5, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
-                entry(6, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
-                entry(7, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
-                entry(8, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
-                entry(9, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
-            ],
-        });
-        let out_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("loaded visual items out"),
-            entries: &[wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: false }, has_dynamic_offset: false, min_binding_size: None }, count: None }],
-        });
+        let sh = shared(device);
+        let (layout, out_layout, line_layout) = (sh.layout.clone(), sh.out_layout.clone(), sh.line_layout.clone());
         let art = art_texture(device);
-        let line_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("loaded visual line draw"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None },
-                wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::VERTEX, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
-            ],
-        });
         let line_uniform = scene::uniform_buffer(device, "loaded visual line", 16);
         let line_points = line_buffer(device, def.line);
         let (line_out_group, line_group) = line_groups(device, &out_layout, &line_layout, &line_points, &line_uniform);
-        let line_draw = (def.line > 0).then(|| line_pipeline(device, shaders, &line_layout)).flatten();
         let mut me = Self {
             line_cs: None,
             line_points,
@@ -847,7 +1032,7 @@ impl ShaderVisual {
             line_uniform,
             line_layout,
             line_group,
-            line_draw,
+            line_draw: None,
             mesh: None,
             def,
             art_view: art.create_view(&wgpu::TextureViewDescriptor::default()),
@@ -870,6 +1055,8 @@ impl ShaderVisual {
             groups: Vec::new(),
             layout,
             pipeline: None,
+            waiting: None,
+            prefix_lines: 0,
             out_layout,
             prepare: None,
             items: item_buffers(device, def.items),
@@ -901,10 +1088,12 @@ impl ShaderVisual {
             presses: BTreeMap::new(),
         };
         me.make_groups(device);
-        me.reload(device, shaders);
-        if me.pipeline.is_none() && me.error.is_none() {
-            me.build(device, shaders);
+        me.reload(shaders);
+        if me.waiting.is_none() && me.error.is_none() {
+            me.build(shaders);
         }
+        // A prewarmed visual is ready at once.
+        me.collect();
         Ok(me)
     }
 
@@ -937,59 +1126,48 @@ impl ShaderVisual {
             .collect();
     }
 
-    /// Compile the live code; on failure keep the old pipeline and the error.
-    fn build(&mut self, device: &wgpu::Device, shaders: &ShaderSet) {
-        let src = self.live.source(shaders, &self.live.wgsl);
-        let (layout, out_layout) = (&self.layout, &self.out_layout);
-        let id = self.live.id.clone();
-        let with_prepare = self.live.items > 0;
-        let with_line = self.live.line > 0;
-        let with_mesh = self.live.triangles > 0;
-        let with_trail = self.live.trail;
-        let started = Instant::now();
-        let built = scene::guarded(device, || {
-            let m = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(&id), source: wgpu::ShaderSource::Wgsl(src.into()) });
-            let prepare = with_prepare.then(|| {
-                let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("loaded visual prepare"), bind_group_layouts: &[Some(layout), Some(out_layout)], immediate_size: 0 });
-                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("loaded visual prepare"), layout: Some(&pl), module: &m, entry_point: Some("cs_main"), compilation_options: Default::default(), cache: None })
-            });
-            let line = with_line.then(|| {
-                let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("loaded visual line points"), bind_group_layouts: &[Some(layout), Some(out_layout)], immediate_size: 0 });
-                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("loaded visual line points"), layout: Some(&pl), module: &m, entry_point: Some("cs_line"), compilation_options: Default::default(), cache: None })
-            });
-            let mesh = with_mesh.then(|| mesh_pipeline(device, layout, &m));
-            let picture = if with_trail { scene::pipeline2(device, &id, layout, &m, HDR_FORMAT) } else { scene::pipeline(device, &id, layout, &m, HDR_FORMAT, None) };
-            (picture, prepare, line, mesh)
-        });
+    /// Ask the worker for the live code's pipelines (`collect` picks them up);
+    /// meanwhile the old pipeline, if any, keeps drawing.
+    fn build(&mut self, shaders: &ShaderSet) {
+        self.prefix_lines = self.live.prefix(shaders).lines().count();
+        self.waiting = Some(shared(&self.device).request(self.live.job(shaders), true));
+    }
+
+    /// Take the pipelines the worker built for the live code, or its error
+    /// (keeping the old pipeline).
+    fn collect(&mut self) {
+        let Some(key) = self.waiting else { return };
+        let Some(built) = shared(&self.device).result(key) else { return };
+        self.waiting = None;
+        let device = self.device.clone();
         match built {
-            Ok((p, prepare, line, mesh)) => {
-                tracing::debug!("visual {} built in {} ms", self.live.id, started.elapsed().as_millis());
-                self.pipeline = Some(p);
-                self.prepare = prepare;
-                self.line_cs = line;
-                self.mesh = mesh;
+            Ok(b) => {
+                self.pipeline = Some(b.picture.clone());
+                self.prepare = b.prepare.clone();
+                self.line_cs = b.line.clone();
+                self.mesh = b.mesh.clone();
+                if b.line_draw.is_some() {
+                    self.line_draw = b.line_draw.clone();
+                }
                 self.error = None;
                 if self.live.line != self.line_len {
-                    self.line_points = line_buffer(device, self.live.line);
+                    self.line_points = line_buffer(&device, self.live.line);
                     self.line_len = self.live.line;
-                    (self.line_out_group, self.line_group) = line_groups(device, &self.out_layout, &self.line_layout, &self.line_points, &self.line_uniform);
-                }
-                if self.live.line > 0 && self.line_draw.is_none() {
-                    self.line_draw = line_pipeline(device, shaders, &self.line_layout);
+                    (self.line_out_group, self.line_group) = line_groups(&device, &self.out_layout, &self.line_layout, &self.line_points, &self.line_uniform);
                 }
                 // A reload may have changed how many items there are, or the trail.
                 let trail = self.live.trail != self.trail.is_some();
                 if trail {
-                    self.trail = self.live.trail.then(|| trail_textures(device, &self.def.id, self.size.0, self.size.1));
+                    self.trail = self.live.trail.then(|| trail_textures(&device, &self.def.id, self.size.0, self.size.1));
                 }
                 if self.live.items != self.items_len || trail {
-                    self.items = item_buffers(device, self.live.items);
+                    self.items = item_buffers(&device, self.live.items);
                     self.items_len = self.live.items;
-                    self.make_groups(device);
+                    self.make_groups(&device);
                 }
             }
             Err(e) => {
-                let e = self::visual_lines(&e, self.live.prefix(shaders).lines().count());
+                let e = self::visual_lines(&e, self.prefix_lines);
                 tracing::warn!("visual {}: {e}", self.live.id);
                 self.error = Some(e);
             }
@@ -997,7 +1175,7 @@ impl ShaderVisual {
     }
 
     /// Reload from the folder when either file changed.
-    fn reload(&mut self, device: &wgpu::Device, shaders: &ShaderSet) {
+    fn reload(&mut self, shaders: &ShaderSet) {
         let Some(dir) = self.def.dir.clone() else { return };
         let now = stamp(&dir);
         if now.is_none() || now == self.stamp {
@@ -1010,7 +1188,7 @@ impl ShaderVisual {
                 // The id is what saved files point at; it stays the registered one.
                 d.id = self.def.id.clone();
                 self.live = d;
-                self.build(device, shaders);
+                self.build(shaders);
             }
             Err(e) => self.error = Some(e),
         }
@@ -1035,22 +1213,26 @@ impl Scene for ShaderVisual {
         self.make_groups(device);
     }
 
-    fn reload_shaders(&mut self, device: &wgpu::Device, shaders: &ShaderSet) -> Result<(), String> {
-        if self.line_draw.is_some() {
-            self.line_draw = line_pipeline(device, shaders, &self.line_layout);
-        }
-        self.build(device, shaders);
-        self.error.clone().map_or(Ok(()), Err)
+    fn reload_shaders(&mut self, _device: &wgpu::Device, shaders: &ShaderSet) -> Result<(), String> {
+        // Errors arrive later, in the panel.
+        self.build(shaders);
+        Ok(())
     }
 
-    fn poll(&mut self, device: &wgpu::Device, shaders: &ShaderSet) {
+    fn ready(&self) -> bool {
+        self.pipeline.is_some() || self.error.is_some()
+    }
+
+    fn poll(&mut self, _device: &wgpu::Device, shaders: &ShaderSet) {
+        self.collect();
         if self.def.dir.is_some() && self.last_poll.elapsed().as_millis() > 400 {
             self.last_poll = Instant::now();
-            self.reload(device, shaders);
+            self.reload(shaders);
         }
     }
 
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
+        self.collect();
         let f = ctx.features;
         let dt = ctx.dt;
         let energy = ((f.bass_att + f.mid_att + f.treb_att) / 3.0).clamp(0.0, 2.5);

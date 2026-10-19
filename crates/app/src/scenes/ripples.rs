@@ -83,8 +83,7 @@ pub fn def() -> crate::visuals::VisualDef {
         name: "Ripples",
         short: "Ripples",
         summary: "A flowing surface seen from low over it, printed as contours, dots or a grid; beats drop rings in it.",
-        make,
-        params: crate::visuals::typed::<RipplesParams>,
+        source: crate::visuals::Source::Native { make, params: crate::visuals::typed::<RipplesParams> },
         band_waveform: false,
     }
 }

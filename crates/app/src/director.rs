@@ -740,6 +740,13 @@ impl Director {
         }
     }
 
+    /// Let every visual check its sources (loaded visuals reload when saved).
+    pub fn poll(&mut self, device: &wgpu::Device, shaders: &ShaderSet) {
+        for s in self.layers.iter_mut().chain(self.outgoing.iter_mut().flatten().map(|o| &mut o.scene)) {
+            s.poll(device, shaders);
+        }
+    }
+
     /// Move layer `from` to position `to`, carrying its live state (particles,
     /// persistence, meter, modifier chain, fade) with it. The caller reorders
     /// `settings.layers` the same way.

@@ -80,8 +80,7 @@ pub fn def() -> crate::visuals::VisualDef {
         name: "Spectrum wheel",
         short: "Wheel",
         summary: "A disc of spectrum wedges with rays past the rim; jumps and walks on beats. A backdrop.",
-        make,
-        params: crate::visuals::typed::<WheelParams>,
+        source: crate::visuals::Source::Native { make, params: crate::visuals::typed::<WheelParams> },
         band_waveform: false,
     }
 }

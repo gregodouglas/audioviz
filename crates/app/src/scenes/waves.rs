@@ -152,8 +152,7 @@ pub fn def() -> crate::visuals::VisualDef {
         name: "Waves",
         short: "Waves",
         summary: "Waveform or spectrum rows receding in perspective, the Unknown Pleasures landscape.",
-        make,
-        params: crate::visuals::typed::<WavesParams>,
+        source: crate::visuals::Source::Native { make, params: crate::visuals::typed::<WavesParams> },
         band_waveform: false,
     }
 }

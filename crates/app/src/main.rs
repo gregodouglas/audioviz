@@ -22,6 +22,7 @@ mod preset_store;
 mod scene_store;
 mod scenes;
 mod settings;
+mod shader_visual;
 mod shaders;
 mod strip;
 mod theme;

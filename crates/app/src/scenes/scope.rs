@@ -162,8 +162,7 @@ pub fn def() -> crate::visuals::VisualDef {
         name: "Phosphor scope",
         short: "Scope",
         summary: "The waveform drawn as a glowing phosphor beam (left and right channels as X and Y). Lines, cheap.",
-        make,
-        params: crate::visuals::typed::<crate::settings::ScopeParams>,
+        source: crate::visuals::Source::Native { make, params: crate::visuals::typed::<crate::settings::ScopeParams> },
         band_waveform: true,
     }
 }

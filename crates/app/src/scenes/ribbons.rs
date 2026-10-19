@@ -167,8 +167,7 @@ pub fn def() -> crate::visuals::VisualDef {
         name: "Flow-field ribbons",
         short: "Ribbons",
         summary: "Thousands of particles riding a flow field the music stirs; slow persistence turns them into ribbons or a starfield.",
-        make,
-        params: crate::visuals::typed::<RibbonsParams>,
+        source: crate::visuals::Source::Native { make, params: crate::visuals::typed::<RibbonsParams> },
         band_waveform: false,
     }
 }

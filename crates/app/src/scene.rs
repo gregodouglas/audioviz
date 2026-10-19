@@ -47,6 +47,9 @@ pub trait Scene {
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer);
     /// The visual's HDR color output for this frame.
     fn output(&self) -> &wgpu::TextureView;
+    /// Called every frame with the device: a visual loaded from a folder
+    /// checks its files here and recompiles when they changed.
+    fn poll(&mut self, _device: &wgpu::Device, _shaders: &ShaderSet) {}
     /// Visual-specific controls in the panel.
     fn ui(&mut self, _ui: &mut egui::Ui, _layer: &mut Layer) {}
 }

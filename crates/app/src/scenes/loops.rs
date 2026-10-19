@@ -140,8 +140,7 @@ pub fn def() -> crate::visuals::VisualDef {
         name: "Loop",
         short: "Loop",
         summary: "Waveform rings born at the centre and pushed outward, each lagging the last; quiet slices leave dark rings.",
-        make,
-        params: crate::visuals::typed::<LoopParams>,
+        source: crate::visuals::Source::Native { make, params: crate::visuals::typed::<LoopParams> },
         band_waveform: false,
     }
 }

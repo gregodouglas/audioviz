@@ -1317,41 +1317,6 @@ impl Default for LoopParams {
     }
 }
 
-/// Eclipse: a black disc ringed by glowing dots, one per spectrum band, with a
-/// corona at the rim (`scenes/eclipse.rs`).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct EclipseParams {
-    pub count: u32,
-    /// Ring radius, fraction of the short half-side.
-    pub radius: f32,
-    /// Black disc radius, fraction of the ring.
-    pub disc: f32,
-    /// Dot size, fraction of the short half-side.
-    pub size: f32,
-    /// Halo strength round each dot.
-    pub glow: f32,
-    /// Glow at the disc's rim, flaring on the bass.
-    pub corona: f32,
-    pub gain: f32,
-    /// Brightness = level ^ curve.
-    pub curve: f32,
-    /// Fraction of the palette the ring spans.
-    pub range: f32,
-    /// Lows at the bottom on both sides instead of once round the ring.
-    pub mirror: bool,
-    /// Turn speed.
-    pub spin: f32,
-    /// Loud dots swell and push outward.
-    pub react: f32,
-}
-
-impl Default for EclipseParams {
-    fn default() -> Self {
-        Self { count: 16, radius: 0.5, disc: 0.88, size: 0.035, glow: 1.0, corona: 0.6, gain: 1.0, curve: 1.5, range: 1.0, mirror: true, spin: 0.05, react: 1.0 }
-    }
-}
-
 /// How the Ripples plane is printed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]

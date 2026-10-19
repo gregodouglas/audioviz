@@ -1,0 +1,22 @@
+{
+  "id": "eclipse",
+  "name": "Eclipse",
+  "short": "Eclipse",
+  "summary": "A black disc ringed by one glowing dot per band, with a corona that flares on the bass.",
+  "credit": "After the Eclipse in Felix Turner's Uberviz (https://uberviz.io). No code used; written fresh.",
+  "hint": "One dot per band round a black disc: lows at the bottom, highs at the top when mirrored. Loud dots swell and push out; the corona flares on the bass.",
+  "params": [
+    { "id": "count", "label": "Dots", "type": "integer", "group": "Ring", "min": 4, "max": 64, "default": 16 },
+    { "id": "radius", "label": "Radius", "group": "Ring", "min": 0.1, "max": 1.2, "default": 0.5 },
+    { "id": "disc", "label": "Disc", "group": "Ring", "min": 0.0, "max": 1.2, "default": 0.88, "help": "The black disc's radius, as a fraction of the ring." },
+    { "id": "size", "label": "Dot size", "group": "Ring", "min": 0.005, "max": 0.15, "default": 0.035 },
+    { "id": "spin", "label": "Spin", "group": "Ring", "min": -1.0, "max": 1.0, "default": 0.05 },
+    { "id": "mirror", "label": "Mirror the spectrum", "type": "toggle", "group": "Ring", "default": true },
+    { "id": "glow", "label": "Glow", "group": "Light", "min": 0.0, "max": 4.0, "default": 1.0 },
+    { "id": "corona", "label": "Corona", "group": "Light", "min": 0.0, "max": 3.0, "default": 0.6 },
+    { "id": "gain", "label": "Gain", "group": "Light", "min": 0.1, "max": 4.0, "default": 1.0, "log": true },
+    { "id": "curve", "label": "Curve", "group": "Light", "min": 0.5, "max": 4.0, "default": 1.5, "help": "Brightness is the level to this power: higher darkens quiet bands." },
+    { "id": "range", "label": "Palette span", "group": "Light", "min": 0.0, "max": 1.0, "default": 1.0 },
+    { "id": "react", "label": "Reacts", "group": "Light", "min": 0.0, "max": 3.0, "default": 1.0 }
+  ]
+}

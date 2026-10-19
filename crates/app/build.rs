@@ -1,8 +1,9 @@
 // Build script.
 //
-// 1. Factory presets and scenes: every JSON file under `assets/presets/` and
-//    `assets/scenes/` is embedded, so the binary can write them into the
-//    user's folder on first run and on "Restore factory". The list is
+// 1. Factory presets, scenes and loadable visuals: every JSON and WGSL file
+//    under `assets/presets/`, `assets/scenes/` and `assets/visuals/` is
+//    embedded, so the binary can write them into the user's folder on first
+//    run and on "Restore factory". The list is
 //    generated here so adding a file is all it takes.
 // 2. Windows: embed the app icon and version resource into audioviz.exe.
 //    The icon comes from `cargo xtask icon` (assets/icon.ico).
@@ -19,7 +20,7 @@ fn walk(dir: &Path, rel: &str, out: &mut Vec<(String, PathBuf)>) {
         let r = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
         if p.is_dir() {
             walk(&p, &r, out);
-        } else if p.extension().and_then(|x| x.to_str()) == Some("json") {
+        } else if matches!(p.extension().and_then(|x| x.to_str()), Some("json" | "wgsl")) {
             out.push((r, p));
         }
     }
@@ -30,12 +31,14 @@ fn main() {
     println!("cargo:rerun-if-changed=../../assets/icon.ico");
     println!("cargo:rerun-if-changed=../../assets/presets");
     println!("cargo:rerun-if-changed=../../assets/scenes");
+    println!("cargo:rerun-if-changed=../../assets/visuals");
 
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let assets = manifest.join("../../assets");
     let mut files = Vec::new();
     walk(&assets.join("presets"), "presets", &mut files);
     walk(&assets.join("scenes"), "scenes", &mut files);
+    walk(&assets.join("visuals"), "visuals", &mut files);
     for (_, p) in &files {
         println!("cargo:rerun-if-changed={}", p.display());
     }

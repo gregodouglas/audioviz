@@ -31,7 +31,7 @@ pub struct PresetDef {
 /// This layer's current parameters for its visual, as JSON (defaults filled in).
 pub fn params_of(layer: &Layer) -> Value {
     match visuals::get(&layer.visual) {
-        Some(d) => (d.params)(layer.params.get(&layer.visual)),
+        Some(d) => d.params(layer.params.get(&layer.visual)),
         None => layer.params.get(&layer.visual).cloned().unwrap_or(Value::Null),
     }
 }
@@ -45,7 +45,7 @@ pub fn apply(layer: &mut Layer, preset: &PresetDef) -> anyhow::Result<()> {
 
 /// The visual's own defaults as a preset.
 pub fn defaults(visual: &str) -> PresetDef {
-    let params = visuals::get(visual).map_or(Value::Null, |d| (d.params)(None));
+    let params = visuals::get(visual).map_or(Value::Null, |d| d.params(None));
     PresetDef { name: String::new(), visual: visual.to_string(), params, factory: true, edited: false }
 }
 

@@ -92,8 +92,7 @@ pub fn def() -> crate::visuals::VisualDef {
         name: "Spiral",
         short: "Spiral",
         summary: "One line through points stepped by a slowly drifting angle; morphs between arms, rosettes and stars.",
-        make,
-        params: crate::visuals::typed::<SpiralParams>,
+        source: crate::visuals::Source::Native { make, params: crate::visuals::typed::<SpiralParams> },
         band_waveform: false,
     }
 }

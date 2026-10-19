@@ -337,8 +337,7 @@ pub fn def() -> crate::visuals::VisualDef {
         name: "Sigil",
         short: "Sigil",
         summary: "A neon sacred-geometry glyph: rings per band, rays on onsets, orbs by pitch, rebuilt on every track.",
-        make,
-        params: crate::visuals::typed::<SigilParams>,
+        source: crate::visuals::Source::Native { make, params: crate::visuals::typed::<SigilParams> },
         band_waveform: false,
     }
 }

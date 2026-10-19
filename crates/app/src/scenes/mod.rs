@@ -7,6 +7,5 @@ pub mod waves;
 pub mod crystal;
 pub mod wheel;
 pub mod loops;
-pub mod eclipse;
 pub mod ripples;
 pub mod spiral;

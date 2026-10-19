@@ -88,7 +88,7 @@ mod tests {
     fn factory_set_is_embedded_and_parses() {
         assert!(FACTORY.iter().any(|(r, _)| *r == "presets/ribbons/Starfield.json"));
         assert!(FACTORY.iter().any(|(r, _)| *r == "scenes/Lantern.json"));
-        for (rel, text) in FACTORY {
+        for (rel, text) in FACTORY.iter().filter(|(r, _)| r.ends_with(".json")) {
             assert!(serde_json::from_str::<serde_json::Value>(text).is_ok(), "{rel}");
         }
     }

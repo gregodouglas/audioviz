@@ -16,9 +16,19 @@ use serde_json::Value;
 
 use crate::scene::Scene;
 use crate::scenes;
+use crate::shader_visual::{self, ShaderDef, ShaderVisual};
 use crate::shaders::ShaderSet;
 
 pub type Maker = fn(&wgpu::Device, u32, u32, &ShaderSet) -> Result<Box<dyn Scene>, String>;
+
+/// Where a visual comes from.
+pub enum Source {
+    /// Compiled in: a constructor and its parameter struct's round trip
+    /// (full parameters from what a layer stores, defaults filled in).
+    Native { make: Maker, params: fn(Option<&Value>) -> Value },
+    /// Loaded from a folder (`shader_visual`).
+    Loaded(&'static ShaderDef),
+}
 
 pub struct VisualDef {
     /// Stable id: the layer's `visual`, its parameter key, the presets folder.
@@ -29,10 +39,7 @@ pub struct VisualDef {
     pub short: &'static str,
     /// One line for tooltips.
     pub summary: &'static str,
-    pub make: Maker,
-    /// This visual's full parameters from what a layer stores (its defaults
-    /// filled in where nothing is stored), as JSON.
-    pub params: fn(Option<&Value>) -> Value,
+    pub source: Source,
     /// Draws the waveform itself, so a layer band filters the waveform (the
     /// scope); other visuals take band-limited features.
     pub band_waveform: bool,
@@ -55,16 +62,48 @@ fn builtin() -> Vec<VisualDef> {
         scenes::crystal::def(),
         scenes::wheel::def(),
         scenes::loops::def(),
-        scenes::eclipse::def(),
         scenes::ripples::def(),
         scenes::spiral::def(),
     ]
 }
 
+/// The built-ins, then every visual loaded from a folder whose id is not
+/// already taken.
+fn load() -> Vec<VisualDef> {
+    let mut v = builtin();
+    for d in shader_visual::discover() {
+        if v.iter().any(|b| b.id == d.id) {
+            tracing::warn!("visual {}: the id is taken by another visual; skipped", d.id);
+            continue;
+        }
+        // Loaded once at start and kept for the life of the app.
+        let d: &'static ShaderDef = Box::leak(Box::new(d));
+        v.push(VisualDef { id: &d.id, name: &d.name, short: &d.short, summary: &d.summary, source: Source::Loaded(d), band_waveform: false });
+    }
+    v
+}
+
 /// Every visual, in the order the Visual list shows them.
 pub fn all() -> &'static [VisualDef] {
     static ALL: OnceLock<Vec<VisualDef>> = OnceLock::new();
-    ALL.get_or_init(builtin)
+    ALL.get_or_init(load)
+}
+
+impl VisualDef {
+    /// Full parameters from what a layer stores, defaults filled in.
+    pub fn params(&self, stored: Option<&Value>) -> Value {
+        match &self.source {
+            Source::Native { params, .. } => params(stored),
+            Source::Loaded(d) => d.params_json(stored),
+        }
+    }
+
+    pub fn make(&'static self, device: &wgpu::Device, w: u32, h: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
+        match &self.source {
+            Source::Native { make, .. } => make(device, w, h, shaders),
+            Source::Loaded(d) => Ok(Box::new(ShaderVisual::new(device, w, h, shaders, d)?)),
+        }
+    }
 }
 
 pub fn get(id: &str) -> Option<&'static VisualDef> {
@@ -87,7 +126,7 @@ pub fn summary(id: &str) -> &'static str {
 /// Build visual `id`, or the scope in its place when it is not installed.
 pub fn make(id: &str, device: &wgpu::Device, w: u32, h: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
     let def = get(id).or_else(|| get(scenes::scope::ID)).expect("the scope is built in");
-    (def.make)(device, w, h, shaders)
+    def.make(device, w, h, shaders)
 }
 
 #[cfg(test)]
@@ -99,7 +138,7 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for d in all() {
             assert!(seen.insert(d.id), "{} twice", d.id);
-            assert!((d.params)(None).is_object(), "{}", d.id);
+            assert!(d.params(None).is_object(), "{}", d.id);
             assert!(!d.name.is_empty() && !d.short.is_empty() && !d.summary.is_empty());
         }
     }

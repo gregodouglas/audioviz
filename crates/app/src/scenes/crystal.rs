@@ -138,8 +138,7 @@ pub fn def() -> crate::visuals::VisualDef {
         name: "Crystal",
         short: "Crystal",
         summary: "Glass shards tumbling as a cluster, re-posed on beats, scattered over the bar.",
-        make,
-        params: crate::visuals::typed::<CrystalParams>,
+        source: crate::visuals::Source::Native { make, params: crate::visuals::typed::<CrystalParams> },
         band_waveform: false,
     }
 }

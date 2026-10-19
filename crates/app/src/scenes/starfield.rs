@@ -83,8 +83,7 @@ pub fn def() -> crate::visuals::VisualDef {
         name: "Black hole",
         short: "Black hole",
         summary: "A ray-traced black hole: lensed stars and an infalling disk that breathes with the bass. Heavy at high resolution.",
-        make,
-        params: crate::visuals::typed::<StarfieldParams>,
+        source: crate::visuals::Source::Native { make, params: crate::visuals::typed::<StarfieldParams> },
         band_waveform: false,
     }
 }

@@ -244,8 +244,7 @@ pub fn def() -> crate::visuals::VisualDef {
         name: "Kaleidoscope",
         short: "Kaleidoscope",
         summary: "A drifting window into the album art or your photos; pair it with a Kaleidoscope effect for mirrors.",
-        make,
-        params: crate::visuals::typed::<KaleidoParams>,
+        source: crate::visuals::Source::Native { make, params: crate::visuals::typed::<KaleidoParams> },
         band_waveform: false,
     }
 }

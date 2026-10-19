@@ -151,6 +151,7 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `V.wave_new` | count | How many of `sample()`'s newest samples arrived since last frame: a trace that draws exactly these (the scope) never repeats or skips one. |
 | `V.auto_gain`, `V.sample_rate` | | The gain already applied to the waveform (divide by it to undo), and samples per second. |
 | `prev(uv)` | colour | Your own last frame, before effects (with `"feedback": true`; black otherwise). |
+| `picture(uv)`, `picture_prev(uv)` | colour | With `"pictures"` in the manifest: the current picture (album art or a photo from the photos folder) and the one before it, 0..1 across, y down, mirrored outside. `V.picture_fade` (0..1, eased) is how far the new one has replaced the old; `V.picture_aspect`, `V.picture_prev_aspect` are width over height; `V.picture_count` goes up by one per new picture. |
 | `art(uv)` | colour | The playing track's album art at `uv` (0..1, y down, square, linear colour); black when there is none. It changes with the track. To map it into centred coordinates: `art(vec2<f32>(p.x, -p.y) * 0.5 + 0.5)`. |
 | `V.has_art` | 0 or 1 | 1 when the track has album art. |
 | `item(i)`, `ITEMS` | vec4 | Item `i` from your `prepare` step, and how many there are (`items` in the manifest). In `shade` this frame's value; inside `prepare` last frame's. |
@@ -443,7 +444,7 @@ What a loaded visual cannot do yet, each a possible extension of the format:
 
 - **State is four numbers per item**, kept by `prepare` from frame to frame, and lost when the app restarts or the visual is picked again.
 - **No depth test**: triangles are drawn in the order given. (Particles are prepare items drawn as triangles, as Ribbons does.)
-- **No pictures of your own**: the album art is the one picture a visual can read.
+- **Pictures** are the album art and the photos folder (through the picture feed); a folder of a visual's own images is not supported.
 - **Sixteen controls**, all numbers.
 - **A changed `id` needs a restart**, and a folder deleted while the app runs stays listed until then.
 

@@ -46,8 +46,6 @@ shader_table!(
     "glow.wgsl",
     "vignette.wgsl",
     "colorify.wgsl",
-    "kaleido_params.wgsl",
-    "kaleido.wgsl",
     "sigil_params.wgsl",
     "sigil.wgsl",
 );

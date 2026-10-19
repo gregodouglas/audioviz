@@ -13,7 +13,7 @@ use crate::scene::Scene;
 use crate::preset_store::PresetDef;
 use crate::scene_store::SceneDef;
 use crate::color;
-use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, Glow, Vignette, Colorify};
+use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, Glow, Vignette, Colorify};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
 use crate::widgets::{self, chip, chip_width, dropdown, dropdown_help, dropdown_marked, ghost_button, group, group_help, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
@@ -1196,7 +1196,7 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState
     if let Some(i) = dropdown_marked(ui, "Visual", &names, all.iter().position(|d| d.id == l.visual), help, |i| loaded(i).then_some("Loaded")) {
         l.visual = all[i].id.to_string();
         // The kaleidoscope is its picture plus the fold: add the mirrors with it.
-        if all[i].id == crate::scenes::kaleido::ID && !l.has_fold() {
+        if all[i].id == "kaleido" && !l.has_fold() {
             l.modifiers.insert(0, Modifier::Fold(Default::default()));
         }
     }
@@ -1275,7 +1275,7 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState
             hint(ui, "Switching visual…");
         }
     }
-    if kind == crate::scenes::kaleido::ID && settings.layer(editing).get::<crate::settings::KaleidoParams>(&kind).source == ImageSource::Photos {
+    if crate::shader_visual::wants_photos(&kind, &settings.layer(editing)) {
         ui.add_space(4.0);
         ui.label("Photos folder");
         ui.add(egui::TextEdit::singleline(&mut settings.photos_folder).desired_width(f32::INFINITY).hint_text(r"C:\Users\you\Pictures"));

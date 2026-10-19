@@ -39,9 +39,13 @@ struct VisualIn {
     sample_rate: f32,   // samples per second
     track: f32,         // 0..1, a hash of the playing track (changes with the track; seeds)
     instance: f32,      // 0..1, random per layer: two layers of one visual differ
-    _pad3: f32,
-    _pad4: f32,
-    _pad5: f32,
+    picture_fade: f32,  // 0..1, eased: how far picture() has replaced picture_prev()
+    picture_aspect: f32,        // width / height of picture()
+    picture_prev_aspect: f32,   // and of picture_prev()
+    picture_count: f32, // pictures shown so far (goes up by one with each new one)
+    _pad6: f32,
+    _pad7: f32,
+    _pad8: f32,
 };
 
 @group(0) @binding(0) var<uniform> V: VisualIn;
@@ -51,6 +55,9 @@ struct VisualIn {
 // Per-item values from prepare() (see item()); one placeholder without it.
 @group(0) @binding(4) var<storage, read> items_buf: array<vec4<f32>>;
 @group(0) @binding(5) var art_tex: texture_2d<f32>;
+@group(0) @binding(6) var picture_tex: texture_2d<f32>;
+@group(0) @binding(7) var picture_prev_tex: texture_2d<f32>;
+@group(0) @binding(8) var mirror_samp: sampler;
 
 const TAU: f32 = 6.2831853;
 
@@ -163,6 +170,18 @@ fn prev(uv: vec2<f32>) -> vec3<f32> {
 // colour; black when there is none (V.has_art is 0). It changes with the track.
 fn art(uv: vec2<f32>) -> vec3<f32> {
     return textureSampleLevel(art_tex, prev_samp, uv, 0.0).rgb;
+}
+
+// The current picture (with "pictures" in visual.json: the album art or a
+// photo from the photos folder) at uv, 0..1 across it, y down, repeating
+// mirrored outside; linear colour. picture_prev() is the one before, which
+// picture() replaces over V.picture_fade.
+fn picture(uv: vec2<f32>) -> vec3<f32> {
+    return textureSampleLevel(picture_tex, mirror_samp, uv, 0.0).rgb;
+}
+
+fn picture_prev(uv: vec2<f32>) -> vec3<f32> {
+    return textureSampleLevel(picture_prev_tex, mirror_samp, uv, 0.0).rgb;
 }
 
 // Centred coordinates: the short side's half-extent is 1, y up.

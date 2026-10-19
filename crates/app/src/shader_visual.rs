@@ -127,6 +127,20 @@ struct Manifest {
     /// Triangles `vertex(i)` gives, drawn in order over the picture (0 = none).
     #[serde(default)]
     triangles: u32,
+    /// Pictures for `picture(uv)`: the album art, or the photos folder.
+    #[serde(default)]
+    pictures: Option<Pictures>,
+}
+
+/// Where a visual's pictures come from: a choice control whose second
+/// option means the photos folder (the first, the album art), and a number
+/// control for the seconds each photo stays.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct Pictures {
+    #[serde(default)]
+    pub from: String,
+    #[serde(default)]
+    pub dwell: String,
 }
 
 /// A loaded visual, as the registry holds it.
@@ -152,6 +166,8 @@ pub struct ShaderDef {
     pub beam: bool,
     /// Triangles drawn by `vertex(i)` (0 = none), and whether `paint` colours them.
     pub triangles: u32,
+    /// The picture feed, when the visual asks for one.
+    pub pictures: Option<Pictures>,
     pub paint: bool,
     pub band_waveform: bool,
     pub wgsl: String,
@@ -230,6 +246,14 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
     if !defines(wgsl, "shade") && m.line == 0 && m.triangles == 0 {
         return Err("visual.wgsl needs fn shade(uv: vec2<f32>) -> vec3<f32> (only a visual with a line or triangles may leave it out)".into());
     }
+    if let Some(pics) = &m.pictures {
+        if !pics.from.is_empty() && !m.params.iter().any(|p| p.id == pics.from && p.kind == ParamKind::Choice) {
+            return Err(format!("visual.json: pictures.from \"{}\" is not a choice param", pics.from));
+        }
+        if !pics.dwell.is_empty() && !m.params.iter().any(|p| p.id == pics.dwell && matches!(p.kind, ParamKind::Slider | ParamKind::Integer)) {
+            return Err(format!("visual.json: pictures.dwell \"{}\" is not a number param", pics.dwell));
+        }
+    }
     if m.triangles > MAX_TRIANGLES {
         return Err(format!("visual.json: at most {MAX_TRIANGLES} triangles"));
     }
@@ -242,7 +266,7 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
         return Err(format!("visual.json: line_count \"{}\" is not a number param", m.line_count));
     }
     let short = if m.short.is_empty() { m.name.clone() } else { m.short };
-    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, wgsl: wgsl.to_string(), dir })
+    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, wgsl: wgsl.to_string(), dir })
 }
 
 // ------------------------------------------------------------ values
@@ -430,6 +454,15 @@ pub fn embedded() -> Vec<ShaderDef> {
     by_folder.into_iter().filter_map(|(f, (j, w))| parse(j?, w?, None).map_err(|e| tracing::warn!("factory visual {f}: {e}")).ok()).collect()
 }
 
+/// Whether layer `l`'s visual `id` takes pictures and its source control is
+/// set to the photos folder (the panel then shows the folder field).
+pub fn wants_photos(id: &str, l: &Layer) -> bool {
+    let Some(crate::visuals::Source::Loaded(d)) = crate::visuals::get(id).map(|v| &v.source) else { return false };
+    let Some(pics) = &d.pictures else { return false };
+    let stored = l.params.get(id).and_then(Value::as_object);
+    d.params.iter().find(|p| p.id == pics.from).is_some_and(|p| p.number(stored.and_then(|o| o.get(&p.id))) > 0.5)
+}
+
 /// The folder a person adds visuals to: the user's, or on a debug dev run
 /// the repo's (none on a release dev run, which reads embedded copies).
 pub fn authoring_folder() -> Option<PathBuf> {
@@ -552,7 +585,11 @@ struct Uniform {
     sample_rate: f32,
     track: f32,
     instance: f32,
-    _pad3: [f32; 3],
+    picture_fade: f32,
+    picture_aspect: f32,
+    picture_prev_aspect: f32,
+    picture_count: f32,
+    _pad6: [f32; 3],
 }
 
 pub struct ShaderVisual {
@@ -605,7 +642,47 @@ pub struct ShaderVisual {
     ring: VecDeque<[f32; 2]>,
     /// Random per instance (`V.instance`), so two layers of one visual differ.
     instance: f32,
+    /// Pictures: the device (pictures arrive at any size), the current and
+    /// previous picture with their sizes, the crossfade, how many have come,
+    /// the photos decoder and when to ask it for the next, the art shown.
+    device: wgpu::Device,
+    pics: [wgpu::TextureView; 2],
+    pic_size: [(u32, u32); 2],
+    pic_fade: f32,
+    pic_count: u32,
+    deck: Option<crate::pictures::PhotoDeck>,
+    deck_next: f32,
+    pic_art: u64,
+    mirror: wgpu::Sampler,
 }
+
+/// A picture texture filled with `rgba` (sRGB, one level); unfilled it is
+/// zeroed, which is black.
+fn picture_texture(device: &wgpu::Device, fill: Option<(&wgpu::Queue, &[u8])>, width: u32, height: u32) -> wgpu::TextureView {
+    let size = wgpu::Extent3d { width: width.max(1), height: height.max(1), depth_or_array_layers: 1 };
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("loaded visual picture"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    if let Some((queue, rgba)) = fill {
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo { texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            rgba,
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * size.width), rows_per_image: Some(size.height) },
+            size,
+        );
+    }
+    tex.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// How long a new picture takes to replace the last.
+const PICTURE_FADE_S: f32 = 1.5;
 
 fn art_texture(device: &wgpu::Device) -> wgpu::Texture {
     device.create_texture(&wgpu::TextureDescriptor {
@@ -698,6 +775,9 @@ impl ShaderVisual {
                 entry(3, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
                 entry(4, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }),
                 entry(5, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
+                entry(6, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
+                entry(7, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
+                entry(8, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
             ],
         });
         let out_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -757,6 +837,22 @@ impl ShaderVisual {
             swell: 0.0,
             ring: VecDeque::with_capacity(WAVE * 2),
             instance: crate::rng::Rng::seeded(&[std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() as u64), def.id.len() as u64]).next(),
+            device: device.clone(),
+            pics: [picture_texture(device, None, 1, 1), picture_texture(device, None, 1, 1)],
+            pic_size: [(1, 1); 2],
+            pic_fade: 1.0,
+            pic_count: 0,
+            deck: None,
+            deck_next: 0.0,
+            pic_art: 0,
+            mirror: device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("loaded visual pictures"),
+                address_mode_u: wgpu::AddressMode::MirrorRepeat,
+                address_mode_v: wgpu::AddressMode::MirrorRepeat,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            }),
         };
         me.make_groups(device);
         me.reload(device, shaders);
@@ -778,6 +874,9 @@ impl ShaderVisual {
                     wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
                     wgpu::BindGroupEntry { binding: 4, resource: items.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(&self.art_view) },
+                    wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::TextureView(&self.pics[0]) },
+                    wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::TextureView(&self.pics[1]) },
+                    wgpu::BindGroupEntry { binding: 8, resource: wgpu::BindingResource::Sampler(&self.mirror) },
                 ],
             })
         };
@@ -916,6 +1015,7 @@ impl Scene for ShaderVisual {
         for (i, d) in self.live.params.iter().enumerate().take(MAX_PARAMS) {
             p[i / 4][i % 4] = d.number(stored.and_then(|o| o.get(&d.id)));
         }
+        self.feed_pictures(queue, ctx, stored, dt);
         let u = Uniform {
             resolution: [ctx.width as f32, ctx.height as f32],
             time: ctx.time,
@@ -949,7 +1049,11 @@ impl Scene for ShaderVisual {
             // The track id hashed to 0..1.
             track: crate::rng::Rng::seeded(&[ctx.art_id]).next(),
             instance: self.instance,
-            _pad3: [0.0; 3],
+            picture_fade: { let t = self.pic_fade.clamp(0.0, 1.0); t * t * (3.0 - 2.0 * t) },
+            picture_aspect: self.pic_size[0].0 as f32 / self.pic_size[0].1.max(1) as f32,
+            picture_prev_aspect: self.pic_size[1].0 as f32 / self.pic_size[1].1.max(1) as f32,
+            picture_count: self.pic_count as f32,
+            _pad6: [0.0; 3],
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
         // The album art, once per track.
@@ -1134,6 +1238,53 @@ impl Scene for ShaderVisual {
 }
 
 impl ShaderVisual {
+    /// A new picture replaces the current one, which becomes the previous.
+    fn incoming(&mut self, queue: &wgpu::Queue, width: u32, height: u32, rgba: &[u8]) {
+        let view = picture_texture(&self.device, Some((queue, rgba)), width, height);
+        self.pics.swap(0, 1);
+        self.pic_size.swap(0, 1);
+        self.pics[0] = view;
+        self.pic_size[0] = (width.max(1), height.max(1));
+        self.pic_fade = 0.0;
+        self.pic_count += 1;
+        let device = self.device.clone();
+        self.make_groups(&device);
+    }
+
+    /// The picture feed: photos from the folder when the visual's source
+    /// control says so and the folder is set, else the album art.
+    fn feed_pictures(&mut self, queue: &wgpu::Queue, ctx: &FrameCtx, stored: Option<&Map<String, Value>>, dt: f32) {
+        let Some(pics) = self.live.pictures.clone() else { return };
+        let number = |id: &str| self.live.params.iter().find(|d| d.id == id).map(|d| d.number(stored.and_then(|o| o.get(id))));
+        let want_photos = number(&pics.from).is_some_and(|v| v > 0.5) && !ctx.photos_folder.trim().is_empty();
+        if want_photos {
+            if self.deck.as_ref().is_none_or(|d| d.folder != ctx.photos_folder) {
+                let mut d = crate::pictures::PhotoDeck::spawn(ctx.photos_folder);
+                d.request();
+                self.deck = Some(d);
+            }
+        } else {
+            self.deck = None;
+        }
+        let live = self.deck.as_ref().is_some_and(|d| d.files > 0);
+        if live {
+            let dwell = number(&pics.dwell).unwrap_or(15.0).max(2.0);
+            let deck = self.deck.as_mut().expect("live");
+            if let Some(p) = deck.poll() {
+                self.incoming(queue, p.width, p.height, &p.rgba);
+                self.deck_next = ctx.time + dwell;
+            } else if ctx.time >= self.deck_next {
+                deck.request();
+            }
+        } else if let Some(art) = ctx.art {
+            if ctx.art_id != self.pic_art {
+                self.pic_art = ctx.art_id;
+                self.incoming(queue, art.width, art.height, &art.rgba);
+            }
+        }
+        self.pic_fade = (self.pic_fade + dt / PICTURE_FADE_S).min(1.0);
+    }
+
     fn def_params(&self, layer: &Layer) -> Value {
         self.live.params_json(layer.params.get(&self.def.id))
     }

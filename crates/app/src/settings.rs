@@ -956,35 +956,6 @@ impl Default for Colorify {
     }
 }
 
-/// Where the kaleidoscope's object cell takes its picture from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ImageSource {
-    Art,
-    Photos,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct KaleidoParams {
-    pub source: ImageSource,
-    /// Photos: seconds each picture stays before the crossfade.
-    pub dwell_s: f32,
-    /// Fraction of the picture's height the window shows.
-    pub zoom: f32,
-    pub drift: f32,
-    /// Spin kick on onsets.
-    pub tumble: f32,
-    /// 0 = the picture's own colours, 1 = fully pulled to the layer tint.
-    pub tint_mix: f32,
-}
-
-impl Default for KaleidoParams {
-    fn default() -> Self {
-        Self { source: ImageSource::Art, dwell_s: 15.0, zoom: 0.6, drift: 1.0, tumble: 1.0, tint_mix: 0.0 }
-    }
-}
-
 /// Sigil: a neon sacred-geometry glyph (`scenes/sigil.rs`).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

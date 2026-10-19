@@ -16,7 +16,7 @@ use std::collections::VecDeque;
 use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, begin_pass};
-use crate::settings::{Layer, SpiralParams, SpiralShape, VisualKind};
+use crate::settings::{Layer, SpiralParams, SpiralShape};
 use crate::shaders::ShaderSet;
 
 pub const MAX_POINTS: u32 = 4096;
@@ -79,9 +79,28 @@ impl Spiral {
     }
 }
 
+/// Registry id: the layer's `visual`, its parameter key, the presets folder.
+pub const ID: &str = "spiral";
+
+fn make(device: &wgpu::Device, width: u32, height: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
+    Ok(Box::new(Spiral::new(device, width, height, shaders)?))
+}
+
+pub fn def() -> crate::visuals::VisualDef {
+    crate::visuals::VisualDef {
+        id: ID,
+        name: "Spiral",
+        short: "Spiral",
+        summary: "One line through points stepped by a slowly drifting angle; morphs between arms, rosettes and stars.",
+        make,
+        params: crate::visuals::typed::<SpiralParams>,
+        band_waveform: false,
+    }
+}
+
 impl Scene for Spiral {
-    fn kind(&self) -> VisualKind {
-        VisualKind::Spiral
+    fn id(&self) -> &'static str {
+        ID
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -94,7 +113,7 @@ impl Scene for Spiral {
     }
 
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
-        let p = &layer.spiral;
+        let p = &layer.get::<SpiralParams>(ID);
         let f = ctx.features;
         let dt = ctx.dt;
         for s in ctx.points {
@@ -150,7 +169,8 @@ impl Scene for Spiral {
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         use crate::widgets::{ghost_button, group, hint, segmented, slider_def, small_caps};
-        let p = &mut layer.spiral;
+        let mut params = layer.get::<SpiralParams>(ID);
+        let p = &mut params;
         let d = SpiralParams::default();
         group(ui, "spiral.figure", "Figure", true, 7, |ui| {
             small_caps(ui, "Shape");
@@ -179,6 +199,7 @@ impl Scene for Spiral {
         if ghost_button(ui, "Reset spiral", false).clicked() {
             *p = Default::default();
         }
+        layer.put(ID, &params);
     }
 }
 

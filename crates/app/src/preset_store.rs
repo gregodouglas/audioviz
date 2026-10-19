@@ -12,13 +12,15 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 use crate::factory;
-use crate::settings::{Layer, VisualKind};
+use crate::settings::Layer;
+use crate::visuals;
 
 #[derive(Clone, Debug)]
 pub struct PresetDef {
     pub name: String,
-    pub visual: VisualKind,
-    /// The visual's parameter struct, as JSON.
+    /// The visual's registry id (also the presets folder).
+    pub visual: String,
+    /// The visual's parameters, as JSON.
     pub params: Value,
     /// Shipped with the app (a factory file).
     pub factory: bool,
@@ -26,54 +28,29 @@ pub struct PresetDef {
     pub edited: bool,
 }
 
-/// The JSON field of `Layer` that holds this visual's parameters, and the
-/// folder name of its presets.
-pub fn field(kind: VisualKind) -> &'static str {
-    match kind {
-        VisualKind::Scope => "scope",
-        VisualKind::Ribbons => "ribbons",
-        VisualKind::Starfield => "starfield",
-        VisualKind::Kaleido => "kaleido",
-        VisualKind::Sigil => "sigil",
-        VisualKind::Waves => "waves",
-        VisualKind::Crystal => "crystal",
-        VisualKind::Wheel => "wheel",
-        VisualKind::Loop => "loop",
-        VisualKind::Eclipse => "eclipse",
-        VisualKind::Ripples => "ripples",
-        VisualKind::Spiral => "spiral",
-    }
-}
-
-fn kind_of(folder: &str) -> Option<VisualKind> {
-    VisualKind::ALL.into_iter().find(|k| field(*k) == folder)
-}
-
-/// This layer's current parameters for its visual, as JSON.
+/// This layer's current parameters for its visual, as JSON (defaults filled in).
 pub fn params_of(layer: &Layer) -> Value {
-    let mut v = serde_json::to_value(layer).unwrap_or(Value::Null);
-    v.get_mut(field(layer.visual)).map(Value::take).unwrap_or(Value::Null)
+    match visuals::get(&layer.visual) {
+        Some(d) => (d.params)(layer.params.get(&layer.visual)),
+        None => layer.params.get(&layer.visual).cloned().unwrap_or(Value::Null),
+    }
 }
 
 /// Apply a preset's parameters to a layer (switching it to the preset's visual).
 pub fn apply(layer: &mut Layer, preset: &PresetDef) -> anyhow::Result<()> {
-    let mut v = serde_json::to_value(&*layer)?;
-    v[field(preset.visual)] = preset.params.clone();
-    let mut next: Layer = serde_json::from_value(v)?;
-    next.visual = preset.visual;
-    next.normalize();
-    *layer = next;
+    layer.visual = preset.visual.clone();
+    layer.params.insert(preset.visual.clone(), preset.params.clone());
     Ok(())
 }
 
 /// The visual's own defaults as a preset.
-pub fn defaults(kind: VisualKind) -> PresetDef {
-    let fresh = Layer::new(kind, true, 1.0);
-    PresetDef { name: String::new(), visual: kind, params: params_of(&fresh), factory: true, edited: false }
+pub fn defaults(visual: &str) -> PresetDef {
+    let params = visuals::get(visual).map_or(Value::Null, |d| (d.params)(None));
+    PresetDef { name: String::new(), visual: visual.to_string(), params, factory: true, edited: false }
 }
 
-pub fn dir(kind: VisualKind) -> Option<PathBuf> {
-    factory::dir("presets").map(|d| d.join(field(kind)))
+pub fn dir(visual: &str) -> Option<PathBuf> {
+    factory::dir("presets").map(|d| d.join(visual))
 }
 
 fn safe_name(name: &str) -> String {
@@ -83,7 +60,7 @@ fn safe_name(name: &str) -> String {
 fn parse(rel: &str, text: &str) -> Option<PresetDef> {
     let mut parts = rel.split('/');
     let (_, folder, file) = (parts.next()?, parts.next()?, parts.next()?);
-    let kind = kind_of(folder)?;
+    let kind = visuals::get(folder)?.id.to_string();
     let params = serde_json::from_str::<Value>(text).ok()?;
     let (factory, same) = factory::status(rel, text);
     Some(PresetDef { name: factory::stem(file).to_string(), visual: kind, params, factory, edited: factory && !same })
@@ -99,8 +76,8 @@ pub fn all() -> Vec<PresetDef> {
         if let Err(e) = factory::install("presets/", false) {
             tracing::warn!("could not install factory presets: {e}");
         }
-        for kind in VisualKind::ALL {
-            let Some(d) = dir(kind) else { continue };
+        for def in visuals::all() {
+            let Some(d) = dir(def.id) else { continue };
             let Ok(rd) = std::fs::read_dir(&d) else { continue };
             for e in rd.flatten() {
                 let p = e.path();
@@ -109,7 +86,7 @@ pub fn all() -> Vec<PresetDef> {
                 }
                 let Ok(text) = std::fs::read_to_string(&p) else { continue };
                 let file = p.file_name().and_then(|s| s.to_str()).unwrap_or("preset.json");
-                if let Some(def) = parse(&format!("presets/{}/{}", field(kind), file), &text) {
+                if let Some(def) = parse(&format!("presets/{}/{}", def.id, file), &text) {
                     out.push(def);
                 }
             }
@@ -125,7 +102,7 @@ pub fn save(name: &str, layer: &Layer) -> anyhow::Result<String> {
     let name = safe_name(name);
     anyhow::ensure!(!name.is_empty(), "name is empty");
     anyhow::ensure!(!factory::embedded_only(), "a dev run does not write presets");
-    let d = dir(layer.visual).ok_or_else(|| anyhow::anyhow!("no config dir"))?;
+    let d = dir(&layer.visual).ok_or_else(|| anyhow::anyhow!("no config dir"))?;
     std::fs::create_dir_all(&d)?;
     let text = serde_json::to_string_pretty(&params_of(layer))?;
     std::fs::write(d.join(format!("{name}.json")), text)?;
@@ -133,13 +110,13 @@ pub fn save(name: &str, layer: &Layer) -> anyhow::Result<String> {
 }
 
 /// Write the factory presets of this visual back over the folder.
-pub fn restore_factory(kind: VisualKind) -> anyhow::Result<usize> {
-    factory::install(&format!("presets/{}/", field(kind)), true)
+pub fn restore_factory(visual: &str) -> anyhow::Result<usize> {
+    factory::install(&format!("presets/{visual}/"), true)
 }
 
 /// Delete one user preset.
-pub fn delete(kind: VisualKind, name: &str) -> anyhow::Result<()> {
-    if let Some(d) = dir(kind) {
+pub fn delete(visual: &str, name: &str) -> anyhow::Result<()> {
+    if let Some(d) = dir(visual) {
         let path = d.join(format!("{}.json", safe_name(name)));
         if path.exists() {
             std::fs::remove_file(path)?;
@@ -159,14 +136,15 @@ mod tests {
     #[test]
     fn apply_sets_only_the_visuals_parameters() {
         let presets = factory_presets();
-        let star = presets.iter().find(|p| p.name == "Starfield" && p.visual == VisualKind::Ribbons).expect("factory Starfield");
-        let mut l = Layer::new(VisualKind::Scope, true, 0.4);
+        let star = presets.iter().find(|p| p.name == "Starfield" && p.visual == "ribbons").expect("factory Starfield");
+        let mut l = Layer::new("scope", true, 0.4);
         l.palette.name = "neon".into();
         l.opacity = 0.4;
         apply(&mut l, star).unwrap();
-        assert_eq!(l.visual, VisualKind::Ribbons);
-        assert_eq!(l.ribbons.count, crate::scenes::ribbons::PARTICLES);
-        assert!((l.ribbons.persistence - 0.001).abs() < 1e-6);
+        assert_eq!(l.visual, "ribbons");
+        let r: crate::settings::RibbonsParams = l.get("ribbons");
+        assert_eq!(r.count, crate::scenes::ribbons::PARTICLES);
+        assert!((r.persistence - 0.001).abs() < 1e-6);
         assert_eq!(l.palette.name, "neon", "palette is the layer's, not the preset's");
         assert_eq!(l.opacity, 0.4);
     }

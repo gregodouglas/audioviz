@@ -179,18 +179,18 @@ pub fn apply_overrides(pairs: &[(String, String)]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::VisualKind;
+    use crate::settings::{RibbonsParams, ScopeParams, StarfieldParams};
 
     #[test]
     fn migrates_0_1_0_file() {
         let text = r#"{"gain":1.5,"ribbons_speed":0.7,"star_mass":2.0,"scene":1,"bloom":0.9,"exposure":1.2,"show_ui":true,"section":"Scene","look":"Night"}"#;
         let s = parse(text).unwrap();
         assert_eq!(s.layers.len(), 3);
-        assert_eq!(s.layers[0].visual, VisualKind::Scope);
+        assert_eq!(s.layers[0].visual, "scope");
         assert!(!s.layers[0].enabled && s.layers[1].enabled && !s.layers[2].enabled);
-        assert_eq!(s.layers[1].ribbons.speed, 0.7);
-        assert_eq!(s.layers[0].scope.gain, 1.5);
-        assert_eq!(s.layers[2].starfield.mass, 2.0);
+        assert_eq!(s.layers[1].get::<RibbonsParams>("ribbons").speed, 0.7);
+        assert_eq!(s.layers[0].get::<ScopeParams>("scope").gain, 1.5);
+        assert_eq!(s.layers[2].get::<StarfieldParams>("starfield").mass, 2.0);
         assert_eq!(s.post.bloom, 0.9);
         assert_eq!(s.post.exposure, 1.2);
         assert_eq!(s.editing, 1);

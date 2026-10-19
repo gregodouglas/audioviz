@@ -19,9 +19,9 @@ fn main() -> anyhow::Result<()> {
     println!("scene_name = {:?}  editing = {}  section = {:?}", s.scene_name, s.editing, s.section);
     for (i, l) in s.layers.iter().enumerate() {
         println!("layer {}: {:?} enabled={} opacity={:.2} band={}", i + 1, l.visual, l.enabled, l.opacity, l.band.label());
-        println!("   scope {:?}", l.scope);
-        println!("   ribbons {:?}", l.ribbons);
-        println!("   starfield {:?}", l.starfield);
+        for (id, params) in &l.params {
+            println!("   {id} {params}");
+        }
     }
     println!("post = {:?}", s.post);
     println!("tint = {:?}  delay = {} ms  monitor = {}  fps_cap = {}  show_ui = {}", s.tint, s.audio_delay_ms, s.monitor, s.fps_cap, s.show_ui);

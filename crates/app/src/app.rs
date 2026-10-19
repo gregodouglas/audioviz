@@ -808,7 +808,7 @@ impl Running {
             strip_actions = strip.draw(ctx, now_playing.as_ref(), &mut settings.tint_from_art, settings.show_now_playing, accent, t_strip, right);
             panel_actions = panel::draw(ctx, settings, panel_state, &features, &stats, &mut director.layers, t_panel);
             let input = ChromeInput {
-                layers: (0..MAX_LAYERS).map(|i| { let l = settings.layer(i); (l.visual.short().to_string(), l.enabled && l.opacity > 0.0) }).collect(),
+                layers: (0..MAX_LAYERS).map(|i| { let l = settings.layer(i); (crate::visuals::short(&l.visual).to_string(), l.enabled && l.opacity > 0.0) }).collect(),
                 editing: settings.editing.min(MAX_LAYERS - 1),
                 scene_name: &settings.scene_name,
                 auto: settings.auto_scenes,
@@ -942,7 +942,7 @@ impl Running {
         if let Some((i, name)) = panel_actions.apply_preset {
             if name.is_empty() {
                 // "Defaults": the visual's own defaults, the layer otherwise untouched.
-                let def = preset_store::defaults(self.settings.layer(i).visual);
+                let def = preset_store::defaults(&self.settings.layer(i).visual);
                 let _ = preset_store::apply(self.settings.layer_mut(i), &def);
             } else if let Some(p) = self.presets.iter().find(|p| p.name == name && p.visual == self.settings.layer(i).visual).cloned() {
                 if let Err(e) = preset_store::apply(self.settings.layer_mut(i), &p) {
@@ -961,7 +961,7 @@ impl Running {
             }
         }
         if let Some(kind) = panel_actions.restore_presets {
-            match preset_store::restore_factory(kind) {
+            match preset_store::restore_factory(&kind) {
                 Ok(n) => {
                     self.presets = preset_store::all();
                     self.calibration_result = Some((format!("Restored {n} factory preset{}", if n == 1 { "" } else { "s" }), Instant::now()));

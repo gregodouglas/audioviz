@@ -13,7 +13,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::rng::Rng;
 use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, begin_pass};
-use crate::settings::{Layer, RipplesParams, RipplesPrint, VisualKind};
+use crate::settings::{Layer, RipplesParams, RipplesPrint};
 use crate::shaders::ShaderSet;
 
 /// Grid cells per side of the mesh.
@@ -70,9 +70,28 @@ impl Ripples {
     }
 }
 
+/// Registry id: the layer's `visual`, its parameter key, the presets folder.
+pub const ID: &str = "ripples";
+
+fn make(device: &wgpu::Device, width: u32, height: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
+    Ok(Box::new(Ripples::new(device, width, height, shaders)?))
+}
+
+pub fn def() -> crate::visuals::VisualDef {
+    crate::visuals::VisualDef {
+        id: ID,
+        name: "Ripples",
+        short: "Ripples",
+        summary: "A flowing surface seen from low over it, printed as contours, dots or a grid; beats drop rings in it.",
+        make,
+        params: crate::visuals::typed::<RipplesParams>,
+        band_waveform: false,
+    }
+}
+
 impl Scene for Ripples {
-    fn kind(&self) -> VisualKind {
-        VisualKind::Ripples
+    fn id(&self) -> &'static str {
+        ID
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -85,7 +104,7 @@ impl Scene for Ripples {
     }
 
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
-        let p = &layer.ripples;
+        let p = &layer.get::<RipplesParams>(ID);
         let f = ctx.features;
         let dt = ctx.dt;
         let energy = ((f.bass_att + f.mid_att + f.treb_att) / 3.0).clamp(0.0, 2.5);
@@ -142,7 +161,8 @@ impl Scene for Ripples {
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         use crate::widgets::{ghost_button, group, hint, segmented, slider_def, small_caps};
-        let p = &mut layer.ripples;
+        let mut params = layer.get::<RipplesParams>(ID);
+        let p = &mut params;
         let d = RipplesParams::default();
         group(ui, "ripples.surface", "Surface", true, 6, |ui| {
             slider_def(ui, "Height", &mut p.height, Some(d.height), 0.0..=1.5, |v| format!("{v:.2}"), false);
@@ -167,6 +187,7 @@ impl Scene for Ripples {
         if ghost_button(ui, "Reset ripples", false).clicked() {
             *p = Default::default();
         }
+        layer.put(ID, &params);
     }
 }
 

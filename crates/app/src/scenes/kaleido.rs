@@ -11,7 +11,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, Scene, fullscreen_pass, hdr_texture, HDR_FORMAT};
 use crate::shaders::ShaderSet;
-use crate::settings::{ImageSource, Layer, VisualKind};
+use crate::settings::{ImageSource, Layer, KaleidoParams};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug, Default)]
@@ -231,9 +231,28 @@ impl Kaleido {
     }
 }
 
+/// Registry id: the layer's `visual`, its parameter key, the presets folder.
+pub const ID: &str = "kaleido";
+
+fn make(device: &wgpu::Device, width: u32, height: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
+    Ok(Box::new(Kaleido::new(device, width, height, shaders)?))
+}
+
+pub fn def() -> crate::visuals::VisualDef {
+    crate::visuals::VisualDef {
+        id: ID,
+        name: "Kaleidoscope",
+        short: "Kaleidoscope",
+        summary: "A drifting window into the album art or your photos; pair it with a Kaleidoscope effect for mirrors.",
+        make,
+        params: crate::visuals::typed::<KaleidoParams>,
+        band_waveform: false,
+    }
+}
+
 impl Scene for Kaleido {
-    fn kind(&self) -> VisualKind {
-        VisualKind::Kaleido
+    fn id(&self) -> &'static str {
+        ID
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -246,7 +265,7 @@ impl Scene for Kaleido {
     }
 
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
-        let k = &layer.kaleido;
+        let k = &layer.get::<KaleidoParams>(ID);
         let f = ctx.features;
         let dt = ctx.dt.clamp(0.0, 0.1);
         let time = ctx.time;
@@ -340,8 +359,9 @@ impl Scene for Kaleido {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
-        let k = &mut layer.kaleido;
-        let d = crate::settings::KaleidoParams::default();
+        let mut params = layer.get::<KaleidoParams>(ID);
+        let k = &mut params;
+        let d = KaleidoParams::default();
         use crate::widgets::{ghost_button, hint, segmented, slider_def};
         if let Some(i) = segmented(ui, &["Album art", "My photos"], (k.source == ImageSource::Photos) as usize) {
             k.source = if i == 1 { ImageSource::Photos } else { ImageSource::Art };
@@ -358,6 +378,7 @@ impl Scene for Kaleido {
         if ghost_button(ui, "Reset kaleidoscope", false).clicked() {
             *k = Default::default();
         }
+        layer.put(ID, &params);
     }
 }
 

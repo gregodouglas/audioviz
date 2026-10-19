@@ -14,7 +14,7 @@ use crate::rng::Rng;
 
 use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, begin_pass};
 use crate::shaders::ShaderSet;
-use crate::settings::{CrystalStyle, Layer, VisualKind};
+use crate::settings::{CrystalStyle, Layer, CrystalParams};
 
 pub const MAX_SHARDS: usize = 16;
 
@@ -125,9 +125,28 @@ impl Crystal {
     }
 }
 
+/// Registry id: the layer's `visual`, its parameter key, the presets folder.
+pub const ID: &str = "crystal";
+
+fn make(device: &wgpu::Device, width: u32, height: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
+    Ok(Box::new(Crystal::new(device, width, height, shaders)?))
+}
+
+pub fn def() -> crate::visuals::VisualDef {
+    crate::visuals::VisualDef {
+        id: ID,
+        name: "Crystal",
+        short: "Crystal",
+        summary: "Glass shards tumbling as a cluster, re-posed on beats, scattered over the bar.",
+        make,
+        params: crate::visuals::typed::<CrystalParams>,
+        band_waveform: false,
+    }
+}
+
 impl Scene for Crystal {
-    fn kind(&self) -> VisualKind {
-        VisualKind::Crystal
+    fn id(&self) -> &'static str {
+        ID
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -143,7 +162,7 @@ impl Scene for Crystal {
     }
 
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
-        let p = &layer.crystal;
+        let p = &layer.get::<CrystalParams>(ID);
         let f = ctx.features;
         let dt = ctx.dt;
         let count = (p.count as usize).clamp(1, MAX_SHARDS);
@@ -235,8 +254,9 @@ impl Scene for Crystal {
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         use crate::widgets::{ghost_button, group, hint, segmented, slider_def, small_caps};
-        let p = &mut layer.crystal;
-        let d = crate::settings::CrystalParams::default();
+        let mut params = layer.get::<CrystalParams>(ID);
+        let p = &mut params;
+        let d = CrystalParams::default();
         group(ui, "crystal.shards", "Shards", true, 7, |ui| {
             small_caps(ui, "Style");
             if let Some(i) = segmented(ui, &["Solid", "Glass"], (p.style == CrystalStyle::Glass) as usize) {
@@ -260,6 +280,7 @@ impl Scene for Crystal {
         if ghost_button(ui, "Reset crystal", false).clicked() {
             *p = Default::default();
         }
+        layer.put(ID, &params);
     }
 }
 

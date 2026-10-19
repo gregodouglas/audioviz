@@ -10,7 +10,7 @@
 use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, fullscreen_pass};
-use crate::settings::{EclipseParams, Layer, VisualKind};
+use crate::settings::{EclipseParams, Layer};
 use crate::shaders::ShaderSet;
 
 pub const MAX_DOTS: usize = 64;
@@ -62,9 +62,28 @@ impl Eclipse {
     }
 }
 
+/// Registry id: the layer's `visual`, its parameter key, the presets folder.
+pub const ID: &str = "eclipse";
+
+fn make(device: &wgpu::Device, width: u32, height: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
+    Ok(Box::new(Eclipse::new(device, width, height, shaders)?))
+}
+
+pub fn def() -> crate::visuals::VisualDef {
+    crate::visuals::VisualDef {
+        id: ID,
+        name: "Eclipse",
+        short: "Eclipse",
+        summary: "A black disc ringed by one glowing dot per band, with a corona that flares on the bass.",
+        make,
+        params: crate::visuals::typed::<EclipseParams>,
+        band_waveform: false,
+    }
+}
+
 impl Scene for Eclipse {
-    fn kind(&self) -> VisualKind {
-        VisualKind::Eclipse
+    fn id(&self) -> &'static str {
+        ID
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -77,7 +96,7 @@ impl Scene for Eclipse {
     }
 
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
-        let p = &layer.eclipse;
+        let p = &layer.get::<EclipseParams>(ID);
         let f = ctx.features;
         let n = (p.count as usize).clamp(4, MAX_DOTS);
         let dt = ctx.dt;
@@ -142,7 +161,8 @@ impl Scene for Eclipse {
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         use crate::widgets::{ghost_button, group, hint, slider_def, toggle_row};
-        let p = &mut layer.eclipse;
+        let mut params = layer.get::<EclipseParams>(ID);
+        let p = &mut params;
         let d = EclipseParams::default();
         group(ui, "eclipse.ring", "Ring", true, 6, |ui| {
             slider_def(ui, "Dots", &mut p.count, Some(d.count), 4..=MAX_DOTS as u32, |v| format!("{v:.0}"), false);
@@ -165,6 +185,7 @@ impl Scene for Eclipse {
         if ghost_button(ui, "Reset eclipse", false).clicked() {
             *p = Default::default();
         }
+        layer.put(ID, &params);
     }
 }
 

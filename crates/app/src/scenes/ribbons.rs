@@ -9,7 +9,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, Scene, begin_pass, fullscreen_pass, hdr_texture, HDR_FORMAT};
 use crate::shaders::ShaderSet;
-use crate::settings::{Layer, VisualKind};
+use crate::settings::{Layer, RibbonsParams};
 
 pub const PARTICLES: u32 = 65_536;
 
@@ -154,9 +154,28 @@ impl Ribbons {
     }
 }
 
+/// Registry id: the layer's `visual`, its parameter key, the presets folder.
+pub const ID: &str = "ribbons";
+
+fn make(device: &wgpu::Device, width: u32, height: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
+    Ok(Box::new(Ribbons::new(device, width, height, shaders)?))
+}
+
+pub fn def() -> crate::visuals::VisualDef {
+    crate::visuals::VisualDef {
+        id: ID,
+        name: "Flow-field ribbons",
+        short: "Ribbons",
+        summary: "Thousands of particles riding a flow field the music stirs; slow persistence turns them into ribbons or a starfield.",
+        make,
+        params: crate::visuals::typed::<RibbonsParams>,
+        band_waveform: false,
+    }
+}
+
 impl Scene for Ribbons {
-    fn kind(&self) -> VisualKind {
-        VisualKind::Ribbons
+    fn id(&self) -> &'static str {
+        ID
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -173,7 +192,7 @@ impl Scene for Ribbons {
     }
 
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
-        let s = &layer.ribbons;
+        let s = &layer.get::<RibbonsParams>(ID);
         let f = ctx.features;
         let mut chroma = [[0.0f32; 4]; 3];
         for (i, c) in f.chroma.iter().enumerate() {
@@ -235,8 +254,9 @@ impl Scene for Ribbons {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
-        let s = &mut layer.ribbons;
-        let d = crate::settings::RibbonsParams::default();
+        let mut params = layer.get::<RibbonsParams>(ID);
+        let s = &mut params;
+        let d = RibbonsParams::default();
         use crate::widgets::{ghost_button, group, hint, slider_def};
         group(ui, "ribbons.field", "Field", true, 5, |ui| {
             slider_def(ui, "Particles", &mut s.count, Some(d.count), 256..=PARTICLES, |v| format!("{v:.0}"), true);
@@ -257,6 +277,7 @@ impl Scene for Ribbons {
         if ghost_button(ui, "Reset ribbons", false).clicked() {
             *s = Default::default();
         }
+        layer.put(ID, &params);
     }
 }
 

@@ -15,7 +15,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, begin_pass};
 use crate::shaders::ShaderSet;
-use crate::settings::{Layer, LoopParams, VisualKind, WavesColour};
+use crate::settings::{Layer, LoopParams, WavesColour};
 
 /// Points round each ring.
 pub const COLS: usize = 256;
@@ -127,9 +127,28 @@ impl Loop {
     }
 }
 
+/// Registry id: the layer's `visual`, its parameter key, the presets folder.
+pub const ID: &str = "loop";
+
+fn make(device: &wgpu::Device, width: u32, height: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
+    Ok(Box::new(Loop::new(device, width, height, shaders)?))
+}
+
+pub fn def() -> crate::visuals::VisualDef {
+    crate::visuals::VisualDef {
+        id: ID,
+        name: "Loop",
+        short: "Loop",
+        summary: "Waveform rings born at the centre and pushed outward, each lagging the last; quiet slices leave dark rings.",
+        make,
+        params: crate::visuals::typed::<LoopParams>,
+        band_waveform: false,
+    }
+}
+
 impl Scene for Loop {
-    fn kind(&self) -> VisualKind {
-        VisualKind::Loop
+    fn id(&self) -> &'static str {
+        ID
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -142,7 +161,7 @@ impl Scene for Loop {
     }
 
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
-        let p = layer.loops;
+        let p = layer.get::<LoopParams>(ID);
         let rings = (p.rings as usize).clamp(2, MAX_RINGS);
         for s in ctx.points {
             self.ring.push_back((s[0] + s[1]) * 0.5);
@@ -207,7 +226,8 @@ impl Scene for Loop {
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         use crate::widgets::{ghost_button, group, hint, segmented, slider_def, small_caps};
-        let p = &mut layer.loops;
+        let mut params = layer.get::<LoopParams>(ID);
+        let p = &mut params;
         let d = LoopParams::default();
         group(ui, "loop.rings", "Rings", true, 7, |ui| {
             slider_def(ui, "Rings", &mut p.rings, Some(d.rings), 4..=MAX_RINGS as u32, |v| format!("{v:.0}"), false);
@@ -235,6 +255,7 @@ impl Scene for Loop {
         if ghost_button(ui, "Reset loop", false).clicked() {
             *p = Default::default();
         }
+        layer.put(ID, &params);
     }
 }
 

@@ -9,7 +9,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, Scene, fullscreen_pass2, hdr_texture, HDR_FORMAT};
 use crate::shaders::ShaderSet;
-use crate::settings::{Layer, VisualKind};
+use crate::settings::{Layer, SigilParams};
 
 pub const N_RAYS: usize = 24;
 pub const N_RINGS: usize = 6;
@@ -324,9 +324,28 @@ fn group_bands(bands: &[f32]) -> [f32; N_RINGS] {
     out
 }
 
+/// Registry id: the layer's `visual`, its parameter key, the presets folder.
+pub const ID: &str = "sigil";
+
+fn make(device: &wgpu::Device, width: u32, height: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
+    Ok(Box::new(Sigil::new(device, width, height, shaders)?))
+}
+
+pub fn def() -> crate::visuals::VisualDef {
+    crate::visuals::VisualDef {
+        id: ID,
+        name: "Sigil",
+        short: "Sigil",
+        summary: "A neon sacred-geometry glyph: rings per band, rays on onsets, orbs by pitch, rebuilt on every track.",
+        make,
+        params: crate::visuals::typed::<SigilParams>,
+        band_waveform: false,
+    }
+}
+
 impl Scene for Sigil {
-    fn kind(&self) -> VisualKind {
-        VisualKind::Sigil
+    fn id(&self) -> &'static str {
+        ID
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -341,7 +360,7 @@ impl Scene for Sigil {
     }
 
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
-        let s = &layer.sigil;
+        let s = &layer.get::<SigilParams>(ID);
         let f = ctx.features;
         let dt = ctx.dt.clamp(0.0, 0.1);
         self.symmetry_override = s.symmetry;
@@ -574,8 +593,9 @@ impl Scene for Sigil {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
-        let s = &mut layer.sigil;
-        let d = crate::settings::SigilParams::default();
+        let mut params = layer.get::<SigilParams>(ID);
+        let s = &mut params;
+        let d = SigilParams::default();
         use crate::widgets::{ghost_button, group, hint, slider_def, toggle_row};
         let by_track = |v: f64| if v < 0.5 { "By track".to_string() } else { format!("{v:.0}") };
         group(ui, "sigil.look", "Look", true, 6, |ui| {
@@ -623,6 +643,7 @@ impl Scene for Sigil {
             self.pending = Some(self.arrangement.seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407));
             self.going_out = true;
         }
+        layer.put(ID, &params);
     }
 }
 

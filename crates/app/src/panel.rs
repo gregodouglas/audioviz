@@ -13,7 +13,7 @@ use crate::scene::Scene;
 use crate::preset_store::PresetDef;
 use crate::scene_store::SceneDef;
 use crate::color;
-use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind, Glow, Vignette, Colorify};
+use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, Glow, Vignette, Colorify};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
 use crate::widgets::{self, chip, chip_width, dropdown, dropdown_help, ghost_button, group, group_help, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
@@ -123,7 +123,7 @@ pub struct Actions {
     /// (layer, preset name) to apply; (layer, name) to save the layer's visual parameters as.
     pub apply_preset: Option<(usize, String)>,
     pub save_preset: Option<(usize, String)>,
-    pub restore_presets: Option<VisualKind>,
+    pub restore_presets: Option<String>,
     pub restore_scenes: bool,
     pub delete_scene: Option<String>,
     pub calibrate_toggle: bool,
@@ -862,8 +862,8 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
     ui.add_space(8.0);
 
     let hue = theme::layer_hue(editing);
-    let kind = settings.layer(editing).visual;
-    let crumb = format!("Layer {} · {}", editing + 1, kind.short());
+    let kind = settings.layer(editing).visual.clone();
+    let crumb = format!("Layer {} · {}", editing + 1, crate::visuals::short(&kind));
     let n_mods = settings.layer(editing).modifiers.len();
     state.editing_mod = state.editing_mod.min(n_mods.saturating_sub(1));
     let mod_open = state.mod_open && n_mods > 0;
@@ -874,7 +874,7 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
             state.mod_open = false;
         }
     } else {
-        inspector_header(ui, hue, &[&crumb], Some(kind.summary()), None);
+        inspector_header(ui, hue, &[&crumb], Some(crate::visuals::summary(&kind)), None);
         let sel = LayerTab::ALL.iter().position(|t| *t == settings.layer_tab).unwrap_or(0);
         let tabs: Vec<&str> = LayerTab::ALL.iter().map(|t| t.name()).collect();
         if let Some(i) = segmented(ui, &tabs, sel) {
@@ -925,7 +925,7 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
             {
                 let l = settings.layer_mut(i);
                 mini_switch(ui, &mut l.enabled);
-                let label = egui::RichText::new(format!("{}  {}", i + 1, l.visual.short())).font(if focused { theme::bold(12.5) } else { theme::sans(12.5) }).color(if focused { TEXT } else { TEXT_2 });
+                let label = egui::RichText::new(format!("{}  {}", i + 1, crate::visuals::short(&l.visual))).font(if focused { theme::bold(12.5) } else { theme::sans(12.5) }).color(if focused { TEXT } else { TEXT_2 });
                 if ui.add(egui::Button::new(label).frame(false)).clicked() {
                     a.select_layer = Some(i);
                 }
@@ -1026,12 +1026,12 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
 
 fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, layers: &mut [Box<dyn Scene>], editing: usize, a: &mut Actions) {
     let l = settings.layer_mut(editing);
-    let names: Vec<&str> = VisualKind::ALL.iter().map(|k| k.name()).collect();
-    if let Some(i) = dropdown_help(ui, "Visual", &names, VisualKind::ALL.iter().position(|k| *k == l.visual), |i| Some(VisualKind::ALL[i].summary())) {
-        let k = VisualKind::ALL[i];
-        l.visual = k;
+    let all = crate::visuals::all();
+    let names: Vec<&str> = all.iter().map(|d| d.name).collect();
+    if let Some(i) = dropdown_help(ui, "Visual", &names, all.iter().position(|d| d.id == l.visual), |i| Some(all[i].summary)) {
+        l.visual = all[i].id.to_string();
         // The kaleidoscope is its picture plus the fold: add the mirrors with it.
-        if k == VisualKind::Kaleido && !l.has_fold() {
+        if all[i].id == crate::scenes::kaleido::ID && !l.has_fold() {
             l.modifiers.insert(0, Modifier::Fold(Default::default()));
         }
     }
@@ -1040,7 +1040,7 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState
     }
     // Visual presets: built in and saved, for this visual only.
     {
-        let kind = l.visual;
+        let kind = l.visual.clone();
         let mine: Vec<&PresetDef> = stats.presets.iter().filter(|p| p.visual == kind).collect();
         let mut items: Vec<String> = mine.iter().map(|p| if p.edited { format!("{} (edited)", p.name) } else if p.factory { p.name.clone() } else { format!("{} (mine)", p.name) }).collect();
         items.push("Defaults".into());
@@ -1100,15 +1100,17 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState
         Blend::Multiply => "Multiply: masks the layers below; its dark parts darken them.",
     });
     ui.add_space(8.0);
-    let kind = l.visual;
-    if let Some(scene) = layers.get_mut(editing) {
-        if scene.kind() == kind {
+    let kind = l.visual.clone();
+    if crate::visuals::get(&kind).is_none() {
+        hint(ui, &format!("The visual \"{kind}\" is not installed; this layer draws the scope until it comes back. Its settings are kept."));
+    } else if let Some(scene) = layers.get_mut(editing) {
+        if scene.id() == kind {
             scene.ui(ui, l);
         } else {
             hint(ui, "Switching visual…");
         }
     }
-    if kind == VisualKind::Kaleido && settings.layer(editing).kaleido.source == ImageSource::Photos {
+    if kind == crate::scenes::kaleido::ID && settings.layer(editing).get::<crate::settings::KaleidoParams>(&kind).source == ImageSource::Photos {
         ui.add_space(4.0);
         ui.label("Photos folder");
         ui.add(egui::TextEdit::singleline(&mut settings.photos_folder).desired_width(f32::INFINITY).hint_text(r"C:\Users\you\Pictures"));
@@ -1447,9 +1449,9 @@ fn performance_section(ui: &mut egui::Ui, settings: &Settings, stats: &Stats) {
         }
         let l = settings.layer(i);
         let hue = theme::layer_hue(i);
-        row(ui, 0.0, &format!("Layer {} · {}", i + 1, l.visual.short()), pct(t, total), Some(t / total), hue, None);
+        row(ui, 0.0, &format!("Layer {} · {}", i + 1, crate::visuals::short(&l.visual)), pct(t, total), Some(t / total), hue, None);
         if let Some(v) = g.part(Part::Visual(i as u8)) {
-            row(ui, 14.0, l.visual.short(), pct(v, total), Some(v / total), hue, Some(l.visual.summary()));
+            row(ui, 14.0, crate::visuals::short(&l.visual), pct(v, total), Some(v / total), hue, Some(crate::visuals::summary(&l.visual)));
         }
         for (j, m) in l.modifiers.iter().enumerate() {
             if let Some(v) = g.part(Part::Effect(i as u8, j as u8)) {

@@ -12,77 +12,6 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_LAYERS: usize = 3;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum VisualKind {
-    Scope,
-    Ribbons,
-    Starfield,
-    Kaleido,
-    Sigil,
-    Waves,
-    Crystal,
-    Wheel,
-    Loop,
-    Eclipse,
-    Ripples,
-    Spiral,
-}
-
-impl VisualKind {
-    pub const ALL: [VisualKind; 12] = [VisualKind::Scope, VisualKind::Ribbons, VisualKind::Starfield, VisualKind::Kaleido, VisualKind::Sigil, VisualKind::Waves, VisualKind::Crystal, VisualKind::Wheel, VisualKind::Loop, VisualKind::Eclipse, VisualKind::Ripples, VisualKind::Spiral];
-    pub fn name(self) -> &'static str {
-        match self {
-            VisualKind::Scope => "Phosphor scope",
-            VisualKind::Ribbons => "Flow-field ribbons",
-            VisualKind::Starfield => "Black hole",
-            VisualKind::Kaleido => "Kaleidoscope",
-            VisualKind::Sigil => "Sigil",
-            VisualKind::Waves => "Waves",
-            VisualKind::Crystal => "Crystal",
-            VisualKind::Wheel => "Spectrum wheel",
-            VisualKind::Loop => "Loop",
-            VisualKind::Eclipse => "Eclipse",
-            VisualKind::Ripples => "Ripples",
-            VisualKind::Spiral => "Spiral",
-        }
-    }
-    /// One line for a tooltip: what the visual draws and what moves it.
-    pub fn summary(self) -> &'static str {
-        match self {
-            VisualKind::Scope => "The waveform drawn as a glowing phosphor beam (left and right channels as X and Y). Lines, cheap.",
-            VisualKind::Ribbons => "Thousands of particles riding a flow field the music stirs; slow persistence turns them into ribbons or a starfield.",
-            VisualKind::Starfield => "A ray-traced black hole: lensed stars and an infalling disk that breathes with the bass. Heavy at high resolution.",
-            VisualKind::Kaleido => "A drifting window into the album art or your photos; pair it with a Kaleidoscope effect for mirrors.",
-            VisualKind::Sigil => "A neon sacred-geometry glyph: rings per band, rays on onsets, orbs by pitch, rebuilt on every track.",
-            VisualKind::Waves => "Waveform or spectrum rows receding in perspective, the Unknown Pleasures landscape.",
-            VisualKind::Crystal => "Glass shards tumbling as a cluster, re-posed on beats, scattered over the bar.",
-            VisualKind::Wheel => "A disc of spectrum wedges with rays past the rim; jumps and walks on beats. A backdrop.",
-            VisualKind::Loop => "Waveform rings born at the centre and pushed outward, each lagging the last; quiet slices leave dark rings.",
-            VisualKind::Eclipse => "A black disc ringed by one glowing dot per band, with a corona that flares on the bass.",
-            VisualKind::Ripples => "A flowing surface seen from low over it, printed as contours, dots or a grid; beats drop rings in it.",
-            VisualKind::Spiral => "One line through points stepped by a slowly drifting angle; morphs between arms, rosettes and stars.",
-        }
-    }
-    /// Short display name (bar pips, stack rows, breadcrumb).
-    pub fn short(self) -> &'static str {
-        match self {
-            VisualKind::Scope => "Scope",
-            VisualKind::Ribbons => "Ribbons",
-            VisualKind::Starfield => "Black hole",
-            VisualKind::Kaleido => "Kaleidoscope",
-            VisualKind::Sigil => "Sigil",
-            VisualKind::Waves => "Waves",
-            VisualKind::Crystal => "Crystal",
-            VisualKind::Wheel => "Wheel",
-            VisualKind::Loop => "Loop",
-            VisualKind::Eclipse => "Eclipse",
-            VisualKind::Ripples => "Ripples",
-            VisualKind::Spiral => "Spiral",
-        }
-    }
-}
-
 /// Mirror geometry of a kaleidoscope fold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -1679,7 +1608,8 @@ impl AudioBand {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Layer {
-    pub visual: VisualKind,
+    /// Registry id of the visual (`visuals::get`), e.g. "scope".
+    pub visual: String,
     pub enabled: bool,
     /// 0 = off, 1 = as rendered, up to 2 = boosted.
     pub opacity: f32,
@@ -1696,30 +1626,36 @@ pub struct Layer {
     /// Pre-chain field, migrated into `modifiers` on load; never written.
     #[serde(skip_serializing)]
     pub fold: LegacyFold,
-    pub scope: ScopeParams,
-    pub ribbons: RibbonsParams,
-    pub starfield: StarfieldParams,
-    pub kaleido: KaleidoParams,
-    pub sigil: SigilParams,
-    pub waves: WavesParams,
-    pub crystal: CrystalParams,
-    pub wheel: WheelParams,
-    #[serde(rename = "loop")]
-    pub loops: LoopParams,
-    pub eclipse: EclipseParams,
-    pub ripples: RipplesParams,
-    pub spiral: SpiralParams,
+    /// Each visual's parameters as JSON, keyed by its id. Flattened, so a
+    /// layer reads `"visual": "wheel", "wheel": { ... }` as it always has; a
+    /// visual's block is kept when the layer switches away, so switching
+    /// back loses nothing. Visuals read their own with `get`.
+    #[serde(flatten)]
+    pub params: serde_json::Map<String, serde_json::Value>,
 }
 
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: VisualKind::Scope, enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), director: EffectsDirector::default(), fold: LegacyFold::default(), scope: ScopeParams::default(), ribbons: RibbonsParams::default(), starfield: StarfieldParams::default(), kaleido: KaleidoParams::default(), sigil: SigilParams::default(), waves: WavesParams::default(), crystal: CrystalParams::default(), wheel: WheelParams::default(), loops: LoopParams::default(), eclipse: EclipseParams::default(), ripples: RipplesParams::default(), spiral: SpiralParams::default() }
+        Self { visual: "scope".into(), enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), director: EffectsDirector::default(), fold: LegacyFold::default(), params: serde_json::Map::new() }
     }
 }
 
 impl Layer {
-    pub fn new(visual: VisualKind, enabled: bool, opacity: f32) -> Self {
-        Self { visual, enabled, opacity, ..Self::default() }
+    pub fn new(visual: &str, enabled: bool, opacity: f32) -> Self {
+        Self { visual: visual.into(), enabled, opacity, ..Self::default() }
+    }
+
+    /// Visual `id`'s parameters, typed; its defaults where the layer has none
+    /// (or a field is missing). Reads the stored JSON in place.
+    pub fn get<T: serde::de::DeserializeOwned + Default>(&self, id: &str) -> T {
+        self.params.get(id).and_then(|v| T::deserialize(v).ok()).unwrap_or_default()
+    }
+
+    /// Store visual `id`'s parameters.
+    pub fn put<T: Serialize>(&mut self, id: &str, value: &T) {
+        if let Ok(v) = serde_json::to_value(value) {
+            self.params.insert(id.to_string(), v);
+        }
     }
 
     /// Bring a loaded layer up to date: the one-build `fold` field becomes the
@@ -1928,7 +1864,7 @@ impl Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            layers: vec![Layer::new(VisualKind::Scope, true, 1.0), Layer::new(VisualKind::Ribbons, false, 0.5), Layer::new(VisualKind::Starfield, false, 0.5)],
+            layers: vec![Layer::new("scope", true, 1.0), Layer::new("ribbons", false, 0.5), Layer::new("starfield", false, 0.5)],
             solo: None,
             editing: 0,
             scene_name: String::new(),

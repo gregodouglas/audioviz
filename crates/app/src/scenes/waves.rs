@@ -10,7 +10,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, begin_pass};
 use crate::shaders::ShaderSet;
-use crate::settings::{Layer, VisualKind, WavesColour, WavesSource};
+use crate::settings::{Layer, WavesColour, WavesSource, WavesParams};
 
 /// Samples per row (points along x).
 pub const COLS: usize = 256;
@@ -95,7 +95,7 @@ impl Waves {
 
     /// Build the next row from the signal and push it into the ring.
     fn push_row(&mut self, queue: &wgpu::Queue, ctx: &FrameCtx, layer: &Layer, rows: usize) {
-        let p = &layer.waves;
+        let p = &layer.get::<WavesParams>(ID);
         match p.source {
             WavesSource::Waveform => {
                 let window = COLS * DECIM;
@@ -139,9 +139,28 @@ impl Waves {
     }
 }
 
+/// Registry id: the layer's `visual`, its parameter key, the presets folder.
+pub const ID: &str = "waves";
+
+fn make(device: &wgpu::Device, width: u32, height: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
+    Ok(Box::new(Waves::new(device, width, height, shaders)?))
+}
+
+pub fn def() -> crate::visuals::VisualDef {
+    crate::visuals::VisualDef {
+        id: ID,
+        name: "Waves",
+        short: "Waves",
+        summary: "Waveform or spectrum rows receding in perspective, the Unknown Pleasures landscape.",
+        make,
+        params: crate::visuals::typed::<WavesParams>,
+        band_waveform: false,
+    }
+}
+
 impl Scene for Waves {
-    fn kind(&self) -> VisualKind {
-        VisualKind::Waves
+    fn id(&self) -> &'static str {
+        ID
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -154,7 +173,7 @@ impl Scene for Waves {
     }
 
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
-        let p = &layer.waves;
+        let p = &layer.get::<WavesParams>(ID);
         let rows = (p.rows as usize).clamp(2, MAX_ROWS);
         // Keep the newest signal; a row is a box-filtered window of it.
         for s in ctx.points {
@@ -213,8 +232,9 @@ impl Scene for Waves {
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         use crate::widgets::{ghost_button, group, hint, segmented, slider_def, small_caps};
-        let p = &mut layer.waves;
-        let d = crate::settings::WavesParams::default();
+        let mut params = layer.get::<WavesParams>(ID);
+        let p = &mut params;
+        let d = WavesParams::default();
         group(ui, "waves.landscape", "Landscape", true, 7, |ui| {
             small_caps(ui, "Rows show");
             if let Some(i) = segmented(ui, &["Waveform", "Spectrum"], (p.source == WavesSource::Spectrum) as usize) {
@@ -243,6 +263,7 @@ impl Scene for Waves {
         if ghost_button(ui, "Reset waves", false).clicked() {
             *p = Default::default();
         }
+        layer.put(ID, &params);
     }
 }
 

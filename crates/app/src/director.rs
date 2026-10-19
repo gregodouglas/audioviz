@@ -16,20 +16,8 @@ use bytemuck::{Pod, Zeroable};
 use crate::bandfilter::{BandPass, band_features};
 use crate::color;
 use crate::scene::{self, FrameCtx, HDR_FORMAT, Pyramid, Scene, fullscreen_pass, fullscreen_pass2, hdr_pyramid, hdr_texture};
-use crate::scenes::kaleido::Kaleido;
-use crate::scenes::ribbons::Ribbons;
-use crate::scenes::scope::Scope;
-use crate::scenes::sigil::Sigil;
-use crate::scenes::starfield::Starfield;
-use crate::scenes::waves::Waves;
-use crate::scenes::crystal::Crystal;
-use crate::scenes::wheel::Wheel;
-use crate::scenes::loops::Loop;
-use crate::scenes::eclipse::Eclipse;
-use crate::scenes::ripples::Ripples;
-use crate::scenes::spiral::Spiral;
 use crate::rng::Rng;
-use crate::settings::{DirectorMode, EdgeColour, FoldMode, FractalMode, HalftoneShape, Layer, MirrorSide, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
+use crate::settings::{DirectorMode, EdgeColour, FoldMode, FractalMode, HalftoneShape, Layer, MirrorSide, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode};
 use crate::shaders::ShaderSet;
 use crate::gpu_timer::{GpuTimer, Part};
 
@@ -443,6 +431,8 @@ struct Frame<'a> {
 
 pub struct Director {
     pub layers: Vec<Box<dyn Scene>>,
+    /// The visual id each slot was built for (a missing visual draws the scope).
+    ids: Vec<String>,
     slots: Vec<Slot>,
     /// Per slot, a replaced visual still fading out under the new one.
     outgoing: Vec<Option<Outgoing>>,
@@ -466,22 +456,6 @@ pub struct Director {
     pub last_error: Option<String>,
 }
 
-fn make(kind: VisualKind, device: &wgpu::Device, w: u32, h: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
-    Ok(match kind {
-        VisualKind::Scope => Box::new(Scope::new(device, w, h, shaders)?),
-        VisualKind::Ribbons => Box::new(Ribbons::new(device, w, h, shaders)?),
-        VisualKind::Starfield => Box::new(Starfield::new(device, w, h, shaders)?),
-        VisualKind::Kaleido => Box::new(Kaleido::new(device, w, h, shaders)?),
-        VisualKind::Sigil => Box::new(Sigil::new(device, w, h, shaders)?),
-        VisualKind::Waves => Box::new(Waves::new(device, w, h, shaders)?),
-        VisualKind::Crystal => Box::new(Crystal::new(device, w, h, shaders)?),
-        VisualKind::Wheel => Box::new(Wheel::new(device, w, h, shaders)?),
-        VisualKind::Loop => Box::new(Loop::new(device, w, h, shaders)?),
-        VisualKind::Eclipse => Box::new(Eclipse::new(device, w, h, shaders)?),
-        VisualKind::Ripples => Box::new(Ripples::new(device, w, h, shaders)?),
-        VisualKind::Spiral => Box::new(Spiral::new(device, w, h, shaders)?),
-    })
-}
 
 /// The opacity a slot is heading for: its own when it is on (and not
 /// soloed out), else zero.
@@ -705,7 +679,7 @@ impl Director {
         let mut layers = Vec::new();
         let mut slots = Vec::new();
         for i in 0..MAX_LAYERS {
-            layers.push(make(settings.layer(i).visual, device, width, height, shaders)?);
+            layers.push(crate::visuals::make(&settings.layer(i).visual, device, width, height, shaders)?);
             slots.push(Slot::new(device, i, width, height, &settings.layer(i), target_of(settings, i)));
         }
         let mod_layout = scene::tex_layout(device, "mod", 1);
@@ -722,6 +696,7 @@ impl Director {
             ..Default::default()
         });
         Ok(Self {
+            ids: (0..MAX_LAYERS).map(|i| settings.layer(i).visual.clone()).collect(),
             layers,
             slots,
             outgoing: (0..MAX_LAYERS).map(|_| None).collect(),
@@ -748,18 +723,19 @@ impl Director {
     pub fn sync(&mut self, device: &wgpu::Device, shaders: &ShaderSet, settings: &Settings) {
         let (secs, stagger) = self.pending.unwrap_or((FADE_MANUAL_S, 0.0));
         for i in 0..MAX_LAYERS {
-            let want = settings.layer(i).visual;
-            if self.layers[i].kind() == want {
+            let want = &settings.layer(i).visual;
+            if &self.ids[i] == want {
                 continue;
             }
-            match make(want, device, self.width, self.height, shaders) {
+            self.ids[i] = want.clone();
+            match crate::visuals::make(want, device, self.width, self.height, shaders) {
                 Ok(s) => {
                     let old = std::mem::replace(&mut self.layers[i], s);
                     let mut slot = std::mem::replace(&mut self.slots[i], Slot::new(device, i, self.width, self.height, &settings.layer(i), 0.0));
                     slot.fade.aim(0.0, secs, stagger_delay(stagger, i));
                     self.outgoing[i] = Some(Outgoing { scene: old, slot, layer: self.last_layers[i].clone() });
                 }
-                Err(e) => self.last_error = Some(format!("{}: {e}", want.name())),
+                Err(e) => self.last_error = Some(format!("{}: {e}", crate::visuals::name(want))),
             }
         }
     }
@@ -778,6 +754,8 @@ impl Director {
         self.slots.insert(to, s);
         let o = self.outgoing.remove(from);
         self.outgoing.insert(to, o);
+        let k = self.ids.remove(from);
+        self.ids.insert(to, k);
         let p = self.last_layers.remove(from);
         self.last_layers.insert(to, p);
     }
@@ -1002,7 +980,7 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
         fr.features
     };
     let filtered_points;
-    let pts: &[[f32; 2]] = if band.enabled && layer.visual == VisualKind::Scope {
+    let pts: &[[f32; 2]] = if band.enabled && crate::visuals::get(&layer.visual).is_some_and(|d| d.band_waveform) {
         slot.filter.retune(band.lo_hz, band.hi_hz, fr.sample_rate as f32);
         filtered_points = slot.filter.process(fr.points);
         &filtered_points

@@ -26,6 +26,7 @@ mod shaders;
 mod strip;
 mod theme;
 mod tray;
+mod visuals;
 mod widgets;
 
 use tracing_subscriber::EnvFilter;

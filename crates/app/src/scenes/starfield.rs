@@ -7,7 +7,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, Scene, fullscreen_pass, hdr_texture, HDR_FORMAT};
 use crate::shaders::ShaderSet;
-use crate::settings::{Layer, VisualKind};
+use crate::settings::{Layer, StarfieldParams};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug, Default)]
@@ -70,9 +70,28 @@ impl Starfield {
 /// The default phosphor tint, for which the disk runs blackbody instead of green.
 const DEFAULT_TINT: [f32; 3] = [0.40, 1.0, 0.55];
 
+/// Registry id: the layer's `visual`, its parameter key, the presets folder.
+pub const ID: &str = "starfield";
+
+fn make(device: &wgpu::Device, width: u32, height: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
+    Ok(Box::new(Starfield::new(device, width, height, shaders)?))
+}
+
+pub fn def() -> crate::visuals::VisualDef {
+    crate::visuals::VisualDef {
+        id: ID,
+        name: "Black hole",
+        short: "Black hole",
+        summary: "A ray-traced black hole: lensed stars and an infalling disk that breathes with the bass. Heavy at high resolution.",
+        make,
+        params: crate::visuals::typed::<StarfieldParams>,
+        band_waveform: false,
+    }
+}
+
 impl Scene for Starfield {
-    fn kind(&self) -> VisualKind {
-        VisualKind::Starfield
+    fn id(&self) -> &'static str {
+        ID
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -86,7 +105,7 @@ impl Scene for Starfield {
     }
 
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
-        let s = &layer.starfield;
+        let s = &layer.get::<StarfieldParams>(ID);
         let f = ctx.features;
         let dt = ctx.dt.clamp(0.0, 0.1);
         // Mass follows the slow bass, slewed so the shadow breathes rather than jitters.
@@ -140,8 +159,9 @@ impl Scene for Starfield {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
-        let s = &mut layer.starfield;
-        let d = crate::settings::StarfieldParams::default();
+        let mut params = layer.get::<StarfieldParams>(ID);
+        let s = &mut params;
+        let d = StarfieldParams::default();
         use crate::widgets::{ghost_button, group, hint, slider_def};
         group(ui, "hole.lens", "Lens and disk", true, 6, |ui| {
             slider_def(ui, "Mass", &mut s.mass, Some(d.mass), 0.3..=2.5, |v| format!("{v:.2}"), false);
@@ -162,6 +182,7 @@ impl Scene for Starfield {
         if ghost_button(ui, "Reset black hole", false).clicked() {
             *s = Default::default();
         }
+        layer.put(ID, &params);
     }
 }
 

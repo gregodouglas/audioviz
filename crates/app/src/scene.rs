@@ -6,7 +6,7 @@
 use audioviz_analysis::FeatureFrame;
 use audioviz_metadata::ArtImage;
 
-use crate::settings::{Layer, VisualKind};
+use crate::settings::Layer;
 use crate::shaders::ShaderSet;
 
 pub struct FrameCtx<'a> {
@@ -37,9 +37,10 @@ pub struct FrameCtx<'a> {
 }
 
 pub trait Scene {
-    fn kind(&self) -> VisualKind;
+    /// Registry id (`visuals::get`).
+    fn id(&self) -> &'static str;
     fn name(&self) -> &'static str {
-        self.kind().name()
+        crate::visuals::get(self.id()).map_or("visual", |d| d.name)
     }
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32);
     fn reload_shaders(&mut self, device: &wgpu::Device, shaders: &ShaderSet) -> Result<(), String>;

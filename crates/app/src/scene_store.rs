@@ -22,8 +22,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::factory;
-use crate::preset_store;
-use crate::settings::{Layer, PostSettings, Settings, VisualKind};
+use crate::settings::{Layer, PostSettings, Settings};
 
 /// The on-disk shape of a scene, in the order a person reads it.
 #[derive(Serialize)]
@@ -41,9 +40,9 @@ fn layer_json(l: &Layer) -> Value {
     // would be written 0.4000000059604645.
     let mut v: Value = serde_json::to_string(l).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(Value::Null);
     if let Some(o) = v.as_object_mut() {
-        for k in VisualKind::ALL {
-            if k != l.visual {
-                o.shift_remove(preset_store::field(k));
+        for k in l.params.keys() {
+            if *k != l.visual {
+                o.shift_remove(k.as_str());
             }
         }
     }
@@ -223,16 +222,16 @@ mod tests {
     fn a_layer_keeps_only_its_own_visual() {
         let mut s = Settings::default();
         s.scene_name = "Test".into();
-        s.layers[0].visual = VisualKind::Wheel;
-        s.layers[0].wheel.count = 33;
-        s.layers[0].scope.gain = 3.0;
+        s.layers[0].visual = "wheel".into();
+        s.layers[0].put("wheel", &crate::settings::WheelParams { count: 33, ..Default::default() });
+        s.layers[0].put("scope", &crate::settings::ScopeParams { gain: 3.0, ..Default::default() });
         let text = to_text(&s).unwrap();
         let v: Value = serde_json::from_str(&text).unwrap();
         let l0 = v["layers"][0].as_object().unwrap();
         assert!(l0.contains_key("wheel") && !l0.contains_key("scope") && !l0.contains_key("ribbons"));
         let back = from_text(&text).unwrap();
-        assert_eq!(back.layers[0].wheel.count, 33);
-        assert_eq!(back.layers[0].scope, crate::settings::ScopeParams::default(), "other visuals take their defaults");
+        assert_eq!(back.layers[0].get::<crate::settings::WheelParams>("wheel").count, 33);
+        assert_eq!(back.layers[0].get::<crate::settings::ScopeParams>("scope"), crate::settings::ScopeParams::default(), "other visuals take their defaults");
         assert_eq!(back.scene_name, "Test");
     }
 

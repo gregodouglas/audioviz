@@ -14,7 +14,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, Scene, begin_pass, fullscreen_pass, hdr_texture, HDR_FORMAT};
 use crate::shaders::ShaderSet;
-use crate::settings::{Layer, ScopeColour, VisualKind};
+use crate::settings::{Layer, ScopeColour};
 
 pub const MAX_POINTS: usize = 32_768;
 
@@ -149,9 +149,28 @@ impl Scope {
     }
 }
 
+/// Registry id: the layer's `visual`, its parameter key, the presets folder.
+pub const ID: &str = "scope";
+
+fn make(device: &wgpu::Device, width: u32, height: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
+    Ok(Box::new(Scope::new(device, width, height, shaders)?))
+}
+
+pub fn def() -> crate::visuals::VisualDef {
+    crate::visuals::VisualDef {
+        id: ID,
+        name: "Phosphor scope",
+        short: "Scope",
+        summary: "The waveform drawn as a glowing phosphor beam (left and right channels as X and Y). Lines, cheap.",
+        make,
+        params: crate::visuals::typed::<crate::settings::ScopeParams>,
+        band_waveform: true,
+    }
+}
+
 impl Scene for Scope {
-    fn kind(&self) -> VisualKind {
-        VisualKind::Scope
+    fn id(&self) -> &'static str {
+        ID
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -168,7 +187,7 @@ impl Scene for Scope {
     }
 
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
-        let s = &layer.scope;
+        let s = &layer.get::<crate::settings::ScopeParams>(ID);
         let f = ctx.features;
         let gain = if s.auto_gain { s.gain * ctx.auto_gain } else { s.gain };
         let pulse = 1.0 + s.beat_pulse * f.beat_pulse * f.beat_confidence;
@@ -226,7 +245,8 @@ impl Scene for Scope {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
-        let s = &mut layer.scope;
+        let mut params = layer.get::<crate::settings::ScopeParams>(ID);
+        let s = &mut params;
         let d = crate::settings::ScopeParams::default();
         use crate::widgets::{ghost_button, group, hint, segmented, slider_def, small_caps, toggle_row};
         group(ui, "scope.beam", "Beam", true, 4, |ui| {
@@ -252,6 +272,7 @@ impl Scene for Scope {
         if ghost_button(ui, "Reset scope", false).clicked() {
             *s = Default::default();
         }
+        layer.put(ID, &params);
     }
 }
 

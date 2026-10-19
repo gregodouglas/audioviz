@@ -10,7 +10,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, fullscreen_pass};
 use crate::shaders::ShaderSet;
-use crate::settings::{Layer, VisualKind};
+use crate::settings::{Layer, WheelParams};
 
 pub const MAX_WEDGES: usize = 64;
 
@@ -67,9 +67,28 @@ impl Wheel {
     }
 }
 
+/// Registry id: the layer's `visual`, its parameter key, the presets folder.
+pub const ID: &str = "wheel";
+
+fn make(device: &wgpu::Device, width: u32, height: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
+    Ok(Box::new(Wheel::new(device, width, height, shaders)?))
+}
+
+pub fn def() -> crate::visuals::VisualDef {
+    crate::visuals::VisualDef {
+        id: ID,
+        name: "Spectrum wheel",
+        short: "Wheel",
+        summary: "A disc of spectrum wedges with rays past the rim; jumps and walks on beats. A backdrop.",
+        make,
+        params: crate::visuals::typed::<WheelParams>,
+        band_waveform: false,
+    }
+}
+
 impl Scene for Wheel {
-    fn kind(&self) -> VisualKind {
-        VisualKind::Wheel
+    fn id(&self) -> &'static str {
+        ID
     }
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -82,7 +101,7 @@ impl Scene for Wheel {
     }
 
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
-        let p = &layer.wheel;
+        let p = &layer.get::<WheelParams>(ID);
         let f = ctx.features;
         let n = (p.count as usize).clamp(4, MAX_WEDGES);
         let dt = ctx.dt;
@@ -142,8 +161,9 @@ impl Scene for Wheel {
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
         use crate::widgets::{ghost_button, group, hint, slider_def, toggle_row};
-        let p = &mut layer.wheel;
-        let d = crate::settings::WheelParams::default();
+        let mut params = layer.get::<WheelParams>(ID);
+        let p = &mut params;
+        let d = WheelParams::default();
         group(ui, "wheel.disc", "Disc", true, 5, |ui| {
             slider_def(ui, "Wedges", &mut p.count, Some(d.count), 4..=MAX_WEDGES as u32, |v| format!("{v:.0}"), false);
             slider_def(ui, "Radius", &mut p.radius, Some(d.radius), 0.1..=2.0, |v| format!("{v:.2}"), false);
@@ -165,6 +185,7 @@ impl Scene for Wheel {
         if ghost_button(ui, "Reset wheel", false).clicked() {
             *p = Default::default();
         }
+        layer.put(ID, &params);
     }
 }
 

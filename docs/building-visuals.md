@@ -385,7 +385,7 @@ What a frame costs (release build, RTX 2070 Super, 2560x1440):
 | Eclipse (16 dots, a loop with a halo per dot, levels in `prepare`) | 0.69 |
 | Eclipse at 64 dots | 2.7 |
 | Eclipse at 16 and 64 dots before it had a `prepare` step | 1.1 and 4.5 |
-| The heaviest built-ins (Black hole, Sigil) | ~3.6 |
+| The heaviest visuals (Black hole, loaded since its port; Sigil) | ~4 |
 
 The frame you have: 4.2 ms at 240 Hz, 6.9 at 144, 16.7 at 60, for everything: three layers, their effects, the Picture and the panel. The app's own goal is that a full scene runs on one ordinary PC. So **aim for 1 ms or less for a visual at 2560x1440**, treat 2 ms as heavy, and leave 3.5 ms to the two built-ins that earn it. Costs scale with pixels: double them for 4K.
 

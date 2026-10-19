@@ -6,12 +6,86 @@
 // clears the disk take the weak-field deflection analytically instead.
 //
 // Units: rs = 1 at mass 1; the camera sits at distance 16 on a slow orbit.
-// Audio: rs breathes with the bass (CPU), the disk's brightness and texture
+// Audio: rs breathes with the bass (the prepare step), the disk's brightness and texture
 // follow energy / onsets, stars twinkle on transients and on their band.
 
-@group(0) @binding(0) var unused_tex: texture_2d<f32>;
-@group(0) @binding(1) var samp: sampler;
-@group(0) @binding(2) var<uniform> P: StarParams;
+// Ported from the compiled-in Black hole: the ray march below is its shader
+// unchanged except that its uniform is now `P`, a private struct filled per
+// pixel from params(), V and the prepare step, its band() is hole_band(),
+// and it returns the colour to shade().
+
+struct Hole {
+    resolution: vec2<f32>,
+    time: f32,
+    rs: f32,
+    tint: vec4<f32>,        // w = warm (1 = the default tint: the disk runs blackbody)
+    onset: f32,
+    beat: f32,
+    energy: f32,
+    density: f32,
+    twinkle: f32,
+    streams: f32,
+    disk: f32,
+    doppler: f32,
+    tilt: f32,
+    phase: f32,
+    turb: f32,
+    flare: f32,
+    az: f32,
+    palette_mix: f32,
+    palette_shift: f32,
+    nebula: f32,
+};
+
+var<private> P: Hole;
+
+// Item 0, kept from frame to frame: (slewed bass 0..1, slewed energy, disk
+// phase, camera azimuth).
+fn prepare(i: u32) -> vec4<f32> {
+    let Q = params();
+    let last = item(0u);
+    let dt = clamp(V.dt, 0.0, 0.1);
+    let first = last.y <= 0.0;
+    let bass = clamp(V.bass / 2.0, 0.0, 1.0);
+    let breath = last.x + (bass - last.x) * (1.0 - exp(-dt / 0.35));
+    let prev_energy = select(last.y, 1.0, first);
+    let energy = prev_energy + (V.energy - prev_energy) * (1.0 - exp(-dt / 0.5));
+    let phase = last.z + dt * (0.35 + 0.45 * energy);
+    let az = last.w + dt * 0.012 * Q.drift;
+    return vec4<f32>(breath, energy, phase, az);
+}
+
+fn shade(uv: vec2<f32>) -> vec3<f32> {
+    let Q = params();
+    let state = item(0u);
+    // The default phosphor tint makes the disk run blackbody instead of green.
+    let dist = max(abs(V.tint.r - 0.40), max(abs(V.tint.g - 1.0), abs(V.tint.b - 0.55)));
+    let warm = clamp(1.0 - dist * 12.0, 0.0, 1.0);
+    let energy = max(state.y, 0.0);
+    P = Hole(
+        V.resolution,
+        V.time,
+        Q.mass * (1.0 + 0.25 * Q.breathe * state.x),
+        vec4<f32>(V.tint.rgb, warm),
+        V.onset,
+        V.beat,
+        energy,
+        Q.density,
+        Q.twinkle,
+        Q.streams,
+        Q.disk,
+        Q.doppler,
+        radians(Q.tilt),
+        state.z,
+        clamp(0.35 + 0.65 * V.onset + 0.25 * (energy - 1.0), 0.0, 1.5),
+        V.onsets.x,
+        state.w,
+        V.palette_mix,
+        V.palette_shift,
+        Q.nebula,
+    );
+    return hole(uv);
+}
 
 const PI: f32 = 3.14159265;
 const CAM_DIST: f32 = 16.0;
@@ -21,19 +95,10 @@ const R_OUT: f32 = 9.5;     // disk outer edge, in rs
 const R_FAR: f32 = 17.0;    // outer reach of the infall streams, in rs
 const STEPS: i32 = 120;
 
-@vertex
-fn vs_main(@builtin(vertex_index) vi: u32) -> FsIn {
-    return fullscreen_vertex(vi);
-}
-
-fn band(i: u32) -> f32 {
-    let v = P.bands[(i / 4u) & 3u];
-    switch (i % 4u) {
-        case 0u: { return v.x; }
-        case 1u: { return v.y; }
-        case 2u: { return v.z; }
-        default: { return v.w; }
-    }
+// The 32 raw bands folded into 16 by pairs (the larger of each pair).
+fn hole_band(i: u32) -> f32 {
+    let k = min(i, 15u);
+    return max(band_raw(2u * k), band_raw(2u * k + 1u));
 }
 
 // ---------------------------------------------------------------- noise
@@ -91,7 +156,7 @@ fn star_pal(t: f32) -> vec3<f32> {
     let x = fract(t) * 32.0;
     let i = u32(floor(x)) % 32u;
     let f = fract(x);
-    return mix(P.palette[i].rgb, P.palette[(i + 1u) % 32u].rgb, f);
+    return mix(V.palette[i].rgb, V.palette[(i + 1u) % 32u].rgb, f);
 }
 
 fn disk_palette(t: f32) -> vec3<f32> {
@@ -144,7 +209,7 @@ fn disk_sample(hit: vec3<f32>, dir: vec3<f32>) -> vec4<f32> {
     let bi = clamp((lr - log(R_IN)) / (log(R_OUT) - log(R_IN)) * 15.99, 0.0, 15.99);
     let b0 = u32(bi);
     let bf = fract(bi);
-    let be = mix(band(b0), band(min(b0 + 1u, 15u)), bf);
+    let be = mix(hole_band(b0), hole_band(min(b0 + 1u, 15u)), bf);
     let ring = 1.0 + 0.35 * be;
 
     // Radial profile: bright just outside the ISCO, falling outward, soft edges.
@@ -207,7 +272,7 @@ fn stars(sky: vec2<f32>, inv: mat2x2<f32>, scale: f32, present: f32, gain: f32, 
             // star's own band so the field shimmers with the spectrum.
             let hb = hash21(c * 2.3 + seed + 1.0);
             let sparkle = 0.5 + 0.5 * sin(P.time * (14.0 + 22.0 * hb) + hb * 40.0);
-            let bb = band(u32(hb * 15.99));
+            let bb = hole_band(u32(hb * 15.99));
             // A slow shimmer on every star; only a few flash on transients.
             let shimmer = 0.88 + 0.12 * sin(P.time * (0.7 + 1.4 * hb) + hb * 31.0);
             let flash = step(0.82, hb) * sparkle * P.onset * 1.6 + 0.25 * bb * step(0.6, hb);
@@ -308,12 +373,11 @@ fn march(x0: vec3<f32>, v0: vec3<f32>) -> Ray {
     return ray;
 }
 
-@fragment
-fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
+fn hole(uv: vec2<f32>) -> vec3<f32> {
     let res = P.resolution;
     let short = min(res.x, res.y);
     // Image plane: half-extent 1 along the short side so the disk fits portrait too.
-    let s = (in.uv * 2.0 - 1.0) * vec2<f32>(res.x / short, -res.y / short);
+    let s = (uv * 2.0 - 1.0) * vec2<f32>(res.x / short, -res.y / short);
 
     // Camera on a slow orbit, `tilt` above the disk plane, looking at the hole.
     let el = P.tilt;
@@ -378,5 +442,5 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
     col = col * (1.0 - ray.disk.a) + ray.disk.rgb * knee;
     let haze_col = disk_palette(0.6) * ray.haze * 0.06 * P.disk * (0.6 + 0.4 * P.energy);
     col += haze_col;
-    return vec4<f32>(col * 0.08, 1.0);
+    return col * 0.08;
 }

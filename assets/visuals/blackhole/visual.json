@@ -1,0 +1,21 @@
+{
+  "id": "starfield",
+  "name": "Black hole",
+  "short": "Black hole",
+  "summary": "A ray-traced black hole: lensed stars and an infalling disk that breathes with the bass. Heavy at high resolution.",
+  "credit": "",
+  "hint": "The disk's brightness, turbulence and infall follow energy and onsets; stars shimmer slowly and a few flash on transients.",
+  "items": 1,
+  "params": [
+    { "id": "mass", "label": "Mass", "group": "Lens and disk", "min": 0.3, "max": 2.5, "default": 1.0 },
+    { "id": "disk", "label": "Disk brightness", "group": "Lens and disk", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "doppler", "label": "Doppler", "group": "Lens and disk", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "tilt", "label": "Tilt", "group": "Lens and disk", "min": 0.0, "max": 25.0, "default": 5.0, "unit": "°" },
+    { "id": "streams", "label": "Infall streams", "group": "Lens and disk", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "breathe", "label": "Breathe with bass", "group": "Lens and disk", "min": 0.0, "max": 1.0, "default": 0.0 },
+    { "id": "nebula", "label": "Nebula", "group": "Sky", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "density", "label": "Star density", "group": "Sky", "min": 0.1, "max": 2.0, "default": 1.0 },
+    { "id": "twinkle", "label": "Onset twinkle", "group": "Sky", "min": 0.0, "max": 2.0, "default": 0.6 },
+    { "id": "drift", "label": "Drift", "group": "Sky", "min": 0.0, "max": 4.0, "default": 1.0 }
+  ]
+}

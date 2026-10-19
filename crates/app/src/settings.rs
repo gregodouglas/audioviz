@@ -1008,34 +1008,6 @@ impl Default for RibbonsParams {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct StarfieldParams {
-    /// Lens mass: scales the shadow and the disk together.
-    pub mass: f32,
-    pub density: f32,
-    pub twinkle: f32,
-    pub drift: f32,
-    /// Accretion disk brightness.
-    pub disk: f32,
-    /// Doppler beaming strength (approaching side brighter and bluer).
-    pub doppler: f32,
-    /// Camera elevation above the disk plane, degrees.
-    pub tilt: f32,
-    /// How much the hole's size breathes with the bass (0 = steady).
-    pub breathe: f32,
-    /// Nebula haze and the Milky Way band behind the stars.
-    pub nebula: f32,
-    /// Infall: tendrils at the inner edge and streams spiralling in from outside.
-    pub streams: f32,
-}
-
-impl Default for StarfieldParams {
-    fn default() -> Self {
-        Self { mass: 1.0, density: 1.0, twinkle: 0.6, drift: 1.0, disk: 1.0, doppler: 1.0, tilt: 5.0, breathe: 0.0, nebula: 1.0, streams: 1.0 }
-    }
-}
-
 /// Sigil: a neon sacred-geometry glyph (`scenes/sigil.rs`).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

@@ -17,6 +17,11 @@ Spotify-fed, Windows-first music visualizer (Rust, wgpu, WGSL). Start with `docs
 - After changing any factory file (`assets/visuals`, `assets/presets`, `assets/scenes`), run `cargo test -p audioviz rewrite_factory_history -- --ignored`. After editing a scene file by hand, normalise it first with `rewrite_factory_scene_files`.
 - **Measure** windowed 2560x1440, release build. Logs go to stdout with `RUST_LOG=audioviz=debug`, one line per second with `gpu n ms` and `worst n ms`. Report the median of 8 lines over two runs; layouts vary per run, because `V.instance` is random.
 - Dev runs use `AUDIOVIZ_DEFAULTS=1`. Never touch `%APPDATA%\audioviz\settings.json`.
+- **A fresh-install state** for testing the installer and the first run: `scripts/reset-install.ps1`.
+  - It uninstalls silently and sweeps up the leftovers: the install folder, the shortcuts, the start-at-sign-in value and the uninstall entry.
+  - It then removes `%APPDATA%\audioviz`, after zipping it into `tmp\reset-backups\`.
+  - `-WhatIf` lists what it would remove, `-KeepData` uninstalls only, `-NoBackup` skips the zip.
+  - Only Greg runs it for real: it removes his settings.
 - Useful dev variables:
   - `AUDIOVIZ_SETTINGS='{…}'` merges settings fields.
   - `AUDIOVIZ_SCENE=n` starts on factory scene n; it is applied after `AUDIOVIZ_SETTINGS`, so it overrides it.

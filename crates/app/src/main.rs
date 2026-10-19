@@ -11,6 +11,7 @@ mod rng;
 mod engine;
 mod factory;
 mod gpu;
+mod gpu_timer;
 mod hittest;
 mod overlays;
 mod panel;

@@ -421,6 +421,16 @@ pub fn rail_icon(painter: &egui::Painter, c: Pos2, section: Section, color: Colo
             painter.rect_stroke(Rect::from_min_size(pos2(c.x - 4.0, c.y - 4.0), vec2(10.0, 10.0)), 1.5, st, egui::StrokeKind::Middle);
             painter.rect_filled(Rect::from_min_size(pos2(c.x - 1.0, c.y - 1.0), vec2(9.0, 9.0)), 1.5, color);
         }
+        Section::Performance => {
+            // a gauge: an arc and a needle
+            let pts: Vec<Pos2> = (0..=12).map(|k| {
+                let a = std::f32::consts::PI * (1.0 + k as f32 / 12.0);
+                pos2(c.x + 7.0 * a.cos(), c.y + 3.0 + 7.0 * a.sin())
+            }).collect();
+            painter.add(egui::Shape::line(pts, st));
+            painter.line_segment([pos2(c.x, c.y + 3.0), pos2(c.x + 4.0, c.y - 2.5)], st);
+            painter.circle_filled(pos2(c.x, c.y + 3.0), 1.5, color);
+        }
         Section::Meters => {
             painter.rect_filled(Rect::from_min_size(pos2(c.x - 7.5, c.y + 1.0), vec2(3.0, 6.0)), 0.0, color);
             painter.rect_filled(Rect::from_min_size(pos2(c.x - 1.5, c.y - 6.0), vec2(3.0, 13.0)), 0.0, color);

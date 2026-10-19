@@ -34,6 +34,10 @@ pub fn latest_release(owner_repo: &str) -> anyhow::Result<ReleaseInfo> {
 }
 
 /// One line naming the app version, OS and architecture.
+pub fn usage() -> Option<super::Usage> {
+    None
+}
+
 pub fn diagnostics_header() -> String {
     format!("audioviz {} on {} {}", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH)
 }

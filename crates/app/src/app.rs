@@ -102,6 +102,11 @@ fn signed_ms(a: Instant, b: Instant) -> f32 {
 struct Running {
     gpu: Gpu,
     director: Director,
+    timer: crate::gpu_timer::GpuTimer,
+    /// Smoothed CPU milliseconds per frame, from the frame's start to its
+    /// submit without the vsync wait, and per phase (prepare, scene, panel, submit).
+    cpu_ms: f32,
+    cpu_phase: [f32; 4],
     post: Post,
     shaders: ShaderSet,
     egui_ctx: egui::Context,
@@ -234,6 +239,7 @@ impl Running {
                 settings.apply_scene(&def.settings);
             }
         }
+        let timer = crate::gpu_timer::GpuTimer::new(&gpu.device, &gpu.queue);
         let director = Director::new(&gpu.device, &shaders, w, h, &settings).map_err(|e| anyhow::anyhow!("director: {e}"))?;
         let post = Post::new(&gpu.device, gpu.config.format, w, h, &shaders).map_err(|e| anyhow::anyhow!("post: {e}"))?;
 
@@ -258,6 +264,9 @@ impl Running {
         let mut running = Self {
             gpu,
             director,
+            timer,
+            cpu_ms: 0.0,
+            cpu_phase: [0.0; 4],
             post,
             shaders,
             egui_ctx,
@@ -598,7 +607,7 @@ impl Running {
         let features = self.engine.features();
         let now_playing = self.metadata.latest();
         if tracing::enabled!(tracing::Level::DEBUG) && (time_floor(self.start.elapsed().as_secs_f32()) != time_floor(self.start.elapsed().as_secs_f32() - dt)) {
-            tracing::debug!("peak {:.3} rms {:.3} auto_gain {:.2} points {} silent {} fps {:.0}", features.peak, features.rms, self.auto_gain_value, self.pending_points.len(), features.silent, self.fps);
+            tracing::debug!("peak {:.3} rms {:.3} auto_gain {:.2} points {} silent {} fps {:.0} cpu {:.2} ms gpu {:.2} ms {:?} {:?}", features.peak, features.rms, self.auto_gain_value, self.pending_points.len(), features.silent, self.fps, self.cpu_ms, self.timer.frame_ms, crate::platform::usage(), self.timer.ms.iter().map(|(p, v)| format!("{p:?}={v:.2}")).collect::<Vec<_>>());
         }
         let target = if features.peak > 0.0005 { (0.9 / features.peak).clamp(0.3, 200.0) } else { self.auto_gain_value };
         self.auto_gain_value += (target - self.auto_gain_value) * (1.0 - (-dt / 1.5).exp());
@@ -666,6 +675,8 @@ impl Running {
             w.set_maximized(!w.is_maximized());
         }
 
+        let acquire = Instant::now();
+        let t_prep = now.elapsed();
         let frame = match self.gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) => f,
             wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
@@ -680,12 +691,16 @@ impl Running {
             }
             wgpu::CurrentSurfaceTexture::Validation => panic!("surface validation error"),
         };
+        // Waiting for the swapchain is vsync, not work: keep it out of the CPU time.
+        let waited = acquire.elapsed();
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self.gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
+        self.timer.begin(&self.gpu.device);
+        let t_scene0 = Instant::now();
 
         // --- scenes → composite → post ---
         let time = self.start.elapsed().as_secs_f32();
-        self.director.render(&self.gpu.device, &self.gpu.queue, &mut encoder, &self.settings, &features, &self.pending_points, self.engine.sample_rate, self.tint_current, self.art_tint, now_playing.as_ref().and_then(|n| n.art.as_deref()), now_playing.as_ref().map(|n| n.track_id).unwrap_or(0), dt, time, self.auto_gain_value, self.post.input());
+        self.director.render(&self.gpu.device, &self.gpu.queue, &mut encoder, &self.settings, &features, &self.pending_points, self.engine.sample_rate, self.tint_current, self.art_tint, now_playing.as_ref().and_then(|n| n.art.as_deref()), now_playing.as_ref().map(|n| n.track_id).unwrap_or(0), dt, time, self.auto_gain_value, self.post.input(), &mut self.timer);
         self.points_per_sec = self.points_per_sec * 0.98 + (self.pending_points.len() as f32 / dt) * 0.02;
         self.pending_points.clear();
         let post = self.settings.post;
@@ -696,8 +711,11 @@ impl Running {
         if self.settings.reduce_flashing {
             flags |= 2;
         }
+        self.timer.mark(&mut encoder, crate::gpu_timer::Part::Picture);
         self.post.render(&self.gpu.queue, &mut encoder, &view, PostParams { exposure: post.exposure, bloom: post.bloom, grain: post.grain, time, dt, flags, flash_rise: self.settings.flash_rise, saturation: post.saturation, look: (post.look == crate::settings::Look::Neon) as u32, ..Default::default() });
 
+        let t_scene = t_scene0.elapsed();
+        let t_ui0 = Instant::now();
         // --- egui: overlays, chrome, strip, panel ---
         let fullscreen = self.gpu.window.fullscreen().is_some();
         let maximized = self.gpu.window.is_maximized();
@@ -711,6 +729,7 @@ impl Running {
         };
         let stats = Stats {
             fps: self.fps,
+            gpu: crate::panel::GpuView { timing: self.timer.available(), frame_ms: self.timer.frame_ms, cpu_ms: self.cpu_ms, cpu_phase: self.cpu_phase, parts: self.timer.ms.clone(), usage: crate::platform::usage(), size: (self.gpu.config.width, self.gpu.config.height) },
             points_per_sec: self.points_per_sec,
             capture: capture.clone(),
             shader_error,
@@ -797,6 +816,7 @@ impl Running {
                 target_short: &target_short,
                 sync_ms: settings.audio_delay_ms,
                 monitor_index: settings.monitor,
+                gpu_pct: crate::platform::usage().map(|u| u.gpu_app),
                 fps: stats.fps,
                 maximized,
                 accent,
@@ -834,6 +854,7 @@ impl Running {
                 self.egui_renderer.update_texture(&self.gpu.device, &self.gpu.queue, id, delta);
             }
         }
+        self.timer.mark(&mut encoder, crate::gpu_timer::Part::Interface);
         let extra = self.egui_renderer.update_buffers(&self.gpu.device, &self.gpu.queue, &mut encoder, &primitives, &screen);
         {
             let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -850,7 +871,16 @@ impl Running {
         for id in textures_delta.free.drain() {
             self.egui_renderer.free_texture(&id);
         }
+        self.timer.finish(&mut encoder);
+        let t_ui = t_ui0.elapsed();
+        let t_submit0 = Instant::now();
         self.gpu.queue.submit(extra.into_iter().chain(std::iter::once(encoder.finish())));
+        self.timer.after_submit();
+        let cpu = now.elapsed().saturating_sub(waited).as_secs_f32() * 1000.0;
+        self.cpu_ms = if self.cpu_ms <= 0.0 { cpu } else { self.cpu_ms + (cpu - self.cpu_ms) * 0.06 };
+        for (s, d) in self.cpu_phase.iter_mut().zip([t_prep, t_scene, t_ui, t_submit0.elapsed()]) {
+            *s += (d.as_secs_f32() * 1000.0 - *s) * 0.06;
+        }
         self.gpu.window.pre_present_notify();
         self.gpu.queue.present(frame);
 

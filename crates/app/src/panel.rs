@@ -53,8 +53,42 @@ pub enum CastView {
     Failed(String),
 }
 
+/// Measured cost of the frame, for the Performance section and the inline readouts.
+#[derive(Default, Clone)]
+pub struct GpuView {
+    /// GPU timestamps work on this adapter.
+    pub timing: bool,
+    pub frame_ms: f32,
+    pub cpu_ms: f32,
+    /// Prepare, scene, panel, submit.
+    pub cpu_phase: [f32; 4],
+    pub parts: std::collections::BTreeMap<crate::gpu_timer::Part, f32>,
+    /// Utilization from the Windows GPU counters.
+    pub usage: Option<crate::platform::Usage>,
+    /// The render size, pixels.
+    pub size: (u32, u32),
+}
+
+impl GpuView {
+    fn part(&self, p: crate::gpu_timer::Part) -> Option<f32> {
+        self.parts.get(&p).copied()
+    }
+
+    fn layer(&self, slot: usize) -> f32 {
+        use crate::gpu_timer::Part;
+        let s = slot as u8;
+        self.parts.iter().filter(|(p, _)| matches!(p, Part::Visual(k) | Part::Effect(k, _) | Part::Blend(k) if *k == s)).map(|(_, v)| v).sum()
+    }
+}
+
+/// "0.42 ms", or "<0.01 ms".
+fn ms(v: f32) -> String {
+    if v < 0.01 { "<0.01 ms".into() } else { format!("{v:.2} ms") }
+}
+
 pub struct Stats {
     pub fps: f32,
+    pub gpu: GpuView,
     pub points_per_sec: f32,
     pub capture: CaptureMode,
     pub shader_error: Option<String>,
@@ -182,6 +216,7 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState
                     Section::Picture => picture_section(ui, settings),
                     Section::Sync => sync_section(ui, settings, state, stats, &mut a),
                     Section::Display => display_section(ui, settings, stats, &mut a),
+                    Section::Performance => performance_section(ui, settings, stats),
                     Section::Meters => meters_section(ui, f, stats),
                     Section::About => about_section(ui, stats, &mut a),
                 }
@@ -410,7 +445,7 @@ fn palette_section(ui: &mut egui::Ui, settings: &mut Settings, editing: usize) {
     hint(ui, "Cycling moves the colours along the palette with the energy and steps on beats. The ribbons spread a chord across it; the black hole's disk runs cool to hot along it; the sigil colours each element by its place.");
 }
 
-fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, editing: usize, a: &mut Actions) {
+fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, editing: usize, a: &mut Actions) {
     let l = settings.layer_mut(editing);
     let n = l.modifiers.len();
     if n == 0 {
@@ -448,6 +483,9 @@ fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelStat
                     state.editing_mod = j;
                     state.mod_open = true;
                 }
+                let t = stats.gpu.part(crate::gpu_timer::Part::Effect(editing as u8, j as u8));
+                let text = t.map_or(String::new(), |t| if t < 0.01 { "<.01".into() } else { format!("{t:.2}") });
+                ui.add_sized(vec2(34.0, 18.0), egui::Label::new(egui::RichText::new(text).font(theme::mono(10.0)).color(TEXT_3))).on_hover_text("GPU milliseconds this effect takes each frame (blank while it rests). The Performance section has the whole scene.");
             });
         });
         if dragging {
@@ -852,7 +890,7 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
             match settings.layer_tab {
                 LayerTab::Visual => visual_tab(ui, settings, state, stats, layers, editing, a),
                 LayerTab::Colour => colour_tab(ui, settings, editing),
-                LayerTab::Effects => effects_tab(ui, settings, state, editing, a),
+                LayerTab::Effects => effects_tab(ui, settings, state, stats, editing, a),
             }
         }
         ui.add_space(12.0);
@@ -996,6 +1034,9 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState
         if k == VisualKind::Kaleido && !l.has_fold() {
             l.modifiers.insert(0, Modifier::Fold(Default::default()));
         }
+    }
+    if let Some(t) = stats.gpu.part(crate::gpu_timer::Part::Visual(editing as u8)) {
+        hint(ui, &format!("This visual: {} of GPU per frame; the whole layer {}.", ms(t), ms(stats.gpu.layer(editing))));
     }
     // Visual presets: built in and saved, for this visual only.
     {
@@ -1337,6 +1378,94 @@ fn display_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, a:
         a.rerun_first_run = true;
     }
     hint(ui, &format!("settings: {}", stats.settings_path));
+}
+
+/// What the scene costs, measured: GPU time per layer, visual and effect
+/// (timestamps), CPU time per frame and per phase, and the machine's load
+/// (Windows counters). For designing scenes that run on one ordinary PC.
+fn performance_section(ui: &mut egui::Ui, settings: &Settings, stats: &Stats) {
+    use crate::gpu_timer::Part;
+    section_header(ui, "Performance", None, None);
+    let g = &stats.gpu;
+    // A label left, a value right, a faint fill behind for a share of a total.
+    let row = |ui: &mut egui::Ui, indent: f32, label: &str, value: String, share: Option<f32>, colour: Color32, help: Option<&str>| {
+        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::hover());
+        let p = ui.painter();
+        if let Some(f) = share {
+            let w = (rect.width() - indent) * f.clamp(0.0, 1.0);
+            p.rect_filled(Rect::from_min_size(pos2(rect.min.x + indent - 4.0, rect.min.y + 1.0), vec2(w.max(2.0), rect.height() - 2.0)), 3.0, theme::with_alpha(colour, 38));
+        }
+        p.text(pos2(rect.min.x + indent, rect.center().y), Align2::LEFT_CENTER, label, theme::sans(12.5), if indent > 0.0 { TEXT_2 } else { TEXT });
+        p.text(pos2(rect.max.x - 2.0, rect.center().y), Align2::RIGHT_CENTER, value, theme::mono(11.5), TEXT);
+        if let Some(h) = help {
+            resp.on_hover_text(h);
+        }
+    };
+    let pct = |v: f32, total: f32| if total > 0.0 { format!("{}  {:>3.0}%", ms(v), v / total * 100.0) } else { ms(v) };
+
+    small_caps(ui, "Machine");
+    row(ui, 0.0, "Frame rate", format!("{:.0} fps", stats.fps), None, TEXT_3, Some("Frames drawn per second, capped by the display's refresh (vsync) or the frame cap in Display."));
+    match g.usage {
+        Some(u) => {
+            row(ui, 0.0, "GPU, this app", format!("{:.0}%", u.gpu_app), Some(u.gpu_app / 100.0), ACCENT, Some("Share of the GPU's busiest engine this app uses, as Task Manager counts it. The GPU fans follow this."));
+            row(ui, 0.0, "GPU, everything", format!("{:.0}%", u.gpu_all), Some(u.gpu_all / 100.0), TEXT_3, Some("The whole GPU, every program included."));
+            row(ui, 0.0, "CPU, this app", format!("{:.2} of {} cores", u.cpu_cores, u.cores), Some(u.cpu_cores / u.cores.max(1) as f32), ACCENT, Some("CPU time this app uses per second, every thread included (audio capture, analysis, drawing). 1.00 is one core flat out."));
+        }
+        None => hint(ui, "Machine load appears a second after start (Windows performance counters)."),
+    }
+    ui.add_space(8.0);
+    small_caps(ui, "One frame");
+    if g.timing {
+        let headroom = if g.frame_ms > 0.05 { format!("{}   (alone: {:.0} fps)", ms(g.frame_ms), 1000.0 / g.frame_ms) } else { ms(g.frame_ms) };
+        row(ui, 0.0, "GPU", headroom, None, TEXT_3, Some("Time the GPU spends drawing one frame, measured with timestamps; in brackets the frame rate the GPU alone would allow."));
+    }
+    let cpu_total = g.cpu_ms.max(1e-3);
+    let alone = if g.cpu_ms > 0.05 { format!("{}   (alone: {:.0} fps)", ms(g.cpu_ms), 1000.0 / g.cpu_ms) } else { ms(g.cpu_ms) };
+    row(ui, 0.0, "CPU, main thread", alone, None, TEXT_3, Some("Time the main thread spends on one frame, not counting the wait for the display. Whichever of GPU and CPU is larger sets the frame rate."));
+    for (k, (label, help)) in [
+        ("Prepare", "Audio and analysis results, track changes, tray and window events."),
+        ("Scene", "Updating every layer's visual and effects and recording their GPU work (particles, sorting, uploads)."),
+        ("Panel and bar", "Laying out and drawing the interface; zero while it is hidden (H)."),
+        ("Submit", "Handing the frame to the GPU driver."),
+    ]
+    .iter()
+    .enumerate()
+    {
+        row(ui, 14.0, label, pct(g.cpu_phase[k], cpu_total), Some(g.cpu_phase[k] / cpu_total), theme::layer_hue(1), Some(help));
+    }
+    if !g.timing {
+        hint(ui, "This GPU cannot time its passes, so the per-layer breakdown is not available.");
+        return;
+    }
+    ui.add_space(8.0);
+    small_caps(ui, "Where the GPU time goes");
+    let total = g.frame_ms.max(1e-3);
+    for i in 0..MAX_LAYERS {
+        let t = g.layer(i);
+        if t <= 0.0 {
+            continue;
+        }
+        let l = settings.layer(i);
+        let hue = theme::layer_hue(i);
+        row(ui, 0.0, &format!("Layer {} · {}", i + 1, l.visual.short()), pct(t, total), Some(t / total), hue, None);
+        if let Some(v) = g.part(Part::Visual(i as u8)) {
+            row(ui, 14.0, l.visual.short(), pct(v, total), Some(v / total), hue, Some(l.visual.summary()));
+        }
+        for (j, m) in l.modifiers.iter().enumerate() {
+            if let Some(v) = g.part(Part::Effect(i as u8, j as u8)) {
+                row(ui, 14.0, m.name(), pct(v, total), Some(v / total), hue, Some(m.summary()));
+            }
+        }
+        if let Some(v) = g.part(Part::Blend(i as u8)) {
+            row(ui, 14.0, "Levelling and blend", pct(v, total), Some(v / total), hue, Some("Measuring the layer's brightness and laying it onto the layers below."));
+        }
+    }
+    for (part, label) in [(Part::Composite, "Composite"), (Part::Picture, "Picture"), (Part::Interface, "Panel and bar")] {
+        if let Some(v) = g.part(part) {
+            row(ui, 0.0, label, pct(v, total), Some(v / total), TEXT_3, None);
+        }
+    }
+    hint(ui, &format!("Measured every frame and smoothed over about a second, at {}x{} ({:.1} megapixels). Every GPU pass costs in proportion to the pixels it covers, so fullscreen on a bigger display costs more. Effects resting in the director's pool cost nothing until they are live. Usually the heaviest: Fractal, the Black hole, Ribbons with many particles.", g.size.0, g.size.1, g.size.0 as f32 * g.size.1 as f32 / 1e6));
 }
 
 fn meters_section(ui: &mut egui::Ui, f: &FeatureFrame, stats: &Stats) {

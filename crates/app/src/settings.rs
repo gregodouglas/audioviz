@@ -1780,12 +1780,14 @@ pub enum Section {
     Picture,
     Sync,
     Display,
+    /// GPU and CPU cost of the scene, per layer and effect.
+    Performance,
     Meters,
     About,
 }
 
 impl Section {
-    pub const ALL: [Section; 7] = [Section::Scenes, Section::Layers, Section::Picture, Section::Sync, Section::Display, Section::Meters, Section::About];
+    pub const ALL: [Section; 8] = [Section::Scenes, Section::Layers, Section::Picture, Section::Sync, Section::Display, Section::Performance, Section::Meters, Section::About];
     pub fn name(self) -> &'static str {
         match self {
             Section::Scenes => "Scenes",
@@ -1793,6 +1795,7 @@ impl Section {
             Section::Picture => "Picture",
             Section::Sync => "Sync",
             Section::Display => "Display",
+            Section::Performance => "Performance",
             Section::Meters => "Meters",
             Section::About => "About",
         }

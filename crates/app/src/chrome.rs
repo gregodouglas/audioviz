@@ -24,6 +24,8 @@ pub struct ChromeInput<'a> {
     pub sync_ms: f32,
     pub monitor_index: usize,
     pub fps: f32,
+    /// This app's share of the GPU, percent, when the counters are readable.
+    pub gpu_pct: Option<f32>,
     pub maximized: bool,
     pub accent: Color32,
 }
@@ -196,7 +198,7 @@ impl Chrome {
                 CaptureMode::Failed(_) => ("No audio".to_string(), ERROR, Section::Sync),
             };
             let chips: [(String, Color32, Section); 3] = [
-                (format!("M{} {:.0} fps", input.monitor_index + 1, input.fps), TEXT_2, Section::Display),
+                (match input.gpu_pct { Some(g) => format!("M{} {:.0} fps · GPU {:.0}%", input.monitor_index + 1, input.fps, g), None => format!("M{} {:.0} fps", input.monitor_index + 1, input.fps) }, TEXT_2, Section::Performance),
                 (format!("Sync {:.0} ms", input.sync_ms), TEXT_2, Section::Sync),
                 (cap_text, cap_color, cap_section),
             ];

@@ -50,7 +50,7 @@ impl Gpu {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("audioviz"),
-                required_features: wgpu::Features::empty(),
+                required_features: crate::gpu_timer::GpuTimer::features(&adapter),
                 required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 memory_hints: wgpu::MemoryHints::Performance,

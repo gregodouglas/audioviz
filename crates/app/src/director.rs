@@ -31,6 +31,7 @@ use crate::scenes::spiral::Spiral;
 use crate::rng::Rng;
 use crate::settings::{DirectorMode, EdgeColour, FoldMode, FractalMode, HalftoneShape, Layer, MirrorSide, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode, VisualKind};
 use crate::shaders::ShaderSet;
+use crate::gpu_timer::{GpuTimer, Part};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Default)]
@@ -898,7 +899,7 @@ impl Director {
     /// Render every visible layer (and any visual still fading out) and
     /// composite into `target`.
     #[allow(clippy::too_many_arguments)]
-    pub fn render(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, settings: &Settings, features: &FeatureFrame, points: &[[f32; 2]], sample_rate: u32, tint: [f32; 3], art: Option<[f32; 3]>, art_image: Option<&ArtImage>, art_id: u64, dt: f32, time: f32, auto_gain: f32, target: &wgpu::TextureView) {
+    pub fn render(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, settings: &Settings, features: &FeatureFrame, points: &[[f32; 2]], sample_rate: u32, tint: [f32; 3], art: Option<[f32; 3]>, art_image: Option<&ArtImage>, art_id: u64, dt: f32, time: f32, auto_gain: f32, target: &wgpu::TextureView, timer: &mut GpuTimer) {
         queue.write_buffer(&self.one_buf, 0, bytemuck::bytes_of(&LayerParams { opacity: 1.0, dt, flags: 0, blend: 0 }));
         // Levelling: with auto exposure on, each layer is brought to its own
         // dark-field mean before mixing, so opacity is the mix ratio and a dim
@@ -941,10 +942,10 @@ impl Director {
             let (dst_read, dst_write) = if (n - 1 - pass) % 2 == 0 { (&self.composite_b, &self.composite) } else { (&self.composite, &self.composite_b) };
             if out {
                 let o = self.outgoing[i].as_mut().expect("outgoing entry");
-                render_layer(device, queue, encoder, &self.pipes, &frame, o.scene.as_mut(), &mut o.slot, &o.layer, level, first, dst_read, dst_write);
+                render_layer(device, queue, encoder, &self.pipes, &frame, o.scene.as_mut(), &mut o.slot, &o.layer, level, first, dst_read, dst_write, timer);
             } else {
                 let layer = settings.layer(i);
-                render_layer(device, queue, encoder, &self.pipes, &frame, self.layers[i].as_mut(), &mut self.slots[i], &layer, level, first, dst_read, dst_write);
+                render_layer(device, queue, encoder, &self.pipes, &frame, self.layers[i].as_mut(), &mut self.slots[i], &layer, level, first, dst_read, dst_write, timer);
             }
         }
         if n == 0 {
@@ -959,6 +960,7 @@ impl Director {
             self.last_layers[i] = settings.layer(i);
         }
 
+        timer.mark(encoder, Part::Composite);
         let group = scene::tex_group(device, &self.pipes.layer_layout, &[&self.composite, &self.slots[0].meter.state[0]], &self.pipes.sampler, &self.one_buf);
         fullscreen_pass(encoder, "composite", target, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &self.pipes.layer_pipelines.copy, &group);
     }
@@ -968,8 +970,9 @@ impl Director {
 /// render the visual, run the modifier chain, meter it, and blend it onto
 /// the composite at `level` opacity.
 #[allow(clippy::too_many_arguments)]
-fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, pipes: &Pipes, fr: &Frame, visual: &mut dyn Scene, slot: &mut Slot, layer: &Layer, level: f32, first: bool, dst_read: &wgpu::TextureView, dst_write: &wgpu::TextureView) {
+fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, pipes: &Pipes, fr: &Frame, visual: &mut dyn Scene, slot: &mut Slot, layer: &Layer, level: f32, first: bool, dst_read: &wgpu::TextureView, dst_write: &wgpu::TextureView, timer: &mut GpuTimer) {
     let (dt, time) = (fr.dt, fr.time);
+    let si = slot.chain.index as u8;
     let band = layer.band;
     let filtered_features;
     let feats: &FeatureFrame = if band.enabled {
@@ -1015,6 +1018,7 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
     let pal_active = layer.palette.active();
     let (pal_table, pal_shift, pal_amount) = (&slot.palette.table, slot.palette.shift, if pal_active { layer.palette.amount } else { 0.0 });
     let ctx = FrameCtx { features: feats, tint: slot.tint, dt, time, sample_rate: fr.sample_rate, width: fr.width, height: fr.height, points: pts, auto_gain: fr.auto_gain, art: fr.art_image, art_id: fr.art_id, photos_folder: fr.photos_folder, palette: pal_active.then_some(pal_table), palette_shift: pal_shift, palette_amount: pal_amount };
+    timer.mark(encoder, Part::Visual(si));
     visual.render(queue, encoder, &ctx, layer);
     queue.write_buffer(&slot.buf, 0, bytemuck::bytes_of(&LayerParams { opacity: level, dt, flags: fr.level as u32 | if first { 2 } else { 0 }, blend: layer.blend as u32 }));
 
@@ -1129,6 +1133,7 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
     let mut pp = 0usize;
     let mut flips: Vec<usize> = Vec::new();
     for (j, pi, mix) in passes {
+        timer.mark(encoder, Part::Effect(si, j as u8));
         let input = src;
         // Each history user has its own pair, so two in one chain never
         // read the texture the other is writing.
@@ -1188,6 +1193,7 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
         }
     }
     let out = src;
+    timer.mark(encoder, Part::Blend(si));
     let m = &slot.meter;
     let (prev_s, cur_s) = (m.cur, 1 - m.cur);
     if fr.level {

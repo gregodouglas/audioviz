@@ -405,3 +405,88 @@ pub fn diagnostics_header() -> String {
 
     format!("audioviz {} | {os} | {arch}", env!("CARGO_PKG_VERSION"))
 }
+
+/// Machine load, sampled once a second on a background thread: GPU
+/// utilization from the `GPU Engine` performance counters (a collect walks
+/// every engine of every process, a few milliseconds) and this process's
+/// CPU time from `GetProcessTimes`. `None` until the first sample, or if
+/// the counters are unavailable.
+pub fn usage() -> Option<super::Usage> {
+    use std::sync::{Mutex, OnceLock};
+    static LATEST: OnceLock<Mutex<Option<super::Usage>>> = OnceLock::new();
+    let cell = LATEST.get_or_init(|| {
+        std::thread::Builder::new()
+            .name("gpu usage".into())
+            .spawn(|| {
+                if let Err(e) = gpu_usage_loop(|u| *LATEST.get().unwrap().lock().unwrap() = Some(u)) {
+                    tracing::info!("usage counters unavailable: {e}");
+                }
+            })
+            .ok();
+        Mutex::new(None)
+    });
+    *cell.lock().unwrap()
+}
+
+/// This process's user + kernel CPU time, seconds.
+fn process_cpu_s() -> f64 {
+    use windows::Win32::Foundation::FILETIME;
+    use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+    let (mut c, mut e, mut k, mut u) = (FILETIME::default(), FILETIME::default(), FILETIME::default(), FILETIME::default());
+    let t = |f: FILETIME| ((f.dwHighDateTime as u64) << 32 | f.dwLowDateTime as u64) as f64 * 1e-7;
+    unsafe {
+        if GetProcessTimes(GetCurrentProcess(), &mut c, &mut e, &mut k, &mut u).is_err() {
+            return 0.0;
+        }
+    }
+    t(k) + t(u)
+}
+
+fn gpu_usage_loop(publish: impl Fn(super::Usage)) -> anyhow::Result<()> {
+    use windows::Win32::System::Performance::{PDH_FMT_COUNTERVALUE_ITEM_W, PDH_FMT_DOUBLE, PDH_HCOUNTER, PDH_HQUERY, PDH_MORE_DATA, PdhAddEnglishCounterW, PdhCloseQuery, PdhCollectQueryData, PdhGetFormattedCounterArrayW, PdhOpenQueryW};
+    let pid = std::process::id();
+    let mut query = PDH_HQUERY::default();
+    let mut counter = PDH_HCOUNTER::default();
+    let path = wide("\\GPU Engine(*)\\Utilization Percentage");
+    unsafe {
+        let r = PdhOpenQueryW(PCWSTR::null(), 0, &mut query);
+        anyhow::ensure!(r == 0, "PdhOpenQuery {r:#x}");
+        let r = PdhAddEnglishCounterW(query, PCWSTR(path.as_ptr()), 0, &mut counter);
+        if r != 0 {
+            let _ = PdhCloseQuery(query);
+            bail!("PdhAddEnglishCounter {r:#x}");
+        }
+        let _ = PdhCollectQueryData(query);
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    let cores = std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(1);
+    let mut last = (std::time::Instant::now(), process_cpu_s());
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let now = (std::time::Instant::now(), process_cpu_s());
+        let cpu_cores = ((now.1 - last.1) / now.0.duration_since(last.0).as_secs_f64().max(1e-3)) as f32;
+        last = now;
+        unsafe {
+            if PdhCollectQueryData(query) != 0 {
+                continue;
+            }
+            let (mut size, mut count) = (0u32, 0u32);
+            let r = PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &mut size, &mut count, None);
+            if r != PDH_MORE_DATA || size == 0 {
+                continue;
+            }
+            buf.resize(size as usize, 0);
+            let items = buf.as_mut_ptr() as *mut PDH_FMT_COUNTERVALUE_ITEM_W;
+            if PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &mut size, &mut count, Some(items)) != 0 {
+                continue;
+            }
+            let list: Vec<(String, f64)> = std::slice::from_raw_parts(items, count as usize)
+                .iter()
+                .filter(|it| it.FmtValue.CStatus == 0)
+                .map(|it| (it.szName.to_string().unwrap_or_default(), it.FmtValue.Anonymous.doubleValue))
+                .collect();
+            let (gpu_all, gpu_app) = super::fold_gpu_engines(&list, pid);
+            publish(super::Usage { gpu_all, gpu_app, cpu_cores, cores });
+        }
+    }
+}

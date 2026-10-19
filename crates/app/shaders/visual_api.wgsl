@@ -34,6 +34,10 @@ struct VisualIn {
     raw: array<vec4<f32>, 8>,      // the same, unsmoothed
     chroma_v: array<vec4<f32>, 3>, // 12 pitch classes, C first
     palette: array<vec4<f32>, 32>,
+    wave_new: f32,      // how many of sample()'s newest samples arrived since last frame
+    auto_gain: f32,     // the gain already applied to the waveform (divide to undo it)
+    sample_rate: f32,   // samples per second
+    _pad2: f32,
 };
 
 @group(0) @binding(0) var<uniform> V: VisualIn;
@@ -94,9 +98,16 @@ fn colour(t: f32) -> vec3<f32> {
 // The waveform: t 0 = oldest .. 1 = newest of the last 1024 samples, (left, right), auto-gained.
 fn wave(t: f32) -> vec2<f32> {
     let n = arrayLength(&wave_buf);
-    let x = clamp(t, 0.0, 1.0) * f32(n - 1u);
+    let x = f32(n - 1024u) + clamp(t, 0.0, 1.0) * 1023.0;
     let i = u32(floor(x));
     return mix(wave_buf[i], wave_buf[min(i + 1u, n - 1u)], fract(x));
+}
+
+// Sample i of the last 4096, newest first (0 = the newest), (left, right),
+// auto-gained. The V.wave_new newest arrived since last frame.
+fn sample(i: u32) -> vec2<f32> {
+    let n = arrayLength(&wave_buf);
+    return wave_buf[n - 1u - min(i, n - 1u)];
 }
 
 fn wave_mono(t: f32) -> f32 {

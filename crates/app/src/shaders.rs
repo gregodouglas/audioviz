@@ -28,7 +28,6 @@ shader_table!(
     "visual_lines.wgsl",
     "waves.wgsl",
     "decay.wgsl",
-    "beam.wgsl",
     "bloom_down.wgsl",
     "bloom_up.wgsl",
     "expo.wgsl",

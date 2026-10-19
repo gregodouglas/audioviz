@@ -1,4 +1,5 @@
-// Scope scene uniform (scenes/scope.rs::ScopeParams, 80 + 512 bytes).
+// The old scope uniform (80 + 512 bytes). The scope is a loaded visual now;
+// this stays because decay.wgsl (Ribbons' trails) binds this shape.
 struct ScopeParams {
     resolution: vec2<f32>,
     gain: f32,

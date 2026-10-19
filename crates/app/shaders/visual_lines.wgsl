@@ -8,7 +8,7 @@
 struct LineIn {
     resolution: vec2<f32>,
     count: u32,
-    _pad: u32,
+    style: u32,   // 0 line, 1 beam (width is a Gaussian sigma, brightness falls with segment length)
 };
 
 @group(0) @binding(0) var<uniform> L: LineIn;
@@ -48,7 +48,10 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
     if (len < 1e-4) { d = vec2<f32>(1.0, 0.0); } else { d = d / len; }
     let n = vec2<f32>(-d.y, d.x);
     let half_w = 0.25 * (a.z + b.z);
-    let w = half_w + 1.5;
+    var w = half_w + 1.5;
+    if (L.style == 1u) {
+        w = 2.0 * half_w * 2.5 + 1.0;
+    }
     var along: f32;
     var across: f32;
     switch (vi) {
@@ -72,10 +75,18 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let along = clamp(in.local.x, 0.0, in.seg_len);
     let dist = length(vec2<f32>(in.local.x - along, in.local.y));
-    let half = max(in.half_w, 0.5);
-    let cov = 1.0 - smoothstep(half - 0.5, half + 0.8, dist);
-    let cap = select(0.5, 1.0, in.local.x >= 0.0 && in.local.x <= in.seg_len);
-    let c = in.colour * cov * cap;
+    var c: vec3<f32>;
+    if (L.style == 1u) {
+        // The beam: a Gaussian cross-section, dimmer the faster it moved
+        // (the time it spent on each pixel).
+        let sigma = max(2.0 * in.half_w, 0.3);
+        c = in.colour * exp(-(dist * dist) / (2.0 * sigma * sigma)) / (in.seg_len + 1.0);
+    } else {
+        let half = max(in.half_w, 0.5);
+        let cov = 1.0 - smoothstep(half - 0.5, half + 0.8, dist);
+        let cap = select(0.5, 1.0, in.local.x >= 0.0 && in.local.x <= in.seg_len);
+        c = in.colour * cov * cap;
+    }
     // A NaN from a visual's point() must not reach the levelling.
     return vec4<f32>(select(vec3<f32>(0.0), max(c, vec3<f32>(0.0)), all(c == c)), 1.0);
 }

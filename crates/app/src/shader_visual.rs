@@ -34,8 +34,8 @@ pub const MAX_ITEMS: u32 = 4096;
 /// Most points a loaded visual's line may have.
 pub const MAX_LINE: u32 = 65536;
 const PREPARE_GROUP: u32 = 64;
-/// Waveform samples a loaded visual sees.
-const WAVE: usize = 1024;
+/// Waveform samples a loaded visual sees (`wave(t)` spans the newest 1024).
+const WAVE: usize = 4096;
 /// The album art's size on the GPU (square; the art is resampled to it).
 const ART: u32 = 512;
 
@@ -70,6 +70,9 @@ pub struct ParamDef {
     /// Choice options, shown as written; the shader sees the index.
     #[serde(default)]
     pub options: Vec<String>,
+    /// What a choice saves for each option (default: the option, lowercase).
+    #[serde(default)]
+    pub values: Vec<String>,
     /// Logarithmic slider.
     #[serde(default)]
     pub log: bool,
@@ -113,6 +116,12 @@ struct Manifest {
     /// A param whose value is how many of the line's points are drawn.
     #[serde(default)]
     line_count: String,
+    /// "line" (the default) or "beam".
+    #[serde(default)]
+    line_style: String,
+    /// The layer's band filters the waveform itself (as the scope does).
+    #[serde(default)]
+    band_waveform: bool,
 }
 
 /// A loaded visual, as the registry holds it.
@@ -134,6 +143,9 @@ pub struct ShaderDef {
     pub line_count: String,
     /// The code has `fn shade` (a line visual may leave it out).
     pub shade: bool,
+    /// The line is a phosphor beam (Gaussian, dimmer when fast).
+    pub beam: bool,
+    pub band_waveform: bool,
     pub wgsl: String,
     /// The folder it came from, watched for changes (none for embedded copies).
     pub dir: Option<PathBuf>,
@@ -173,6 +185,9 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
         if p.kind == ParamKind::Choice && p.options.is_empty() {
             return Err(format!("visual.json: choice \"{}\" has no options", p.id));
         }
+        if !p.values.is_empty() && p.values.len() != p.options.len() {
+            return Err(format!("visual.json: choice \"{}\" needs one value per option", p.id));
+        }
     }
     if m.items > MAX_ITEMS {
         return Err(format!("visual.json: at most {MAX_ITEMS} items"));
@@ -191,6 +206,9 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
         (true, true) if m.line < 2 => return Err("visual.json: a line needs at least 2 points".into()),
         _ => {}
     }
+    if !matches!(m.line_style.as_str(), "" | "line" | "beam") {
+        return Err(format!("visual.json: line_style \"{}\" is not \"line\" or \"beam\"", m.line_style));
+    }
     if !defines(wgsl, "shade") && m.line == 0 {
         return Err("visual.wgsl needs fn shade(uv: vec2<f32>) -> vec3<f32> (only a visual with a line may leave it out)".into());
     }
@@ -198,12 +216,23 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
         return Err(format!("visual.json: line_count \"{}\" is not a number param", m.line_count));
     }
     let short = if m.short.is_empty() { m.name.clone() } else { m.short };
-    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), wgsl: wgsl.to_string(), dir })
+    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", band_waveform: m.band_waveform, wgsl: wgsl.to_string(), dir })
 }
 
 // ------------------------------------------------------------ values
 
 impl ParamDef {
+    /// What option `i` of a choice saves.
+    fn choice_value(&self, i: usize) -> String {
+        self.values.get(i).cloned().unwrap_or_else(|| self.options[i].to_lowercase())
+    }
+
+    /// The option a saved value (or an option's name) stands for.
+    fn choice_index(&self, s: &str) -> Option<usize> {
+        let s = s.to_lowercase();
+        (0..self.options.len()).find(|&i| self.choice_value(i).to_lowercase() == s || self.options[i].to_lowercase() == s)
+    }
+
     /// The stored value or the default, as the panel and files hold it.
     fn value(&self, stored: Option<&Value>) -> Value {
         let v = stored.cloned().unwrap_or(Value::Null);
@@ -211,8 +240,8 @@ impl ParamDef {
             ParamKind::Toggle => Value::Bool(v.as_bool().or(self.default.as_bool()).unwrap_or(false)),
             ParamKind::Choice => {
                 let name = v.as_str().or(self.default.as_str()).map(str::to_lowercase);
-                let i = name.and_then(|n| self.options.iter().position(|o| o.to_lowercase() == n)).unwrap_or(0);
-                Value::String(self.options[i].to_lowercase())
+                let i = name.and_then(|n| self.choice_index(&n)).unwrap_or(0);
+                Value::String(self.choice_value(i))
             }
             // Whole numbers stay whole in saved files ("count": 64, not 64.0).
             ParamKind::Integer => Value::from(v.as_f64().or(self.default.as_f64()).unwrap_or(self.min as f64).round() as i64),
@@ -224,7 +253,7 @@ impl ParamDef {
     fn number(&self, stored: Option<&Value>) -> f32 {
         match self.value(stored) {
             Value::Bool(b) => b as u32 as f32,
-            Value::String(s) => self.options.iter().position(|o| o.to_lowercase() == s).unwrap_or(0) as f32,
+            Value::String(s) => self.choice_index(&s).unwrap_or(0) as f32,
             v => v.as_f64().unwrap_or(0.0) as f32,
         }
     }
@@ -354,7 +383,7 @@ fn read_folder_except(root: &Path, watch: bool, skip: &[PathBuf]) -> Vec<ShaderD
     out
 }
 
-fn embedded() -> Vec<ShaderDef> {
+pub fn embedded() -> Vec<ShaderDef> {
     let mut by_folder: BTreeMap<&str, (Option<&str>, Option<&str>)> = BTreeMap::new();
     for (rel, text) in factory::embedded("visuals/") {
         let mut parts = rel.split('/');
@@ -486,6 +515,10 @@ struct Uniform {
     raw: [[f32; 4]; 8],
     chroma: [[f32; 4]; 3],
     palette: crate::color::Table,
+    wave_new: f32,
+    auto_gain: f32,
+    sample_rate: f32,
+    _pad2: f32,
 }
 
 pub struct ShaderVisual {
@@ -845,6 +878,10 @@ impl Scene for ShaderVisual {
             raw,
             chroma,
             palette: ctx.palette.copied().unwrap_or([[0.0; 4]; crate::color::ENTRIES]),
+            wave_new: ctx.points.len().min(WAVE - 1) as f32,
+            auto_gain: ctx.auto_gain,
+            sample_rate: ctx.sample_rate as f32,
+            _pad2: 0.0,
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
         // The album art, once per track.
@@ -915,7 +952,7 @@ impl Scene for ShaderVisual {
             fullscreen_pass(encoder, &self.def.id, &self.out[write], wgpu::LoadOp::Clear(wgpu::Color::BLACK), pipeline, group);
         }
         if let Some(draw) = line {
-            let u: [u32; 4] = [(ctx.width as f32).to_bits(), (ctx.height as f32).to_bits(), count, 0];
+            let u: [u32; 4] = [(ctx.width as f32).to_bits(), (ctx.height as f32).to_bits(), count, self.live.beam as u32];
             queue.write_buffer(&self.line_uniform, 0, bytemuck::cast_slice(&u));
             let load = if picture { wgpu::LoadOp::Load } else { wgpu::LoadOp::Clear(wgpu::Color::BLACK) };
             let mut pass = scene::begin_pass(encoder, "loaded visual line", &self.out[write], load);
@@ -964,7 +1001,7 @@ impl Scene for ShaderVisual {
                             values.insert(p.id.clone(), Value::Bool(on));
                         }
                         ParamKind::Choice => {
-                            let cur = v.as_str().and_then(|s| p.options.iter().position(|o| o.to_lowercase() == s)).unwrap_or(0);
+                            let cur = v.as_str().and_then(|s| p.choice_index(s)).unwrap_or(0);
                             let labels: Vec<&str> = p.options.iter().map(String::as_str).collect();
                             let pick = if labels.len() <= 3 {
                                 small_caps(ui, &p.label);
@@ -973,7 +1010,7 @@ impl Scene for ShaderVisual {
                                 dropdown(ui, &p.label, &labels, Some(cur))
                             };
                             if let Some(i) = pick {
-                                values.insert(p.id.clone(), Value::String(p.options[i].to_lowercase()));
+                                values.insert(p.id.clone(), Value::String(p.choice_value(i)));
                             }
                         }
                         ParamKind::Integer | ParamKind::Slider => {
@@ -1068,6 +1105,7 @@ mod tests {
         assert_eq!(std::mem::offset_of!(Uniform, bands), 176);
         assert_eq!(std::mem::offset_of!(Uniform, chroma), 432);
         assert_eq!(std::mem::offset_of!(Uniform, palette), 480);
+        assert_eq!(std::mem::offset_of!(Uniform, wave_new), 480 + 512);
     }
 
     #[test]

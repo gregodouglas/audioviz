@@ -21,7 +21,8 @@ use crate::platform;
 use crate::post::{Post, PostParams};
 use crate::preset_store::{self, PresetDef};
 use crate::scene_store::{self, SceneDef};
-use crate::scenes::scope::MAX_POINTS;
+/// Most waveform samples kept for one frame.
+const MAX_POINTS: usize = 32_768;
 use crate::settings::{AudioSourceKind, MAX_LAYERS, Section, Settings};
 use crate::shaders::ShaderSet;
 use crate::strip::Strip;

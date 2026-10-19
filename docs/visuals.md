@@ -65,6 +65,9 @@ The app reads the folder at start and lists each visual with the built-ins, mark
 - `id`: lowercase letters, digits, `-` or `_`; what files point at, so it never changes. An id already taken (a built-in) is skipped.
 - Up to 16 `params`. `type` is `slider` (the default), `integer`, `toggle` or `choice` (three options or fewer show as a segmented control, more as a dropdown). Param ids are lowercase identifiers, not WGSL words. `group` gathers controls under a heading, in order of first use. Values are saved in the layer as `"<id>": { "radius": 0.5, ... }`.
 - `feedback: true` keeps last frame's picture for `prev(uv)`.
+- `line_style: "beam"` draws the line as a phosphor beam (the scope's): `width` is the Gaussian sigma in pixels and each segment's brightness falls with its length, so a lingering beam is bright and a racing one dim. The default is `"line"`.
+- `band_waveform: true`: when the layer reacts to a band, the waveform itself is band-filtered (the scope), not only the levels and spectrum.
+- A choice may list `"values"`, one per option: what it saves, when that differs from the option's name (the scope's "Key and speed" saves `"key"`).
 - `line_count: "<param id>"` draws only as many of the line's points as that number control says (Spiral's Points); `point(i)` is called for those only.
 - A visual with a line may leave out `fn shade`: the line is then the whole picture and the full-screen pass is skipped (Harmonograph 0.19 → 0.05 ms).
 - `line: N` (2 to 65536) draws a line through the N points that `fn point(i: u32) -> LinePoint` gives (`pos` centred, `width` in pixels with 0 breaking the line, `colour`), added over `shade`'s picture. `LINE_POINTS` is N. Required with a `point` function and refused without one.
@@ -97,6 +100,7 @@ The colour is linear HDR light (values above 1 are fine; levelling, effects and 
 | `band(i)`, `band_raw(i)`, `band_at(t)` | 32 bands low to high, smoothed or raw; `band_at` interpolates t 0..1 |
 | `chroma(i)` | 12 pitch classes, C first |
 | `wave(t)`, `wave_mono(t)` | the last 1024 samples (t 0 oldest .. 1 newest), auto-gained |
+| `sample(i)`, `V.wave_new`, `V.auto_gain`, `V.sample_rate` | sample i of the last 4096, newest first; how many arrived since last frame (a trace draws exactly those); the gain already applied; samples per second |
 | `colour(t)` | the layer's palette at t (moving with its cycle) over its tint |
 | `prev(uv)` | last frame (with `feedback`) |
 | `LinePoint`, `LINE_POINTS` | a point of the line (`pos`, `width` px, `colour`) and how many there are |
@@ -108,7 +112,7 @@ The colour is linear HDR light (values above 1 are fine; levelling, effects and 
 
 A loaded visual sees only the shared `params.wgsl` prelude and this API, not the built-in visuals' own helpers, so their names never collide with yours. `cargo test -p audioviz factory_visuals_compile` compiles every factory visual the way the engine does.
 
-Factory examples, each a worked example in the guide: **Polygon** (a still shape), **Pulse** (bands, beats, onsets, the music clock), **Comet** (feedback trails), **Eclipse** (a prepare step), **Harmonograph** (a line, with state in a prepare step). **Spiral** (`assets/visuals/spiral/`) is the third port, a line visual with its drift, turn and beat kick in one prepare item (0.26 ms compiled in, 0.20 loaded). **Spectrum wheel** (`assets/visuals/wheel/`) is the second port of a compiled-in visual: its CPU state (turn, beat jumps, the walking band offset, smoothed wedge levels) lives in a prepare step, item 0 for the wheel and one item per wedge holding its finished colour.
+Factory examples, each a worked example in the guide: **Polygon** (a still shape), **Pulse** (bands, beats, onsets, the music clock), **Comet** (feedback trails), **Eclipse** (a prepare step), **Harmonograph** (a line, with state in a prepare step). **Phosphor scope** (`assets/visuals/scope/`) is the fourth: feedback for the phosphor, a beam-style line through exactly the samples that arrived this frame (from last frame's final one, so the trace is continuous), Frequency colouring from zero crossings in the shader (0.11 ms either mode; the compiled-in one did the crossings on the CPU). Shipped visuals whose folder is missing or broken load from the copies inside the app, so the scope, every missing visual's stand-in, is always there. **Spiral** (`assets/visuals/spiral/`) is the third port, a line visual with its drift, turn and beat kick in one prepare item (0.26 ms compiled in, 0.20 loaded). **Spectrum wheel** (`assets/visuals/wheel/`) is the second port of a compiled-in visual: its CPU state (turn, beat jumps, the walking band offset, smoothed wedge levels) lives in a prepare step, item 0 for the wheel and one item per wedge holding its finished colour.
 
 How the prepare step runs: a compute pass (`cs_main`, generated after the visual's code, 64 per workgroup) writes one of two item buffers while reading the other through `item()`; the fragment pass then reads the one just written. Eclipse moved its dot levels, positions and colours there: 1.1 → 0.69 ms at 16 dots and 4.5 → 2.7 at 64 (2560x1440, release), under the old compiled-in Eclipse's 0.8 and 3.5.
 

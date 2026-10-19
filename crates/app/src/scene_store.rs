@@ -270,14 +270,14 @@ mod tests {
         s.scene_name = "Test".into();
         s.layers[0].visual = "crystal".into();
         s.layers[0].put("crystal", &crate::settings::CrystalParams { count: 33, ..Default::default() });
-        s.layers[0].put("scope", &crate::settings::ScopeParams { gain: 3.0, ..Default::default() });
+        s.layers[0].params.insert("scope".into(), serde_json::json!({ "gain": 3.0 }));
         let text = to_text(&s).unwrap();
         let v: Value = serde_json::from_str(&text).unwrap();
         let l0 = v["layers"][0].as_object().unwrap();
         assert!(l0.contains_key("crystal") && !l0.contains_key("scope") && !l0.contains_key("ribbons"));
         let back = from_text(&text).unwrap();
         assert_eq!(back.layers[0].get::<crate::settings::CrystalParams>("crystal").count, 33);
-        assert_eq!(back.layers[0].get::<crate::settings::ScopeParams>("scope"), crate::settings::ScopeParams::default(), "other visuals take their defaults");
+        assert!(!back.layers[0].params.contains_key("scope"), "other visuals are not written");
         assert_eq!(back.scene_name, "Test");
     }
 

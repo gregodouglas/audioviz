@@ -21,6 +21,9 @@ use crate::scenes;
 use crate::shader_visual::{self, ShaderDef, ShaderVisual};
 use crate::shaders::ShaderSet;
 
+/// The scope: what a layer draws while its visual is not installed.
+pub const SCOPE: &str = "scope";
+
 pub type Maker = fn(&wgpu::Device, u32, u32, &ShaderSet) -> Result<Box<dyn Scene>, String>;
 
 /// Where a visual comes from.
@@ -55,7 +58,6 @@ pub fn typed<T: serde::Serialize + serde::de::DeserializeOwned + Default>(stored
 
 fn builtin() -> Vec<VisualDef> {
     vec![
-        scenes::scope::def(),
         scenes::ribbons::def(),
         scenes::starfield::def(),
         scenes::kaleido::def(),
@@ -77,6 +79,13 @@ fn registry() -> &'static RwLock<Vec<&'static VisualDef>> {
         for d in shader_visual::discover() {
             push_loaded(&mut v, d);
         }
+        // A shipped visual whose folder is missing or does not parse still
+        // loads from the copy inside the app (the scope is everyone's fallback).
+        for d in shader_visual::embedded() {
+            if !v.iter().any(|b| b.id == d.id) {
+                push_loaded(&mut v, d);
+            }
+        }
         RwLock::new(v)
     })
 }
@@ -87,7 +96,7 @@ fn push_loaded(v: &mut Vec<&'static VisualDef>, d: ShaderDef) -> Option<&'static
         return None;
     }
     let d: &'static ShaderDef = Box::leak(Box::new(d));
-    let def: &'static VisualDef = Box::leak(Box::new(VisualDef { id: &d.id, name: &d.name, short: &d.short, summary: &d.summary, source: Source::Loaded(d), band_waveform: false }));
+    let def: &'static VisualDef = Box::leak(Box::new(VisualDef { id: &d.id, name: &d.name, short: &d.short, summary: &d.summary, source: Source::Loaded(d), band_waveform: d.band_waveform }));
     v.push(def);
     Some(def)
 }
@@ -161,8 +170,10 @@ pub fn summary(id: &str) -> &'static str {
 
 /// Build visual `id`, or the scope in its place when it is not installed.
 pub fn make(id: &str, device: &wgpu::Device, w: u32, h: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
-    let def = get(id).or_else(|| get(scenes::scope::ID)).expect("the scope is built in");
-    def.make(device, w, h, shaders)
+    match get(id).or_else(|| get(SCOPE)) {
+        Some(def) => def.make(device, w, h, shaders),
+        None => Err(format!("no visual \"{id}\" and no scope to stand in")),
+    }
 }
 
 #[cfg(test)]

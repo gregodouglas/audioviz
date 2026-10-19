@@ -56,6 +56,8 @@ The visuals that ship with the app live in the repo under `assets/visuals/` and 
 | `items` | no | How many values your `prepare` step computes each frame (up to 4096); required when `visual.wgsl` has `fn prepare`, and only then. See "Once a frame: prepare" below. |
 | `line` | no | How many points your line has (2 to 65536); required when `visual.wgsl` has `fn point`, and only then. See "Drawing a line" below. |
 | `line_count` | no | The id of a number control that says how many of the line's points to draw (Spiral's "Points"). |
+| `line_style` | no | `"line"` (the default) or `"beam"`: a phosphor beam with a Gaussian edge (`width` is its sigma in pixels) whose brightness falls with each segment's length. |
+| `band_waveform` | no | `true`: a layer band filters the waveform itself, not only the levels and spectrum. |
 | `params` | no | Up to 16 controls (below). |
 
 Each entry in `params`:
@@ -69,6 +71,7 @@ Each entry in `params`:
 | `min`, `max` | The range of a slider or integer (default 0 to 1). |
 | `default` | A number; `true`/`false` for a toggle; the option's name for a choice (`"knot"`). Double-clicking a control resets it here. |
 | `options` | A choice's options, as shown ("Circle", "Eight", "Knot"). Three or fewer show as a segmented control, more as a dropdown. The shader sees the index: 0, 1, 2... |
+| `values` | What a choice saves for each option, when that should differ from the option's name in lowercase (one per option). |
 | `log` | A logarithmic slider, for gains and times that span decades. |
 | `unit` | Shown after the value: `"px"`, `"s"`, `"x"`. Keep it to a couple of characters (the value column is narrow); say more in `help`. |
 | `help` | The control's tooltip. |
@@ -141,6 +144,9 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `chroma(i)` | 0..1 | Pitch class `i` (C = 0, C# = 1 ... B = 11), normalised so the loudest class is 1. |
 | `wave(t)` | ~-1..1 | The last 1024 samples (`t` 0 oldest, 1 newest) as (left, right), auto-gained. |
 | `wave_mono(t)` | ~-1..1 | Their average. |
+| `sample(i)` | ~-1..1 | Sample `i` of the last 4096, newest first, (left, right), auto-gained: for walking the waveform sample by sample. |
+| `V.wave_new` | count | How many of `sample()`'s newest samples arrived since last frame: a trace that draws exactly these (the scope) never repeats or skips one. |
+| `V.auto_gain`, `V.sample_rate` | | The gain already applied to the waveform (divide by it to undo), and samples per second. |
 | `prev(uv)` | colour | Your own last frame, before effects (with `"feedback": true`; black otherwise). |
 | `art(uv)` | colour | The playing track's album art at `uv` (0..1, y down, square, linear colour); black when there is none. It changes with the track. To map it into centred coordinates: `art(vec2<f32>(p.x, -p.y) * 0.5 + 0.5)`. |
 | `V.has_art` | 0 or 1 | 1 when the track has album art. |

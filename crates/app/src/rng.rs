@@ -1,6 +1,6 @@
 //! A tiny seeded generator (splitmix64) for things that must replay the same
-//! way for the same track: the Sigil's arrangement, Crystal's poses, the
-//! effects director's rolls.
+//! way for the same track: the effects director's rolls, and `V.track`, the
+//! seed loaded visuals draw their arrangements from (the Sigil's glyph).
 
 pub struct Rng(pub u64);
 

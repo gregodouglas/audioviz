@@ -5,10 +5,10 @@
 //! director, presets, scenes, the Performance timings) is the engine's and
 //! applies to any visual without the visual knowing.
 //!
-//! Adding a built-in visual: one module under `scenes/` with its `Scene`,
-//! its parameter struct and a `def()`, and one line in `builtin()` below.
-//! The id is what layers, scene files and the presets folder use, so it
-//! never changes once shipped.
+//! Every visual is loaded from a folder (`shader_visual`): the shipped ones
+//! from `assets/visuals/`, a person's own from their visuals folder. The id
+//! is what layers, scene files and the presets folder use, so it never
+//! changes once shipped.
 
 use std::path::PathBuf;
 use std::sync::{Mutex, RwLock};
@@ -17,20 +17,15 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use crate::scene::Scene;
-use crate::scenes;
 use crate::shader_visual::{self, ShaderDef, ShaderVisual};
 use crate::shaders::ShaderSet;
 
 /// The scope: what a layer draws while its visual is not installed.
 pub const SCOPE: &str = "scope";
 
-pub type Maker = fn(&wgpu::Device, u32, u32, &ShaderSet) -> Result<Box<dyn Scene>, String>;
-
-/// Where a visual comes from.
+/// Where a visual comes from. Every visual is loaded from a folder today;
+/// a compiled-in kind would be another variant here.
 pub enum Source {
-    /// Compiled in: a constructor and its parameter struct's round trip
-    /// (full parameters from what a layer stores, defaults filled in).
-    Native { make: Maker, params: fn(Option<&Value>) -> Value },
     /// Loaded from a folder (`shader_visual`).
     Loaded(&'static ShaderDef),
 }
@@ -50,25 +45,13 @@ pub struct VisualDef {
     pub band_waveform: bool,
 }
 
-/// `params` for a visual whose parameters are the struct `T`.
-pub fn typed<T: serde::Serialize + serde::de::DeserializeOwned + Default>(stored: Option<&Value>) -> Value {
-    let t: T = stored.and_then(|v| T::deserialize(v).ok()).unwrap_or_default();
-    serde_json::to_value(t).unwrap_or(Value::Null)
-}
-
-fn builtin() -> Vec<VisualDef> {
-    vec![
-        scenes::sigil::def(),
-    ]
-}
-
-/// The registry: the built-ins, then every visual loaded from a folder whose
-/// id is not already taken. It only grows while the app runs (a folder added
+/// The registry: every visual loaded from a folder whose id is not already
+/// taken. It only grows while the app runs (a folder added
 /// later is picked up by `refresh`); entries live for the life of the app.
 fn registry() -> &'static RwLock<Vec<&'static VisualDef>> {
     static ALL: std::sync::OnceLock<RwLock<Vec<&'static VisualDef>>> = std::sync::OnceLock::new();
     ALL.get_or_init(|| {
-        let mut v: Vec<&'static VisualDef> = builtin().into_iter().map(|d| &*Box::leak(Box::new(d))).collect();
+        let mut v: Vec<&'static VisualDef> = Vec::new();
         for d in shader_visual::discover() {
             push_loaded(&mut v, d);
         }
@@ -118,7 +101,6 @@ pub fn refresh() -> usize {
     }
     let known: Vec<PathBuf> = all().iter().filter_map(|d| match &d.source {
         Source::Loaded(s) => s.dir.clone(),
-        Source::Native { .. } => None,
     }).collect();
     let added: Vec<&str> = shader_visual::rescan(&known).into_iter().filter_map(add_loaded).map(|d| d.id).collect();
     if !added.is_empty() {
@@ -131,14 +113,12 @@ impl VisualDef {
     /// Full parameters from what a layer stores, defaults filled in.
     pub fn params(&self, stored: Option<&Value>) -> Value {
         match &self.source {
-            Source::Native { params, .. } => params(stored),
             Source::Loaded(d) => d.params_json(stored),
         }
     }
 
     pub fn make(&'static self, device: &wgpu::Device, w: u32, h: u32, shaders: &ShaderSet) -> Result<Box<dyn Scene>, String> {
         match &self.source {
-            Source::Native { make, .. } => make(device, w, h, shaders),
             Source::Loaded(d) => Ok(Box::new(ShaderVisual::new(device, w, h, shaders, d)?)),
         }
     }

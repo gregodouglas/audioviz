@@ -223,12 +223,17 @@ pub fn shader(device: &wgpu::Device, shaders: &ShaderSet, name: &str) -> wgpu::S
     device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(name), source: wgpu::ShaderSource::Wgsl(shaders.source(name).into()) })
 }
 
-/// Build pipelines inside a validation error scope so a broken shader returns
-/// an error string instead of panicking (hot reload keeps the old pipeline).
+/// Build pipelines inside validation and internal error scopes so a broken
+/// shader returns an error string instead of panicking (hot reload keeps the
+/// old pipeline). Internal covers the backend's own compiler refusing code
+/// naga accepted (D3D's FXC on some array writes).
 pub fn guarded<T>(device: &wgpu::Device, build: impl FnOnce() -> T) -> Result<T, String> {
-    let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
+    let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let out = build();
-    match pollster::block_on(scope.pop()) {
+    let v = pollster::block_on(validation.pop());
+    let i = pollster::block_on(internal.pop());
+    match v.or(i) {
         None => Ok(out),
         Some(e) => Err(e.to_string()),
     }

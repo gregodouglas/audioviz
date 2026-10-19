@@ -29,7 +29,7 @@ struct VisualIn {
     palette_shift: f32, // the palette's moving offset, 0..1
     quiet: f32,         // 1 in a quiet passage
     has_art: f32,       // 1 when the playing track has album art (art() is black otherwise)
-    p: array<vec4<f32>, 4>,        // parameters 0..15 (use params())
+    p: array<vec4<f32>, 6>,        // parameters 0..23 (use params())
     bands: array<vec4<f32>, 8>,    // 32 bands, low to high, smoothed (30 ms attack, 200 ms release)
     raw: array<vec4<f32>, 8>,      // the same, unsmoothed
     chroma_v: array<vec4<f32>, 3>, // 12 pitch classes, C first
@@ -43,9 +43,12 @@ struct VisualIn {
     picture_aspect: f32,        // width / height of picture()
     picture_prev_aspect: f32,   // and of picture_prev()
     picture_count: f32, // pictures shown so far (goes up by one with each new one)
-    _pad6: f32,
-    _pad7: f32,
+    confidence: f32,    // 0..1, how sure the beat clock is of the beat
+    silent: f32,        // 1 when nothing is playing
     _pad8: f32,
+    hits: vec4<f32>,    // 1 on the frame an onset is detected (low, mid, high, all), else 0
+    strengths: vec4<f32>, // onset strength now, continuous (low, mid, high, all)
+    chroma_slow_v: array<vec4<f32>, 3>, // 12 pitch classes, slow profile (the chord over seconds)
 };
 
 @group(0) @binding(0) var<uniform> V: VisualIn;
@@ -58,6 +61,8 @@ struct VisualIn {
 @group(0) @binding(6) var picture_tex: texture_2d<f32>;
 @group(0) @binding(7) var picture_prev_tex: texture_2d<f32>;
 @group(0) @binding(8) var mirror_samp: sampler;
+// Last frame's trail (with "trail": true; black otherwise).
+@group(0) @binding(9) var trail_tex: texture_2d<f32>;
 
 const TAU: f32 = 6.2831853;
 
@@ -69,7 +74,7 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> FsIn {
 // Arrays of vec4 are indexed directly (component by a runtime index),
 // which is much cheaper in a loop than picking through a switch.
 fn param(i: u32) -> f32 {
-    let k = min(i, 15u);
+    let k = min(i, 23u);
     return V.p[k / 4u][k % 4u];
 }
 
@@ -95,6 +100,12 @@ fn band_at(t: f32) -> f32 {
 fn chroma(i: u32) -> f32 {
     let k = i % 12u;
     return V.chroma_v[k / 4u][k % 4u];
+}
+
+// Pitch class i, the slow profile: the chord over the last seconds.
+fn chroma_slow(i: u32) -> f32 {
+    let k = i % 12u;
+    return V.chroma_slow_v[k / 4u][k % 4u];
 }
 
 // The layer's colour at t (0..1, wraps): its palette (moving with the
@@ -164,6 +175,20 @@ fn item(i: u32) -> vec4<f32> {
 // Last frame's output at uv (black unless the manifest sets "feedback": true).
 fn prev(uv: vec2<f32>) -> vec3<f32> {
     return textureSampleLevel(prev_tex, prev_samp, uv, 0.0).rgb;
+}
+
+// The trail (with "trail": true in visual.json): a second picture that
+// persists. trail(uv) is what shade() wrote with write_trail() last frame;
+// whatever shade() writes this frame is kept for the next (black if it
+// writes nothing). The trail is not drawn: add it to what shade returns.
+var<private> trail_out: vec3<f32>;
+
+fn trail(uv: vec2<f32>) -> vec3<f32> {
+    return textureSampleLevel(trail_tex, prev_samp, uv, 0.0).rgb;
+}
+
+fn write_trail(c: vec3<f32>) {
+    trail_out = c;
 }
 
 // The playing track's album art at uv (0..1, y down, square), as linear

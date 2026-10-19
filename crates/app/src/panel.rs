@@ -1191,9 +1191,10 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState
     crate::visuals::refresh();
     let all = crate::visuals::all();
     let names: Vec<&str> = all.iter().map(|d| d.name).collect();
-    let loaded = |i: usize| matches!(all[i].source, crate::visuals::Source::Loaded(_));
-    let help = |i: usize| Some(if loaded(i) { format!("{} Loaded from its folder, so you can open and change it.", all[i].summary) } else { all[i].summary.to_string() });
-    if let Some(i) = dropdown_marked(ui, "Visual", &names, all.iter().position(|d| d.id == l.visual), help, |i| loaded(i).then_some("Loaded")) {
+    // Every visual is a folder; the mark picks out the ones that did not ship.
+    let yours = |i: usize| !crate::shader_visual::is_factory(all[i].id);
+    let help = |i: usize| Some(if yours(i) { format!("{} One of your own visuals, from your visuals folder.", all[i].summary) } else { all[i].summary.to_string() });
+    if let Some(i) = dropdown_marked(ui, "Visual", &names, all.iter().position(|d| d.id == l.visual), help, |i| yours(i).then_some("Yours")) {
         l.visual = all[i].id.to_string();
         // The kaleidoscope is its picture plus the fold: add the mirrors with it.
         if all[i].id == "kaleido" && !l.has_fold() {

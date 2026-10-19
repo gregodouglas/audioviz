@@ -17,7 +17,7 @@ A folder with two files:
 
 (`%APPDATA%` is `C:\Users\<you>\AppData\Roaming`; paste `%APPDATA%\audioviz\visuals` into Explorer's address bar.) The folder name is yours to choose; the `id` inside `visual.json` is what matters. Other files in the folder are ignored, so a `LICENSE` or a `README` can sit beside them.
 
-The app reads the folder when it starts and lists each visual in the Visual tab's list after the built-in ones, marked "Loaded". A folder added while it runs appears in the list within a few seconds. Saving either file reloads the visual while it runs.
+The app reads the folder when it starts and lists each visual in the Visual tab's list among the shipped ones (by folder name), marked "Yours". A folder added while it runs appears in the list within a few seconds. Saving either file reloads the visual while it runs.
 
 The quickest start is the Visual tab's **Your own visuals** group: type a name and press **New visual**. It copies a small starter (a ring that swells with the bass) into a new folder, puts it on the layer you are editing and opens the folder in Explorer; edit `visual.wgsl`, save, and watch it change. The same group has **Open visuals folder**, **Restore factory visuals** (writes the shipped visuals back over your changes to them; your own folders are untouched) and a link to this guide. A loaded visual's own controls end with **Open its folder**.
 
@@ -53,13 +53,14 @@ The visuals that ship with the app live in the repo under `assets/visuals/` and 
 | `credit` | no | Who the idea or code comes from, and the licence. Shown at the foot of the Visual tab. |
 | `hint` | no | A longer explanation at the foot of the Visual tab: what the controls do, which part of the music drives what. |
 | `feedback` | no | `true` keeps your last frame so `prev(uv)` can read it (example 3). Default `false`. |
+| `trail` | no | `true` gives `shade` a second picture that persists but is not drawn (`write_trail`, `trail`). See "Keeping a trail" below. |
 | `triangles` | no | How many triangles `fn vertex` draws (up to 1048576); required with `fn vertex`, and only then. See "Drawing triangles" below. |
-| `items` | no | How many values your `prepare` step computes each frame (up to 4096); required when `visual.wgsl` has `fn prepare`, and only then. See "Once a frame: prepare" below. |
+| `items` | no | How many values your `prepare` step computes each frame (up to 262144); required when `visual.wgsl` has `fn prepare`, and only then. See "Once a frame: prepare" below. |
 | `line` | no | How many points your line has (2 to 65536); required when `visual.wgsl` has `fn point`, and only then. See "Drawing a line" below. |
 | `line_count` | no | The id of a number control that says how many of the line's points to draw (Spiral's "Points"). |
 | `line_style` | no | `"line"` (the default) or `"beam"`: a phosphor beam with a Gaussian edge (`width` is its sigma in pixels) whose brightness falls with each segment's length. |
 | `band_waveform` | no | `true`: a layer band filters the waveform itself, not only the levels and spectrum. |
-| `params` | no | Up to 16 controls (below). |
+| `params` | no | Up to 24 controls (below). |
 
 Each entry in `params`:
 
@@ -67,7 +68,7 @@ Each entry in `params`:
 |---|---|
 | `id` | The name in your shader (`params().sides`) and in saved files. A lowercase identifier (`a-z`, `0-9`, `_`), not a WGSL keyword; a word WGSL only reserves (`smooth`, `filter`, `target`...) is allowed and reads `P.smooth_` in the shader. Like the visual's id, keep it stable: renaming it resets everyone's saved value. |
 | `label` | The control's label. Sentence case ("Line width"), no underscores. |
-| `type` | `slider` (the default), `integer`, `toggle` or `choice`. |
+| `type` | `slider` (the default), `integer`, `toggle`, `choice` or `button`. A button is not saved: the shader sees how many times it has been pressed since the visual was picked, so compare with a count kept in a prepare item to act once per press (the Sigil's New arrangement). |
 | `group` | A heading. Controls with the same group sit together, groups in order of first use. Without groups everything lands under "Controls". |
 | `min`, `max` | The range of a slider or integer (default 0 to 1). |
 | `default` | A number; `true`/`false` for a toggle; the option's name for a choice (`"knot"`). Double-clicking a control resets it here. |
@@ -76,6 +77,8 @@ Each entry in `params`:
 | `log` | A logarithmic slider, for gains and times that span decades. |
 | `unit` | Shown after the value: `"px"`, `"s"`, `"x"`. Keep it to a couple of characters (the value column is narrow); say more in `help`. |
 | `help` | The control's tooltip. |
+| `zero` | For an integer: a name for 0 as a setting of its own below `min` (`"By track"`); values between 0 and `min` snap to `min`. The Sigil's Star sides is 0 ("By track") or 3 to 8. |
+| `decimals` | How many decimals a slider's value shows (by default it follows the range). |
 
 Every control is an `f32` in the shader: a toggle is 0 or 1, a choice is its option's index, an integer is a whole number. Values are saved in the layer as `"polygon": { "sides": 6, "spin": 0.02, ... }`, so presets and scenes hold them like any built-in's.
 
@@ -91,7 +94,7 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
 }
 ```
 
-Add any helper functions and constants you like above it. Names the API already uses (below, plus `FsIn`, `fullscreen_vertex`, `vs_main`, `fs_main`, `cs_main`, `cs_line`, `V`, `Params`, `ITEMS`, `LINE_POINTS`, `LinePoint`, `MeshVertex`, `MeshFragment`, `MeshOut`, `vs_mesh`, `fs_mesh`) cannot be reused.
+Add any helper functions and constants you like above it. Names the API already uses (below, plus `FsIn`, `fullscreen_vertex`, `vs_main`, `fs_main`, `cs_main`, `cs_line`, `V`, `Params`, `ITEMS`, `LINE_POINTS`, `LinePoint`, `MeshVertex`, `MeshFragment`, `MeshOut`, `vs_mesh`, `fs_mesh`, `TrailOut`, `trail_out`) cannot be reused.
 
 ### Coordinates
 
@@ -137,12 +140,17 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `V.bpm` | ~60..200 | The tracked tempo. |
 | `V.onset` | 0..1 | A pulse on any onset (a hit, a note start), decaying. |
 | `V.onsets` | 0..1 each | Onset pulses for low, mid, high and all: `V.onsets.x` is kicks, `.z` is hats. |
+| `V.hits` | 0 or 1 each | 1 on the frame an onset is detected (low, mid, high, all). At high frame rates one detection can show on two frames, so act on a rise from 0 (keep last frame's value in a prepare item). |
+| `V.strengths` | ~0..1 each | How strong the onset is now, continuous (low, mid, high, all). |
+| `V.confidence` | 0..1 | How sure the beat tracker is; `V.beat` is already scaled by it. Step things on beats or bars only above about 0.3. |
+| `V.silent` | 0 or 1 | 1 when nothing is playing. |
 | `V.key` | 0..11 | The dominant pitch class, C = 0. |
 | `V.quiet` | 0 or 1 | 1 during a quiet passage (a breakdown, the gap between tracks). |
 | `band(i)` | ~0..1 | Band `i` of 32, log-spaced from 30 Hz (0) to 16 kHz (31), each auto-gained, smoothed with a 30 ms attack and 200 ms release. |
 | `band_raw(i)` | ~0..1 | The same without smoothing: jumpier, better for flashes. |
 | `band_at(t)` | ~0..1 | The smoothed spectrum at `t` 0..1 (low to high), interpolated between bands. The easy way to map a position to a frequency. |
 | `chroma(i)` | 0..1 | Pitch class `i` (C = 0, C# = 1 ... B = 11), normalised so the loudest class is 1. |
+| `chroma_slow(i)` | 0..1 | The same over the last seconds: the chord rather than the note. |
 | `wave(t)` | ~-1..1 | The last 1024 samples (`t` 0 oldest, 1 newest) as (left, right), auto-gained. |
 | `wave_mono(t)` | ~-1..1 | Their average. |
 | `sample(i)` | ~-1..1 | Sample `i` of the last 4096, newest first, (left, right), auto-gained: for walking the waveform sample by sample. |
@@ -151,6 +159,7 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `V.wave_new` | count | How many of `sample()`'s newest samples arrived since last frame: a trace that draws exactly these (the scope) never repeats or skips one. |
 | `V.auto_gain`, `V.sample_rate` | | The gain already applied to the waveform (divide by it to undo), and samples per second. |
 | `prev(uv)` | colour | Your own last frame, before effects (with `"feedback": true`; black otherwise). |
+| `trail(uv)`, `write_trail(c)` | colour | With `"trail": true`: last frame's trail, and this pixel's trail for the next frame (see "Keeping a trail"). |
 | `picture(uv)`, `picture_prev(uv)` | colour | With `"pictures"` in the manifest: the current picture (album art or a photo from the photos folder) and the one before it, 0..1 across, y down, mirrored outside. `V.picture_fade` (0..1, eased) is how far the new one has replaced the old; `V.picture_aspect`, `V.picture_prev_aspect` are width over height; `V.picture_count` goes up by one per new picture. |
 | `art(uv)` | colour | The playing track's album art at `uv` (0..1, y down, square, linear colour); black when there is none. It changes with the track. To map it into centred coordinates: `art(vec2<f32>(p.x, -p.y) * 0.5 + 0.5)`. |
 | `V.has_art` | 0 or 1 | 1 when the track has album art. |
@@ -385,6 +394,19 @@ fn vertex(i: u32) -> MeshVertex {
 
 Corners 3k, 3k + 1 and 3k + 2 make triangle k, and triangles are drawn in order, so draw far things first when near ones should cover them (the painter's way; there is no depth test). An optional `fn paint(f: MeshFragment) -> vec4<f32>` colours each pixel from the interpolated `f.colour` and `f.data` and its `f.pixel` position; `fwidth` and the other derivatives work there, which is how **Ripples** (`assets/visuals/ripples/`) draws contour lines one pixel wide at every distance. Triangles go over whatever `shade` returned, and the line goes over them; leave `shade` out when the triangles are the picture.
 
+## Keeping a trail
+
+Feedback (`prev`) keeps the whole picture, so everything smears. When only some things should linger (a flash, a stroke) while the rest stays sharp, ask for a trail: `"trail": true` in the manifest gives `shade` a second picture that is kept but not drawn. Write this pixel's trail with `write_trail(c)` and read last frame's with `trail(uv)`; what you return is still the picture, so add the trail to it yourself:
+
+```wgsl
+let keep = exp(-V.dt / 0.35);                       // fade over about a third of a second
+let kept = max(trail(uv) * keep, fresh);            // fresh: this frame's flashes
+write_trail(kept);
+return steady + kept;
+```
+
+The **Sigil** works this way: its rings, orbs and star are drawn fresh each frame, while its rays, the pen on the trace, the drips and the drop flare go into the trail and fade by the Afterimage control. A pixel that does not call `write_trail` leaves black in the trail. It costs a second full-size texture and a second target in the full-screen pass.
+
 ## A performance budget
 
 `shade` runs for every pixel: 3.7 million at 2560x1440, 8.3 million at 4K, every frame. A line of code is cheap; a line inside a loop is that line times the loop count, times millions.
@@ -405,7 +427,8 @@ What a frame costs (release build, RTX 2070 Super, 2560x1440):
 | Eclipse (16 dots, a loop with a halo per dot, levels in `prepare`) | 0.69 |
 | Eclipse at 64 dots | 2.7 |
 | Eclipse at 16 and 64 dots before it had a `prepare` step | 1.1 and 4.5 |
-| The heaviest visuals (Black hole, loaded since its port; Sigil) | ~4 |
+| Sigil (rings, rays, orbs, star, triangles, trace and drips per pixel; 81 prepare items; a trail) | ~2.8 |
+| Black hole (a ray march per pixel) | ~4 |
 
 The frame you have: 4.2 ms at 240 Hz, 6.9 at 144, 16.7 at 60, for everything: three layers, their effects, the Picture and the panel. The app's own goal is that a full scene runs on one ordinary PC. So **aim for 1 ms or less for a visual at 2560x1440**, treat 2 ms as heavy, and leave 3.5 ms to the two built-ins that earn it. Costs scale with pixels: double them for 4K.
 
@@ -416,7 +439,9 @@ The frame you have: 4.2 ms at 240 Hz, 6.9 at 144, 16.7 at 60, for everything: th
 - **Skip early.** Test a cheap bound first (`if (d > reach) { continue; }`) before the expensive falloff.
 - **Hoist.** Anything that does not depend on the pixel (a band level, a radius, a `sin` of the time) is the same for all 3.7 million pixels. Keep it outside loops, and when it is per item, move it into `prepare` (above): that took Eclipse from 1.1 to 0.69 ms.
 
-Two smaller traps: transcendental functions (`exp`, `pow`, `atan2`, `sin`) cost several times a multiply-add, so keep them out of inner loops; and derivatives (`dpdx`, `fwidth`) are not allowed inside branches that depend on the pixel, so compute them first or use `pixel()` instead.
+Three smaller traps: a vector indexed by a runtime value inside a per-pixel loop (`v[i % 4u]`) can be much slower than picking the component with `select` (on D3D it went through a temporary array: 0.8 ms of the Sigil's frame); transcendental functions (`exp`, `pow`, `atan2`, `sin`) cost several times a multiply-add, so keep them out of inner loops; and derivatives (`dpdx`, `fwidth`) are not allowed inside branches that depend on the pixel, so compute them first or use `pixel()` instead.
+
+**Build time.** On Windows your shader is compiled when a layer picks the visual (and when you save it), and the app waits for that: Polygon takes a tenth of a second, the Black hole and Crystal over a second. The compiler (FXC, then the driver) works on the code after it has expanded every function into its caller and unrolled every loop with a fixed count, so the size that matters is that expanded size. What cost the Sigil the most: a struct holding arrays passed around and copied (each copy is every element), the same big helper called from two places (expanded twice), and writing an array element at a runtime index inside a loop (FXC refuses some of these outright: "array reference cannot be used as an l-value"). Build values once, return them whole, and call a heavy helper from one place. The first Sigil took 2.8 s to build; these changes brought it to about 1.4.
 
 ## Debugging
 
@@ -445,7 +470,7 @@ What a loaded visual cannot do yet, each a possible extension of the format:
 - **State is four numbers per item**, kept by `prepare` from frame to frame, and lost when the app restarts or the visual is picked again.
 - **No depth test**: triangles are drawn in the order given. (Particles are prepare items drawn as triangles, as Ribbons does.)
 - **Pictures** are the album art and the photos folder (through the picture feed); a folder of a visual's own images is not supported.
-- **Sixteen controls**, all numbers.
+- **24 controls**, all numbers (a button is a press count).
 - **A changed `id` needs a restart**, and a folder deleted while the app runs stays listed until then.
 
 ---

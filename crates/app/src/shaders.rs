@@ -46,8 +46,6 @@ shader_table!(
     "glow.wgsl",
     "vignette.wgsl",
     "colorify.wgsl",
-    "sigil_params.wgsl",
-    "sigil.wgsl",
 );
 
 fn is_prelude(name: &str) -> bool {

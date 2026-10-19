@@ -956,77 +956,6 @@ impl Default for Colorify {
     }
 }
 
-/// Sigil: a neon sacred-geometry glyph (`scenes/sigil.rs`).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct SigilParams {
-    /// Glyph size as a fraction of the short side.
-    pub scale: f32,
-    /// Coloured halo around every tube.
-    pub glow: f32,
-    pub rings: f32,
-    pub rays: f32,
-    pub orbs: f32,
-    /// The centre star polygon, cardinal triangles and diamonds.
-    pub shapes: f32,
-    /// The sigil trace and its pen.
-    pub trace: f32,
-    /// Paint drips from bright elements.
-    pub drips: f32,
-    /// The innermost ring and the centre flare.
-    pub core: f32,
-    /// The painterly ground and its splatter (0 = none; the glyph stands alone).
-    pub ground: f32,
-    /// Ray afterimage life, seconds.
-    pub persistence: f32,
-    /// Rotation of the glyph and the orbit.
-    pub spin: f32,
-    /// How much bands, onsets and beats move it.
-    pub react: f32,
-    /// Extinguish and relight a new arrangement on a track change.
-    pub rebuild: bool,
-    /// Radial spacing of everything outside the inner ring (1 = as drawn).
-    pub spread: f32,
-    /// How far drops push the spread outward.
-    pub explode: f32,
-    /// Tube width multiplier.
-    pub line_width: f32,
-    /// 0 = lines in their own colour, 1 = white-hot cores.
-    pub hot: f32,
-    /// Overrides of the track seed; 0 = by track.
-    pub sides: u32,
-    pub nest: u32,
-    pub symmetry: u32,
-}
-
-impl Default for SigilParams {
-    fn default() -> Self {
-        Self {
-            scale: 0.8,
-            glow: 1.0,
-            rings: 1.0,
-            rays: 0.7,
-            orbs: 1.0,
-            shapes: 1.0,
-            trace: 1.0,
-            drips: 1.0,
-            core: 1.0,
-            ground: 0.0,
-            persistence: 0.35,
-            spin: 1.0,
-            react: 1.0,
-            rebuild: true,
-            spread: 1.0,
-            explode: 0.5,
-            line_width: 1.0,
-            hot: 0.3,
-            sides: 0,
-            nest: 0,
-            symmetry: 0,
-        }
-    }
-}
-
 /// How a director runs: by hand, by the system, or by a saved sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -1206,19 +1135,6 @@ impl Default for Layer {
 impl Layer {
     pub fn new(visual: &str, enabled: bool, opacity: f32) -> Self {
         Self { visual: visual.into(), enabled, opacity, ..Self::default() }
-    }
-
-    /// Visual `id`'s parameters, typed; its defaults where the layer has none
-    /// (or a field is missing). Reads the stored JSON in place.
-    pub fn get<T: serde::de::DeserializeOwned + Default>(&self, id: &str) -> T {
-        self.params.get(id).and_then(|v| T::deserialize(v).ok()).unwrap_or_default()
-    }
-
-    /// Store visual `id`'s parameters.
-    pub fn put<T: Serialize>(&mut self, id: &str, value: &T) {
-        if let Ok(v) = serde_json::to_value(value) {
-            self.params.insert(id.to_string(), v);
-        }
     }
 
     /// Bring a loaded layer up to date: the one-build `fold` field becomes the

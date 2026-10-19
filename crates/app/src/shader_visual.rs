@@ -1,5 +1,5 @@
 //! Visuals loaded from a folder: a `visual.json` manifest (names, credit,
-//! up to sixteen parameters) and a `visual.wgsl` holding one function,
+//! up to 24 parameters) and a `visual.wgsl` holding one function,
 //! `fn shade(uv: vec2<f32>) -> vec3<f32>`, written against the API in
 //! `shaders/visual_api.wgsl` (time, a music clock, bands, pitch classes,
 //! beats, onsets, the waveform, the layer's palette and tint, the
@@ -28,7 +28,7 @@ use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, fullscreen_pass, hdr_textu
 use crate::settings::Layer;
 use crate::shaders::ShaderSet;
 
-pub const MAX_PARAMS: usize = 16;
+pub const MAX_PARAMS: usize = 24;
 /// Most items a prepare step may compute.
 pub const MAX_ITEMS: u32 = 262_144;
 /// Most triangles a loaded visual may draw.
@@ -49,6 +49,8 @@ pub enum ParamKind {
     Integer,
     Toggle,
     Choice,
+    /// A button: not saved; the shader sees how many times it was pressed.
+    Button,
 }
 
 /// One control in `visual.json`.
@@ -84,6 +86,13 @@ pub struct ParamDef {
     /// Tooltip.
     #[serde(default)]
     pub help: String,
+    /// For an integer: 0 is a setting of its own below `min`, shown as this
+    /// ("By track"); values between 0 and `min` snap to `min`.
+    #[serde(default)]
+    pub zero: String,
+    /// Decimals shown for a slider's value (default: by its range).
+    #[serde(default)]
+    pub decimals: Option<usize>,
 }
 
 fn one() -> f32 {
@@ -130,6 +139,10 @@ struct Manifest {
     /// Pictures for `picture(uv)`: the album art, or the photos folder.
     #[serde(default)]
     pictures: Option<Pictures>,
+    /// A second picture `shade` writes with `write_trail` and reads back
+    /// next frame with `trail(uv)`.
+    #[serde(default)]
+    trail: bool,
 }
 
 /// Where a visual's pictures come from: a choice control whose second
@@ -170,6 +183,8 @@ pub struct ShaderDef {
     pub pictures: Option<Pictures>,
     pub paint: bool,
     pub band_waveform: bool,
+    /// `shade` keeps a trail (`write_trail`, read back with `trail`).
+    pub trail: bool,
     pub wgsl: String,
     /// The folder it came from, watched for changes (none for embedded copies).
     pub dir: Option<PathBuf>,
@@ -243,6 +258,9 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
     if !matches!(m.line_style.as_str(), "" | "line" | "beam") {
         return Err(format!("visual.json: line_style \"{}\" is not \"line\" or \"beam\"", m.line_style));
     }
+    if m.trail && !defines(wgsl, "shade") {
+        return Err("visual.json sets \"trail\": fn shade writes it, and visual.wgsl has none".into());
+    }
     if !defines(wgsl, "shade") && m.line == 0 && m.triangles == 0 {
         return Err("visual.wgsl needs fn shade(uv: vec2<f32>) -> vec3<f32> (only a visual with a line or triangles may leave it out)".into());
     }
@@ -266,7 +284,7 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
         return Err(format!("visual.json: line_count \"{}\" is not a number param", m.line_count));
     }
     let short = if m.short.is_empty() { m.name.clone() } else { m.short };
-    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, wgsl: wgsl.to_string(), dir })
+    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, wgsl: wgsl.to_string(), dir })
 }
 
 // ------------------------------------------------------------ values
@@ -296,6 +314,7 @@ impl ParamDef {
             // Whole numbers stay whole in saved files ("count": 64, not 64.0).
             ParamKind::Integer => Value::from(v.as_f64().or(self.default.as_f64()).unwrap_or(self.min as f64).round() as i64),
             ParamKind::Slider => Value::from(v.as_f64().or(self.default.as_f64()).unwrap_or(self.min as f64)),
+            ParamKind::Button => Value::Null,
         }
     }
 
@@ -313,7 +332,8 @@ impl ShaderDef {
     /// Full parameters from what a layer stores, defaults filled in.
     pub fn params_json(&self, stored: Option<&Value>) -> Value {
         let obj = stored.and_then(Value::as_object);
-        Value::Object(self.params.iter().map(|p| (p.id.clone(), p.value(obj.and_then(|o| o.get(&p.id))))).collect())
+        // Buttons are not saved.
+        Value::Object(self.params.iter().filter(|p| p.kind != ParamKind::Button).map(|p| (p.id.clone(), p.value(obj.and_then(|o| o.get(&p.id))))).collect())
     }
 
     /// The WGSL the engine adds between the API and the visual's code.
@@ -362,11 +382,13 @@ impl ShaderDef {
         if !self.shade {
             prepare.push_str("\nfn shade(uv: vec2<f32>) -> vec3<f32> {\n    return vec3<f32>(0.0);\n}\n");
         }
-        prepare_after(&prepare, format!(
-            "{}{}\n\n@fragment\nfn fs_main(in: FsIn) -> @location(0) vec4<f32> {{\n    let c = shade(in.uv);\n    // One NaN pixel would black out the layer's levelling: drop it.\n    let ok = all(c == c);\n    return vec4<f32>(select(vec3<f32>(0.0), max(c, vec3<f32>(0.0)), ok), 1.0);\n}}\n",
-            self.prefix(shaders),
-            wgsl
-        ))
+        // One NaN pixel would black out the layer's levelling: drop it.
+        let main = if self.trail {
+            "@fragment\nfn fs_main(in: FsIn) -> TrailOut {\n    trail_out = vec3<f32>(0.0);\n    let c = shade(in.uv);\n    let t = trail_out;\n    var o: TrailOut;\n    o.colour = vec4<f32>(select(vec3<f32>(0.0), max(c, vec3<f32>(0.0)), all(c == c)), 1.0);\n    o.trail = vec4<f32>(select(vec3<f32>(0.0), max(t, vec3<f32>(0.0)), all(t == t)), 1.0);\n    return o;\n}\n\nstruct TrailOut {\n    @location(0) colour: vec4<f32>,\n    @location(1) trail: vec4<f32>,\n};\n"
+        } else {
+            "@fragment\nfn fs_main(in: FsIn) -> @location(0) vec4<f32> {\n    let c = shade(in.uv);\n    let ok = all(c == c);\n    return vec4<f32>(select(vec3<f32>(0.0), max(c, vec3<f32>(0.0)), ok), 1.0);\n}\n"
+        };
+        prepare_after(&prepare, format!("{}{}\n\n{main}", self.prefix(shaders), wgsl))
     }
 }
 
@@ -437,6 +459,12 @@ fn read_folder_except(root: &Path, watch: bool, skip: &[PathBuf]) -> Vec<ShaderD
         }
     }
     out
+}
+
+/// Whether `id` is one of the visuals that ship with the app.
+pub fn is_factory(id: &str) -> bool {
+    static IDS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    IDS.get_or_init(|| embedded().into_iter().map(|d| d.id).collect()).iter().any(|f| f == id)
 }
 
 pub fn embedded() -> Vec<ShaderDef> {
@@ -575,7 +603,7 @@ struct Uniform {
     palette_shift: f32,
     quiet: f32,
     has_art: f32,
-    p: [[f32; 4]; 4],
+    p: [[f32; 4]; 6],
     bands: [[f32; 4]; 8],
     raw: [[f32; 4]; 8],
     chroma: [[f32; 4]; 3],
@@ -589,7 +617,12 @@ struct Uniform {
     picture_aspect: f32,
     picture_prev_aspect: f32,
     picture_count: f32,
-    _pad6: [f32; 3],
+    confidence: f32,
+    silent: f32,
+    _pad8: f32,
+    hits: [f32; 4],
+    strengths: [f32; 4],
+    chroma_slow: [[f32; 4]; 3],
 }
 
 pub struct ShaderVisual {
@@ -626,6 +659,9 @@ pub struct ShaderVisual {
     wave_buf: wgpu::Buffer,
     sampler: wgpu::Sampler,
     out: [wgpu::TextureView; 2],
+    /// The trail's two textures (with "trail"), paired with `out`.
+    trail: Option<[wgpu::TextureView; 2]>,
+    size: (u32, u32),
     black: wgpu::TextureView,
     /// The album art, and the track id it was last filled for.
     art: wgpu::Texture,
@@ -654,6 +690,8 @@ pub struct ShaderVisual {
     deck_next: f32,
     pic_art: u64,
     mirror: wgpu::Sampler,
+    /// How many times each button control was pressed (what the shader sees).
+    presses: BTreeMap<String, u32>,
 }
 
 /// A picture texture filled with `rgba` (sRGB, one level); unfilled it is
@@ -753,6 +791,10 @@ fn line_groups(device: &wgpu::Device, out_layout: &wgpu::BindGroupLayout, layout
     (out, draw)
 }
 
+fn trail_textures(device: &wgpu::Device, id: &str, width: u32, height: u32) -> [wgpu::TextureView; 2] {
+    [hdr_texture(device, &format!("{id} trail a"), width, height), hdr_texture(device, &format!("{id} trail b"), width, height)]
+}
+
 fn item_buffers(device: &wgpu::Device, n: u32) -> [wgpu::Buffer; 2] {
     let make = |label| device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: n.max(1) as u64 * 16, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false });
     [make("loaded visual items a"), make("loaded visual items b")]
@@ -778,6 +820,7 @@ impl ShaderVisual {
                 entry(6, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
                 entry(7, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
                 entry(8, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
+                entry(9, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
             ],
         });
         let out_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -821,6 +864,8 @@ impl ShaderVisual {
             wave_buf: device.create_buffer(&wgpu::BufferDescriptor { label: Some("loaded visual wave"), size: (WAVE * 8) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false }),
             sampler: scene::linear_sampler(device),
             out: [hdr_texture(device, &format!("{} a", def.id), width, height), hdr_texture(device, &format!("{} b", def.id), width, height)],
+            trail: def.trail.then(|| trail_textures(device, &def.id, width, height)),
+            size: (width, height),
             black: hdr_texture(device, "loaded visual black", 1, 1),
             groups: Vec::new(),
             layout,
@@ -853,6 +898,7 @@ impl ShaderVisual {
                 min_filter: wgpu::FilterMode::Linear,
                 ..Default::default()
             }),
+            presses: BTreeMap::new(),
         };
         me.make_groups(device);
         me.reload(device, shaders);
@@ -863,7 +909,7 @@ impl ShaderVisual {
     }
 
     fn make_groups(&mut self, device: &wgpu::Device) {
-        let group = |prev: &wgpu::TextureView, items: &wgpu::Buffer| {
+        let group = |prev: &wgpu::TextureView, trail: &wgpu::TextureView, items: &wgpu::Buffer| {
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("loaded visual"),
                 layout: &self.layout,
@@ -877,10 +923,13 @@ impl ShaderVisual {
                     wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::TextureView(&self.pics[0]) },
                     wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::TextureView(&self.pics[1]) },
                     wgpu::BindGroupEntry { binding: 8, resource: wgpu::BindingResource::Sampler(&self.mirror) },
+                    wgpu::BindGroupEntry { binding: 9, resource: wgpu::BindingResource::TextureView(trail) },
                 ],
             })
         };
-        self.groups = [&self.black, &self.out[0], &self.out[1]].into_iter().flat_map(|prev| [group(prev, &self.items[0]), group(prev, &self.items[1])]).collect();
+        // Each output pairs with the trail written alongside it.
+        let trail = |k: usize| self.trail.as_ref().map_or(&self.black, |t| &t[k]);
+        self.groups = [(&self.black, &self.black), (&self.out[0], trail(0)), (&self.out[1], trail(1))].into_iter().flat_map(|(prev, t)| [group(prev, t, &self.items[0]), group(prev, t, &self.items[1])]).collect();
         self.item_groups = self
             .items
             .iter()
@@ -896,6 +945,8 @@ impl ShaderVisual {
         let with_prepare = self.live.items > 0;
         let with_line = self.live.line > 0;
         let with_mesh = self.live.triangles > 0;
+        let with_trail = self.live.trail;
+        let started = Instant::now();
         let built = scene::guarded(device, || {
             let m = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(&id), source: wgpu::ShaderSource::Wgsl(src.into()) });
             let prepare = with_prepare.then(|| {
@@ -907,10 +958,12 @@ impl ShaderVisual {
                 device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("loaded visual line points"), layout: Some(&pl), module: &m, entry_point: Some("cs_line"), compilation_options: Default::default(), cache: None })
             });
             let mesh = with_mesh.then(|| mesh_pipeline(device, layout, &m));
-            (scene::pipeline(device, &id, layout, &m, HDR_FORMAT, None), prepare, line, mesh)
+            let picture = if with_trail { scene::pipeline2(device, &id, layout, &m, HDR_FORMAT) } else { scene::pipeline(device, &id, layout, &m, HDR_FORMAT, None) };
+            (picture, prepare, line, mesh)
         });
         match built {
             Ok((p, prepare, line, mesh)) => {
+                tracing::debug!("visual {} built in {} ms", self.live.id, started.elapsed().as_millis());
                 self.pipeline = Some(p);
                 self.prepare = prepare;
                 self.line_cs = line;
@@ -924,8 +977,12 @@ impl ShaderVisual {
                 if self.live.line > 0 && self.line_draw.is_none() {
                     self.line_draw = line_pipeline(device, shaders, &self.line_layout);
                 }
-                // A reload may have changed how many items there are.
-                if self.live.items != self.items_len {
+                // A reload may have changed how many items there are, or the trail.
+                let trail = self.live.trail != self.trail.is_some();
+                if trail {
+                    self.trail = self.live.trail.then(|| trail_textures(device, &self.def.id, self.size.0, self.size.1));
+                }
+                if self.live.items != self.items_len || trail {
                     self.items = item_buffers(device, self.live.items);
                     self.items_len = self.live.items;
                     self.make_groups(device);
@@ -971,6 +1028,10 @@ impl Scene for ShaderVisual {
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
         self.out = [hdr_texture(device, &format!("{} a", self.def.id), width, height), hdr_texture(device, &format!("{} b", self.def.id), width, height)];
+        if self.trail.is_some() {
+            self.trail = Some(trail_textures(device, &self.def.id, width, height));
+        }
+        self.size = (width, height);
         self.make_groups(device);
     }
 
@@ -1011,9 +1072,13 @@ impl Scene for ShaderVisual {
             chroma[i / 4][i % 4] = *c;
         }
         let stored = layer.params.get(&self.def.id).and_then(Value::as_object);
-        let mut p = [[0.0f32; 4]; 4];
+        let mut p = [[0.0f32; 4]; MAX_PARAMS / 4];
         for (i, d) in self.live.params.iter().enumerate().take(MAX_PARAMS) {
-            p[i / 4][i % 4] = d.number(stored.and_then(|o| o.get(&d.id)));
+            p[i / 4][i % 4] = if d.kind == ParamKind::Button { self.presses.get(&d.id).copied().unwrap_or(0) as f32 } else { d.number(stored.and_then(|o| o.get(&d.id))) };
+        }
+        let mut chroma_slow = [[0.0f32; 4]; 3];
+        for (i, c) in f.chroma_slow.iter().enumerate() {
+            chroma_slow[i / 4][i % 4] = *c;
         }
         self.feed_pictures(queue, ctx, stored, dt);
         let u = Uniform {
@@ -1053,7 +1118,12 @@ impl Scene for ShaderVisual {
             picture_aspect: self.pic_size[0].0 as f32 / self.pic_size[0].1.max(1) as f32,
             picture_prev_aspect: self.pic_size[1].0 as f32 / self.pic_size[1].1.max(1) as f32,
             picture_count: self.pic_count as f32,
-            _pad6: [0.0; 3],
+            confidence: f.beat_confidence,
+            silent: f.silent as u32 as f32,
+            _pad8: 0.0,
+            hits: f.onset_hit.map(|h| h as u32 as f32),
+            strengths: f.onset_strength,
+            chroma_slow,
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
         // The album art, once per track.
@@ -1088,8 +1158,8 @@ impl Scene for ShaderVisual {
             scene::clear_pass(encoder, "loaded visual (no shader)", &self.out[self.cur]);
             return;
         };
-        // With feedback the two outputs ping-pong and `prev` reads the other.
-        let (write, prev) = if self.live.feedback { (1 - self.cur, 1 + self.cur) } else { (self.cur, 0) };
+        // With feedback (or a trail) the two outputs ping-pong and `prev` reads the other.
+        let (write, prev) = if self.live.feedback || self.trail.is_some() { (1 - self.cur, 1 + self.cur) } else { (self.cur, 0) };
         // The prepare step reads last frame's items and writes this frame's.
         if let Some(prepare) = &self.prepare {
             let next = 1 - self.icur;
@@ -1123,7 +1193,10 @@ impl Scene for ShaderVisual {
         // The passes in order (picture, triangles, line); the first clears.
         let picture = self.live.shade || (line.is_none() && mesh.is_none());
         if picture {
-            fullscreen_pass(encoder, &self.def.id, &self.out[write], wgpu::LoadOp::Clear(wgpu::Color::BLACK), pipeline, group);
+            match &self.trail {
+                Some(t) if self.live.trail => scene::fullscreen_pass2(encoder, &self.def.id, &self.out[write], &t[write], pipeline, group),
+                _ => fullscreen_pass(encoder, &self.def.id, &self.out[write], wgpu::LoadOp::Clear(wgpu::Color::BLACK), pipeline, group),
+            }
         }
         if let Some(mesh) = mesh {
             let load = if picture { wgpu::LoadOp::Load } else { wgpu::LoadOp::Clear(wgpu::Color::BLACK) };
@@ -1195,15 +1268,35 @@ impl Scene for ShaderVisual {
                                 values.insert(p.id.clone(), Value::String(p.choice_value(i)));
                             }
                         }
+                        ParamKind::Button => {
+                            let r = ghost_button(ui, &p.label, false);
+                            let r = if p.help.is_empty() { r } else { r.on_hover_text(&p.help) };
+                            if r.clicked() {
+                                *self.presses.entry(p.id.clone()).or_default() += 1;
+                            }
+                        }
                         ParamKind::Integer | ParamKind::Slider => {
                             let int = p.kind == ParamKind::Integer;
                             let mut x = v.as_f64().unwrap_or(0.0) as f32;
                             let d = def.as_f64().unwrap_or(0.0) as f32;
                             let span = (p.max - p.min).abs();
                             let unit = if p.unit.is_empty() { String::new() } else { format!(" {}", p.unit) };
-                            let r = slider_def(ui, &p.label, &mut x, Some(d), p.min..=p.max, move |v| if int || span > 20.0 { format!("{v:.0}{unit}") } else if span > 2.0 { format!("{v:.1}{unit}") } else { format!("{v:.2}{unit}") }, p.log);
+                            // An integer with a zero setting: 0 reads as its name, and below min snaps to min.
+                            let zero = (int && !p.zero.is_empty()).then(|| p.zero.clone());
+                            let (lo, low, places) = (if zero.is_some() { 0.0 } else { p.min }, p.min as f64, p.decimals);
+                            let r = slider_def(ui, &p.label, &mut x, Some(d), lo..=p.max, move |v| match &zero {
+                                Some(z) if v < 0.5 => z.clone(),
+                                Some(_) => format!("{:.0}{unit}", v.max(low)),
+                                None if places.is_some() => format!("{v:.*}{unit}", places.unwrap_or(2)),
+                                None if int || span > 20.0 => format!("{v:.0}{unit}"),
+                                None if span > 2.0 => format!("{v:.1}{unit}"),
+                                None => format!("{v:.2}{unit}"),
+                            }, p.log);
                             if !p.help.is_empty() {
                                 r.on_hover_text(&p.help);
+                            }
+                            if int && !p.zero.is_empty() && x >= 0.5 {
+                                x = x.max(p.min);
                             }
                             values.insert(p.id.clone(), if int { Value::from(x.round() as i64) } else { Value::from(x as f64) });
                         }
@@ -1333,10 +1426,13 @@ mod tests {
     fn uniform_layout_matches_wgsl() {
         assert_eq!(std::mem::offset_of!(Uniform, onsets), 64);
         assert_eq!(std::mem::offset_of!(Uniform, p), 112);
-        assert_eq!(std::mem::offset_of!(Uniform, bands), 176);
-        assert_eq!(std::mem::offset_of!(Uniform, chroma), 432);
-        assert_eq!(std::mem::offset_of!(Uniform, palette), 480);
-        assert_eq!(std::mem::offset_of!(Uniform, wave_new), 480 + 512);
+        assert_eq!(std::mem::offset_of!(Uniform, bands), 208);
+        assert_eq!(std::mem::offset_of!(Uniform, chroma), 464);
+        assert_eq!(std::mem::offset_of!(Uniform, palette), 512);
+        assert_eq!(std::mem::offset_of!(Uniform, wave_new), 512 + 512);
+        assert_eq!(std::mem::offset_of!(Uniform, hits), 512 + 512 + 48);
+        assert_eq!(std::mem::offset_of!(Uniform, chroma_slow), 512 + 512 + 80);
+        assert_eq!(std::mem::size_of::<Uniform>(), 512 + 512 + 128);
     }
 
     #[test]

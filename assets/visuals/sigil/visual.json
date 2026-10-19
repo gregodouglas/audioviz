@@ -1,0 +1,33 @@
+{
+  "id": "sigil",
+  "name": "Sigil",
+  "short": "Sigil",
+  "summary": "A neon sacred-geometry glyph: rings per band, rays on onsets, orbs by pitch, rebuilt on every track.",
+  "hint": "Rings breathe with their band (sub to air, inside out), rays strike on onsets at the angle of the pitch class, the orbs light with the chord, the star and triangles turn with energy and step on bars, a pen writes the sigil trace in time with the beat, and paint runs from whatever is bright when it is loud. Every track draws a new glyph. Give the layer the neon or rave palette.",
+  "items": 81,
+  "trail": true,
+  "params": [
+    { "id": "scale", "label": "Size", "group": "Look", "min": 0.3, "max": 1.6, "default": 0.8, "decimals": 2 },
+    { "id": "spread", "label": "Spread", "group": "Look", "min": 0.2, "max": 2.2, "default": 1.0, "decimals": 2 },
+    { "id": "line_width", "label": "Line width", "group": "Look", "min": 0.3, "max": 3.0, "default": 1.0, "decimals": 2 },
+    { "id": "hot", "label": "Hot core", "group": "Look", "min": 0.0, "max": 1.0, "default": 0.3, "decimals": 2 },
+    { "id": "glow", "label": "Glow", "group": "Look", "min": 0.0, "max": 3.0, "default": 1.0, "decimals": 2 },
+    { "id": "persistence", "label": "Afterimage", "group": "Look", "min": 0.05, "max": 4.0, "default": 0.35, "log": true, "unit": "s", "decimals": 2, "help": "How long rays, the pen and drips linger." },
+    { "id": "core", "label": "Core", "group": "Elements", "min": 0.0, "max": 2.0, "default": 1.0, "help": "The innermost ring and the flare on drops." },
+    { "id": "rings", "label": "Rings", "group": "Elements", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "rays", "label": "Rays", "group": "Elements", "min": 0.0, "max": 2.0, "default": 0.7 },
+    { "id": "orbs", "label": "Orbs", "group": "Elements", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "shapes", "label": "Shapes", "group": "Elements", "min": 0.0, "max": 2.0, "default": 1.0, "help": "The centre star, the cardinal triangles and the diamonds." },
+    { "id": "trace", "label": "Trace", "group": "Elements", "min": 0.0, "max": 2.0, "default": 1.0, "help": "The sigil trace and its pen." },
+    { "id": "drips", "label": "Drips", "group": "Elements", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "ground", "label": "Ground", "group": "Elements", "min": 0.0, "max": 2.0, "default": 0.0, "help": "A painterly ground with splatter (0: the glyph stands alone)." },
+    { "id": "sides", "label": "Star sides", "type": "integer", "group": "Structure", "min": 3, "max": 8, "default": 0, "zero": "By track" },
+    { "id": "nest", "label": "Nesting", "type": "integer", "group": "Structure", "min": 1, "max": 4, "default": 0, "zero": "By track" },
+    { "id": "symmetry", "label": "Ray symmetry", "type": "integer", "group": "Structure", "min": 1, "max": 6, "default": 0, "zero": "By track" },
+    { "id": "rebuild", "label": "Rebuild on track change", "type": "toggle", "group": "Structure", "default": true },
+    { "id": "new_arrangement", "label": "New arrangement", "type": "button", "group": "Structure", "help": "Put the glyph out and light a new one." },
+    { "id": "spin", "label": "Spin", "group": "Motion", "min": 0.0, "max": 4.0, "default": 1.0, "decimals": 2 },
+    { "id": "explode", "label": "Explode on drops", "group": "Motion", "min": 0.0, "max": 2.0, "default": 0.5 },
+    { "id": "react", "label": "Reacts", "group": "Motion", "min": 0.0, "max": 2.0, "default": 1.0 }
+  ]
+}

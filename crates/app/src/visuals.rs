@@ -58,7 +58,6 @@ pub fn typed<T: serde::Serialize + serde::de::DeserializeOwned + Default>(stored
 
 fn builtin() -> Vec<VisualDef> {
     vec![
-        scenes::ribbons::def(),
         scenes::kaleido::def(),
         scenes::sigil::def(),
     ]

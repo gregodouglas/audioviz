@@ -1,0 +1,23 @@
+{
+  "id": "ribbons",
+  "name": "Flow-field ribbons",
+  "short": "Ribbons",
+  "summary": "Thousands of particles riding a flow field the music stirs; slow persistence turns them into ribbons or a starfield.",
+  "credit": "",
+  "hint": "Without a palette: pitch class on a circle of fifths, pulled toward the key. With one: the chord sits around the palette's current position, spread this far; cycling moves it.",
+  "feedback": true,
+  "items": 131072,
+  "triangles": 131072,
+  "params": [
+    { "id": "count", "label": "Particles", "type": "integer", "group": "Field", "min": 256, "max": 65536, "default": 12000, "log": true },
+    { "id": "speed", "label": "Speed", "group": "Field", "min": 0.02, "max": 2.0, "default": 0.3, "log": true },
+    { "id": "scale", "label": "Field scale", "group": "Field", "min": 0.3, "max": 6.0, "default": 1.5, "log": true },
+    { "id": "curl", "label": "Curl", "group": "Field", "min": 0.0, "max": 3.0, "default": 1.0 },
+    { "id": "vortex", "label": "Chroma vortices", "group": "Field", "min": 0.0, "max": 3.0, "default": 1.0 },
+    { "id": "width", "label": "Line width", "group": "Look", "min": 0.3, "max": 4.0, "default": 1.0, "unit": "px" },
+    { "id": "intensity", "label": "Intensity", "group": "Look", "min": 0.05, "max": 10.0, "default": 1.0, "log": true },
+    { "id": "persistence", "label": "Persistence", "group": "Look", "min": 0.0001, "max": 0.95, "default": 0.3, "log": true, "help": "How much of a trail is left after one second." },
+    { "id": "saturation", "label": "Saturation", "group": "Look", "min": 0.0, "max": 1.0, "default": 0.45 },
+    { "id": "spread", "label": "Colour spread", "group": "Look", "min": 0.0, "max": 1.0, "default": 0.3 }
+  ]
+}

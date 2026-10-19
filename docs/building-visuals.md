@@ -147,6 +147,7 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `wave_mono(t)` | ~-1..1 | Their average. |
 | `sample(i)` | ~-1..1 | Sample `i` of the last 4096, newest first, (left, right), auto-gained: for walking the waveform sample by sample. |
 | `V.track` | 0..1 | A hash of the playing track: a seed for anything that should be the same each time a song plays and change with the next. |
+| `V.instance` | 0..1 | Random per layer: two layers of the same visual start from different seeds. |
 | `V.wave_new` | count | How many of `sample()`'s newest samples arrived since last frame: a trace that draws exactly these (the scope) never repeats or skips one. |
 | `V.auto_gain`, `V.sample_rate` | | The gain already applied to the waveform (divide by it to undo), and samples per second. |
 | `prev(uv)` | colour | Your own last frame, before effects (with `"feedback": true`; black otherwise). |
@@ -301,7 +302,7 @@ Anything in `shade` that does not depend on the pixel (a dot's band level, its p
 fn prepare(i: u32) -> vec4<f32> { ... }
 ```
 
-and say in `visual.json` how many items it makes: `"items": 128` (up to 16384). The engine calls `prepare(i)` once for each `i` below that number at the start of every frame (on the GPU, all at once), stores the four numbers each returns, and `shade` reads them with `item(i)`. `prepare` sees everything `shade` does: `V`, `params()`, `band_at`, `colour`. What it cannot do is depend on a pixel: it has no `uv`.
+and say in `visual.json` how many items it makes: `"items": 128` (up to 262144). The engine calls `prepare(i)` once for each `i` below that number at the start of every frame (on the GPU, all at once), stores the four numbers each returns, and `shade` reads them with `item(i)`. `prepare` sees everything `shade` does: `V`, `params()`, `band_at`, `colour`. What it cannot do is depend on a pixel: it has no `uv`.
 
 Eclipse uses it for its dots. Each dot needs a position, a size, a level and a colour: five or more numbers, so each dot takes two items:
 
@@ -441,7 +442,7 @@ A visual is its folder: zip it, send it, and the recipient unzips it into `%APPD
 What a loaded visual cannot do yet, each a possible extension of the format:
 
 - **State is four numbers per item**, kept by `prepare` from frame to frame, and lost when the app restarts or the visual is picked again.
-- **No particles yet**, and no depth test: triangles are drawn in the order given.
+- **No depth test**: triangles are drawn in the order given. (Particles are prepare items drawn as triangles, as Ribbons does.)
 - **No pictures of your own**: the album art is the one picture a visual can read.
 - **Sixteen controls**, all numbers.
 - **A changed `id` needs a restart**, and a folder deleted while the app runs stays listed until then.

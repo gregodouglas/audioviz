@@ -30,7 +30,7 @@ use crate::shaders::ShaderSet;
 
 pub const MAX_PARAMS: usize = 16;
 /// Most items a prepare step may compute.
-pub const MAX_ITEMS: u32 = 16384;
+pub const MAX_ITEMS: u32 = 262_144;
 /// Most triangles a loaded visual may draw.
 pub const MAX_TRIANGLES: u32 = 1 << 20;
 /// Most points a loaded visual's line may have.
@@ -551,6 +551,8 @@ struct Uniform {
     auto_gain: f32,
     sample_rate: f32,
     track: f32,
+    instance: f32,
+    _pad3: [f32; 3],
 }
 
 pub struct ShaderVisual {
@@ -601,6 +603,8 @@ pub struct ShaderVisual {
     flow: f32,
     swell: f32,
     ring: VecDeque<[f32; 2]>,
+    /// Random per instance (`V.instance`), so two layers of one visual differ.
+    instance: f32,
 }
 
 fn art_texture(device: &wgpu::Device) -> wgpu::Texture {
@@ -752,6 +756,7 @@ impl ShaderVisual {
             flow: 0.0,
             swell: 0.0,
             ring: VecDeque::with_capacity(WAVE * 2),
+            instance: crate::rng::Rng::seeded(&[std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() as u64), def.id.len() as u64]).next(),
         };
         me.make_groups(device);
         me.reload(device, shaders);
@@ -943,6 +948,8 @@ impl Scene for ShaderVisual {
             sample_rate: ctx.sample_rate as f32,
             // The track id hashed to 0..1.
             track: crate::rng::Rng::seeded(&[ctx.art_id]).next(),
+            instance: self.instance,
+            _pad3: [0.0; 3],
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
         // The album art, once per track.
@@ -1198,7 +1205,7 @@ fn shade(uv: vec2<f32>) -> vec3<f32> { return item(0u).rgb; }";
 fn prepared(x: f32)", "prepare"));
         assert!(parse(r#"{"id": "x", "name": "x"}"#, prep, None).is_err());
         assert!(parse(r#"{"id": "x", "name": "x", "items": 8}"#, "fn shade(uv: vec2<f32>) -> vec3<f32> { return vec3<f32>(0.0); }", None).is_err());
-        assert!(parse(r#"{"id": "x", "name": "x", "items": 99999}"#, prep, None).is_err());
+        assert!(parse(r#"{"id": "x", "name": "x", "items": 999999}"#, prep, None).is_err());
         let d = parse(r#"{"id": "x", "name": "x", "items": 8}"#, prep, None).unwrap();
         assert!(d.generated().contains("const ITEMS: u32 = 8u;"));
     }

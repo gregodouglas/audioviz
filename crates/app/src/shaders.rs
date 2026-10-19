@@ -16,10 +16,8 @@ macro_rules! shader_table {
 
 shader_table!(
     "params.wgsl",
-    "scope_params.wgsl",
     "visual_api.wgsl",
     "visual_lines.wgsl",
-    "decay.wgsl",
     "bloom_down.wgsl",
     "bloom_up.wgsl",
     "expo.wgsl",
@@ -48,9 +46,6 @@ shader_table!(
     "glow.wgsl",
     "vignette.wgsl",
     "colorify.wgsl",
-    "ribbons_params.wgsl",
-    "ribbons_update.wgsl",
-    "ribbons_draw.wgsl",
     "kaleido_params.wgsl",
     "kaleido.wgsl",
     "sigil_params.wgsl",

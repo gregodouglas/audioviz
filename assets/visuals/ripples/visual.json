@@ -2,7 +2,7 @@
   "id": "ripples",
   "name": "Ripples",
   "short": "Ripples",
-  "summary": "A flowing surface seen from low over it, printed with contours, dots or a grid; beats drop rings into it.",
+  "summary": "A flowing surface seen from low over it, printed as contours, dots or a grid; beats drop rings in it.",
   "credit": "After the Ripples in Felix Turner's Uberviz (https://uberviz.io). No code used; written fresh.",
   "hint": "A flowing surface seen from low over it: contours draw its height like a map, dots and the grid ride on it. Beats drop rings into it; the bass swells the hills. With a palette, the colour follows the height.",
   "items": 6,

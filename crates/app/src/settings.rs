@@ -985,29 +985,6 @@ impl Default for KaleidoParams {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct RibbonsParams {
-    pub speed: f32,
-    pub scale: f32,
-    pub curl: f32,
-    pub vortex: f32,
-    pub width: f32,
-    pub intensity: f32,
-    pub persistence: f32,
-    pub saturation: f32,
-    pub count: u32,
-    /// With a palette: how far a chord spreads around the current position
-    /// (0 = one colour at a time, 1 = the whole palette at once).
-    pub spread: f32,
-}
-
-impl Default for RibbonsParams {
-    fn default() -> Self {
-        Self { speed: 0.3, scale: 1.5, curl: 1.0, vortex: 1.0, width: 1.0, intensity: 1.0, persistence: 0.3, saturation: 0.45, count: 12_000, spread: 0.3 }
-    }
-}
-
 /// Sigil: a neon sacred-geometry glyph (`scenes/sigil.rs`).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

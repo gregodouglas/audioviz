@@ -142,9 +142,9 @@ mod tests {
         l.opacity = 0.4;
         apply(&mut l, star).unwrap();
         assert_eq!(l.visual, "ribbons");
-        let r: crate::settings::RibbonsParams = l.get("ribbons");
-        assert_eq!(r.count, crate::scenes::ribbons::PARTICLES);
-        assert!((r.persistence - 0.001).abs() < 1e-6);
+        let r = &l.params["ribbons"];
+        assert_eq!(r["count"], 65536);
+        assert!((r["persistence"].as_f64().unwrap() - 0.001).abs() < 1e-6);
         assert_eq!(l.palette.name, "neon", "palette is the layer's, not the preset's");
         assert_eq!(l.opacity, 0.4);
     }

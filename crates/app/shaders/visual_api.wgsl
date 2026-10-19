@@ -38,6 +38,10 @@ struct VisualIn {
     auto_gain: f32,     // the gain already applied to the waveform (divide to undo it)
     sample_rate: f32,   // samples per second
     track: f32,         // 0..1, a hash of the playing track (changes with the track; seeds)
+    instance: f32,      // 0..1, random per layer: two layers of one visual differ
+    _pad3: f32,
+    _pad4: f32,
+    _pad5: f32,
 };
 
 @group(0) @binding(0) var<uniform> V: VisualIn;

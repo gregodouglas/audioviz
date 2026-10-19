@@ -61,7 +61,6 @@ fn builtin() -> Vec<VisualDef> {
         scenes::ribbons::def(),
         scenes::kaleido::def(),
         scenes::sigil::def(),
-        scenes::crystal::def(),
     ]
 }
 

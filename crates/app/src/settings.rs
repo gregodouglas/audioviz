@@ -1079,47 +1079,6 @@ impl Default for SigilParams {
     }
 }
 
-/// How Crystal shards meet each other.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum CrystalStyle {
-    /// Covering, flat-shaded facets, like cut stone.
-    Solid,
-    /// Additive facets that burn toward white where they cross.
-    #[default]
-    Glass,
-}
-
-/// Crystal: tumbling shards (`scenes/crystal.rs`).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct CrystalParams {
-    pub style: CrystalStyle,
-    pub count: u32,
-    pub size: f32,
-    /// Shards are stretched along their own x.
-    pub stretch: f32,
-    /// Tumble speed of the cluster.
-    pub spin: f32,
-    /// How far the shards fly apart over each bar (0 = a tight cluster).
-    pub scatter: f32,
-    /// A shard takes a new pose every this many beats.
-    pub every: u32,
-    /// Facet opacity gain.
-    pub facets: f32,
-    /// Edge brightness gain.
-    pub edges: f32,
-    /// Edge line width, pixels.
-    pub width: f32,
-    pub react: f32,
-}
-
-impl Default for CrystalParams {
-    fn default() -> Self {
-        Self { style: CrystalStyle::Glass, count: 6, size: 0.9, stretch: 1.6, spin: 1.0, scatter: 0.0, every: 1, facets: 2.2, edges: 0.0, width: 1.5, react: 1.0 }
-    }
-}
-
 /// How a director runs: by hand, by the system, or by a saved sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]

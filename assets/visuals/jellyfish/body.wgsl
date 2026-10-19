@@ -193,6 +193,6 @@ fn point(i: u32) -> LinePoint {
     let hue = hue_of(J);
     var c = tone(STRANDS_C, hue + 0.1 * u) * light + tone(LIGHT, hue) * pulse * 0.6 * (1.0 - 0.5 * u);
     c = water(c, to_camera(cam, p3).z, cam.dist - 1.0, natural_bodies());
-    q.colour = c * P.glow;
+    q.colour = shown(L_TENTACLES, c * P.glow);
     return q;
 }

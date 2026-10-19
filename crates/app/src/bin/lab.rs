@@ -41,6 +41,9 @@ usage: audioviz-lab <visual> [options]
                       of its distance (every shot; default 0,0)
   --passes a,b,...    all (the picture), sharp (no diffusion), glow (only
                       the diffusion); default all
+  --layers a,b,...    the visual's design layers to show, by name (its
+                      visual.json layers; a prefix will do), each entry
+                      a row: all, organs, glass+edges, ...; default all
   --exposure <x>      a fixed exposure, levelling and auto exposure off
                       (default 1); auto levels it as the app does (a lone
                       object fills the frame, so auto lifts it further)
@@ -51,11 +54,12 @@ usage: audioviz-lab <visual> [options]
   --dx12              D3D12 instead of Vulkan (slower to build shaders)
   --seed <n>          the layer's instance seed (default 1)
 
-PNGs: <out>/<name>_<shot>_<pass>.png for each, and <out>/<name>_sheet.png
-(shots across, passes down).
+PNGs: <out>/<name>_<shot>_<pass>[_<layers>].png for each, and
+<out>/<name>_sheet.png (shots across; passes, then layer sets, down).
 
 window: left-drag orbits, right- or middle-drag pans, the wheel zooms;
-1 2 3 the pass (all, sharp, glow); Space runs or holds time; . steps one
+1 2 3 the pass (all, sharp, glow); Tab shows the next design layer alone,
+X everything but it, A all of them; Space runs or holds time; . steps one
 frame; R resets the view; S saves a PNG into --out; Esc quits. Saving a
 visual's files or an engine shader reloads it.
 ";
@@ -70,6 +74,7 @@ struct Args {
     shots: Vec<(String, [f32; 3])>,
     pan: [f32; 2],
     passes: Vec<SpacePass>,
+    layers: Vec<String>,
     size: (u32, u32),
     out: PathBuf,
     name: Option<String>,
@@ -117,7 +122,7 @@ fn pass_name(p: SpacePass) -> &'static str {
 
 fn parse_args() -> anyhow::Result<Option<Args>> {
     let mut args = std::env::args().skip(1);
-    let mut a = Args { visual: String::new(), window: false, scene: None, layer: None, sets: Vec::new(), at: 4.0, shots: Vec::new(), pan: [0.0, 0.0], passes: vec![SpacePass::All], size: (1600, 1000), out: PathBuf::from("tmp/lab"), name: None, dx12: false, seed: 1, exposure: Some(1.0), bloom: 0.0 };
+    let mut a = Args { visual: String::new(), window: false, scene: None, layer: None, sets: Vec::new(), at: 4.0, shots: Vec::new(), pan: [0.0, 0.0], passes: vec![SpacePass::All], layers: vec!["all".into()], size: (1600, 1000), out: PathBuf::from("tmp/lab"), name: None, dx12: false, seed: 1, exposure: Some(1.0), bloom: 0.0 };
     let mut shots = "front,side,below".to_string();
     while let Some(arg) = args.next() {
         let mut value = |what: &str| args.next().with_context(|| format!("{arg} needs {what}"));
@@ -142,6 +147,7 @@ fn parse_args() -> anyhow::Result<Option<Args>> {
                 a.pan = [x.parse()?, y.parse()?];
             }
             "--passes" => a.passes = value("a list of passes")?.split(',').map(pass).collect::<anyhow::Result<_>>()?,
+            "--layers" => a.layers = value("a list of layer sets")?.split(',').map(str::to_string).collect(),
             "--size" => {
                 let v = value("WxH")?;
                 let (w, h) = v.split_once('x').context("--size WxH")?;
@@ -213,6 +219,29 @@ fn settings(a: &Args) -> anyhow::Result<Settings> {
     s.onboarded = true;
     s.normalize();
     Ok(s)
+}
+
+/// The visual's design layers' names (visual.json "layers").
+fn layer_names(visual: &str) -> Vec<String> {
+    match audioviz::visuals::get(visual).map(|v| &v.source) {
+        Some(audioviz::visuals::Source::Loaded(d)) => d.layers.clone(),
+        None => Vec::new(),
+    }
+}
+
+/// A layer set as bits: "all", or names (or their starts) joined by "+".
+fn layer_mask(names: &[String], set: &str) -> anyhow::Result<u32> {
+    if set == "all" {
+        return Ok(u32::MAX);
+    }
+    let key = |s: &str| s.to_lowercase().chars().filter(char::is_ascii_alphanumeric).collect::<String>();
+    let mut mask = 0;
+    for want in set.split('+') {
+        let w = key(want);
+        let i = names.iter().position(|n| key(n) == w).or_else(|| names.iter().position(|n| key(n).starts_with(&w))).with_context(|| format!("no design layer \"{want}\" (there are: {})", names.join(", ")))?;
+        mask |= 1 << i;
+    }
+    Ok(mask)
 }
 
 /// Read this checkout's visuals and shaders, never the user's folder, with
@@ -402,24 +431,32 @@ fn shots(a: &Args, settings: Settings) -> anyhow::Result<()> {
     lab.settle(&view, a.at);
     std::fs::create_dir_all(&a.out)?;
     let name = a.name.clone().unwrap_or_else(|| a.visual.clone());
+    let names = layer_names(&a.visual);
+    let sets: Vec<(String, u32)> = a.layers.iter().map(|set| layer_mask(&names, set).map(|m| (set.clone(), m))).collect::<anyhow::Result<_>>()?;
     let mut tiles = Vec::new();
     let mut gpu = Vec::new();
-    for &p in &a.passes {
-        for (sname, [yaw, pitch, zoom]) in &a.shots {
-            lab.director.camera_nudge = [*yaw, *pitch, *zoom, a.pan[0], a.pan[1]];
-            lab.director.pass = p;
-            // A few frames, so whatever reads last frame's camera has it.
-            for _ in 0..3 {
-                lab.frame(&view, 0.0, None);
+    for (set, mask) in &sets {
+        audioviz::shader_visual::show_layers(*mask);
+        for &p in &a.passes {
+            for (sname, [yaw, pitch, zoom]) in &a.shots {
+                lab.director.camera_nudge = [*yaw, *pitch, *zoom, a.pan[0], a.pan[1]];
+                lab.director.pass = p;
+                // A few frames, so whatever reads last frame's camera has it.
+                for _ in 0..3 {
+                    lab.frame(&view, 0.0, None);
+                }
+                let img = read_back(&mut lab, &view, &target, 0.0)?;
+                gpu.push(lab.timer.frame_ms);
+                let tag = if *mask == u32::MAX { String::new() } else { format!("_{}", set.replace('+', "-")) };
+                img.save(a.out.join(format!("{name}_{sname}_{}{tag}.png", pass_name(p))))?;
+                tiles.push((format!("{sname} {} {}", pass_name(p), if *mask == u32::MAX { "" } else { set }), img));
             }
-            let img = read_back(&mut lab, &view, &target, 0.0)?;
-            gpu.push(lab.timer.frame_ms);
-            img.save(a.out.join(format!("{name}_{sname}_{}.png", pass_name(p))))?;
-            tiles.push((format!("{sname} {}", pass_name(p)), img));
         }
     }
     let sheet = a.out.join(format!("{name}_sheet.png"));
-    contact_sheet(&tiles, a.shots.len()).save(&sheet)?;
+    // One view: the tiles four across; else the views across.
+    let cols = if a.shots.len() == 1 { tiles.len().min(4) } else { a.shots.len() };
+    contact_sheet(&tiles, cols).save(&sheet)?;
     gpu.sort_by(f32::total_cmp);
     println!("{}: built in {:.1} s, held at {:.2} s, {} shots, frame {:.2} ms on the GPU, {:.1} s in all", a.visual, built.as_secs_f32(), lab.time, tiles.len(), gpu.get(gpu.len() / 2).copied().unwrap_or(0.0), started.elapsed().as_secs_f32());
     println!("{}", sheet.display());
@@ -448,6 +485,11 @@ struct View {
     step: bool,
     save: bool,
     shown: Instant,
+    /// The visual's design layers, the one picked (None: all) and whether
+    /// it shows alone or everything but it.
+    names: Vec<String>,
+    solo: Option<usize>,
+    without: bool,
 }
 
 impl View {
@@ -485,7 +527,27 @@ impl View {
         lab.settle(&scratch.create_view(&Default::default()), a.at);
         println!("{}: built in {:.1} s, held at {:.2} s", a.visual, built.as_secs_f32(), lab.time);
         lab.director.pass = a.passes.first().copied().unwrap_or_default();
-        Ok(Self { window, surface, config, lab, cam: [0.0, 0.0, 1.0, a.pan[0], a.pan[1]], drag: None, cursor: (0.0, 0.0), running: false, step: false, save: false, shown: Instant::now() })
+        let names = layer_names(&a.visual);
+        audioviz::shader_visual::show_layers(layer_mask(&names, a.layers.first().map_or("all", String::as_str))?);
+        Ok(Self { window, surface, config, lab, cam: [0.0, 0.0, 1.0, a.pan[0], a.pan[1]], drag: None, cursor: (0.0, 0.0), running: false, step: false, save: false, shown: Instant::now(), names, solo: None, without: false })
+    }
+
+    /// Show the picked design layer alone, everything but it, or all.
+    fn pick_layers(&self) {
+        let mask = match self.solo {
+            None => u32::MAX,
+            Some(i) if self.without => !(1 << i),
+            Some(i) => 1 << i,
+        };
+        audioviz::shader_visual::show_layers(mask);
+    }
+
+    /// What the design layers show, for the title.
+    fn layers_label(&self) -> String {
+        match self.solo {
+            None => "all layers".into(),
+            Some(i) => format!("{}{}", if self.without { "without " } else { "only " }, self.names.get(i).map_or("?", String::as_str)),
+        }
     }
 
     fn redraw(&mut self, a: &Args) {
@@ -506,7 +568,8 @@ impl View {
                 Ok(img) => {
                     let name = a.name.clone().unwrap_or_else(|| a.visual.clone());
                     let [y, p, z, ..] = self.cam;
-                    let file = a.out.join(format!("{name}_{y:.0}_{p:.0}_{z:.2}_{}.png", pass_name(self.lab.director.pass)));
+                    let layers = self.solo.map_or(String::new(), |i| format!("_{}{}", if self.without { "without-" } else { "" }, self.names.get(i).map_or("layer", String::as_str).to_lowercase().replace(' ', "-")));
+                    let file = a.out.join(format!("{name}_{y:.0}_{p:.0}_{z:.2}_{}{layers}.png", pass_name(self.lab.director.pass)));
                     let saved = std::fs::create_dir_all(&a.out).map_err(anyhow::Error::from).and_then(|_| img.save(&file).map_err(anyhow::Error::from));
                     match saved {
                         Ok(()) => println!("saved {}", file.display()),
@@ -525,7 +588,7 @@ impl View {
             let [y, p, z, ..] = self.cam;
             let state = if self.running { "running" } else { "held" };
             let error = if self.lab.director.last_error.is_some() { " | shader error (see the console)" } else { "" };
-            self.window.set_title(&format!("audioviz-lab: {} | {} | {state} at {:.2} s | yaw {y:.0} pitch {p:.0} zoom {z:.2} | {:.2} ms{error} | drag orbit, right-drag pan, wheel zoom, 1 2 3 pass, Space run, . step, R reset, S save", a.visual, pass_name(self.lab.director.pass), self.lab.time, self.lab.timer.frame_ms));
+            self.window.set_title(&format!("audioviz-lab: {} | {} | {} | {state} at {:.2} s | yaw {y:.0} pitch {p:.0} zoom {z:.2} | {:.2} ms{error} | drag orbit, right-drag pan, wheel zoom, 1 2 3 pass, Tab layer, X without, A all, Space run, . step, R reset, S save", a.visual, pass_name(self.lab.director.pass), self.layers_label(), self.lab.time, self.lab.timer.frame_ms));
         }
     }
 }
@@ -588,6 +651,22 @@ impl ApplicationHandler for Viewer {
                 Key::Character("2") => v.lab.director.pass = SpacePass::Sharp,
                 Key::Character("3") => v.lab.director.pass = SpacePass::Glow,
                 Key::Character(".") => v.step = true,
+                Key::Named(NamedKey::Tab) if !v.names.is_empty() => {
+                    v.solo = match v.solo {
+                        None => Some(0),
+                        Some(i) if i + 1 < v.names.len() => Some(i + 1),
+                        Some(_) => None,
+                    };
+                    v.pick_layers();
+                }
+                Key::Character("x" | "X") if v.solo.is_some() => {
+                    v.without = !v.without;
+                    v.pick_layers();
+                }
+                Key::Character("a" | "A") => {
+                    v.solo = None;
+                    v.pick_layers();
+                }
                 Key::Character("r" | "R") => v.cam = [0.0, 0.0, 1.0, self.args.pan[0], self.args.pan[1]],
                 Key::Character("s" | "S") => v.save = true,
                 _ => {}

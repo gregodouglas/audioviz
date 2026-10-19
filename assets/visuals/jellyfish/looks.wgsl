@@ -54,13 +54,13 @@ fn paint(f: MeshFragment) -> vec4<f32> {
         let b = item(HALO0 + 2u * (u32(id) % 16u) + 1u);
         let d = length(f.data.xy);
         let fade = 1.0 - smoothstep(GLOW_REACH * 0.6, GLOW_REACH, d);
-        return vec4<f32>(b.rgb * a.w * halo(d, 0.8) * fade * P.halo * 0.012, 0.0);
+        return vec4<f32>(shown(L_GLOW, b.rgb * a.w * halo(d, 0.8) * fade * P.halo * 0.012), 0.0);
     }
     let J = jelly_at(u32(id) % 16u);
     let k = kind();
     var c = vec3<f32>(0.0);
     if (id > PART_ARM) {
-        c = arm_look(J, k, f.colour.y, f.colour.z, f.data.z, f.data.x, fp);
+        c = shown(L_ARMS, arm_look(J, k, f.colour.y, f.colour.z, f.data.z, f.data.x, fp));
     } else {
         var L: Look;
         L.s = s;
@@ -106,25 +106,29 @@ fn bell_look(J: Jelly, k: u32, L: Look) -> vec3<f32> {
         let fibres = 0.85 + 0.3 * noise(out * 26.0 + vec2<f32>(L.s * 3.0, J.hue * 11.0)) * keep_detail(L.fp * 26.0 / max(L.s, 0.05));
         let tissue = (0.75 + 0.5 * fbm(L.plan * 6.0 + seed, 3)) * fibres;
         let rimzone = select(smoothstep(0.1, 0.7, L.s), 1.0, k == COMB);
-        c = body * (sp.glass * glass(L.face, bell_thickness(b, L.s)) * tissue + sp.edge * fresnel(L.face, 3.0) * rimzone) * lit;
+        c = shown(L_GLASS, body * sp.glass * glass(L.face, bell_thickness(b, L.s)) * tissue * lit) + shown(L_EDGES, body * sp.edge * fresnel(L.face, 3.0) * rimzone * lit);
         // The light above on the wet skin: a glint sliding over the dome as it
         // turns, and the thin skin glowing when the eye looks up through it.
-        c += mix(body, vec3<f32>(1.0), 0.55) * L.sheen * 0.22;
+        c += shown(L_SHEEN, mix(body, vec3<f32>(1.0), 0.55) * L.sheen * 0.22);
         if (k != COMB) {
             // The thin margin glows, brightest on the lobes.
             let lobe = select(1.0, 0.5 - 0.5 * cos(fract(L.th * b.lobes) * TAU), b.lobes > 0.0);
-            c += body * thin_line(1.0 - L.s, 0.012, L.fs) * (0.5 + 0.5 * lobe) * 0.9;
+            c += shown(L_EDGES, body * thin_line(1.0 - L.s, 0.012, L.fs) * (0.5 + 0.5 * lobe) * 0.9);
         }
     } else {
-        c = body * (0.012 + 0.08 * fresnel(L.face, 2.5) + 0.012 * fbm(L.plan * 10.0 + seed, 3)) * lit;
-        c += mix(body, vec3<f32>(1.0), 0.4) * L.sheen * 0.06;
+        c = shown(L_INNER, body * (0.012 + 0.08 * fresnel(L.face, 2.5) + 0.012 * fbm(L.plan * 10.0 + seed, 3)) * lit);
+        c += shown(L_SHEEN, mix(body, vec3<f32>(1.0), 0.4) * L.sheen * 0.06);
         // The stroke's light: the swimming muscle in the outer bell glows as it squeezes.
         let zone = smoothstep(0.3, 0.45, L.s) * smoothstep(0.97, 0.88, L.s);
-        let stroke = tone(LIGHT, hue) * zone * pow(max(L.squeeze, 0.0), 1.5) * sp.stroke_light * 0.22;
+        let stroke = shown(L_STROKE, tone(LIGHT, hue) * zone * pow(max(L.squeeze, 0.0), 1.5) * sp.stroke_light * 0.22);
         c += diffuse(stroke, STROKE_DIFFUSES, P.body);
     }
     var own = vec3<f32>(0.0);
-    switch (k) {
+    // The moon jelly splits its own light over several layers itself; the
+    // others' is their organs inside and their marks outside.
+    let own_layer = select(L_MARKS, L_ORGANS, L.inner);
+    switch (select(k, 6u, k != MOON && !layer_on(own_layer))) {
+        case 6u: {}
         case 1u: { own = nettle_light(J, L); }
         case 2u: { own = crystal_light(J, L); }
         case 3u: { own = atolla_light(J, L); }
@@ -190,11 +194,11 @@ fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
     if (!L.inner) {
         let w = cells(L.plan * 55.0 + seed, 1.0, 0.0);
         let wart = smoothstep(0.17, 0.05, w.x) * step(0.55, w.z) * keep_detail(L.fp * 55.0);
-        var c = body * wart * 0.1;
+        var c = shown(L_MARKS, body * wart * 0.1);
         let x = fract(L.th * 8.0);
         let d = vec2<f32>(min(x, 1.0 - x) / 8.0 * TAU * s, 1.0 - s - 0.02);
         let rh = max(exp(-dot(d, d) / (0.012 * 0.012)) - 0.02, 0.0);
-        c += diffuse(mix(tone(LIGHT, hue), vec3<f32>(1.0), 0.5) * rh * (1.0 + 1.2 * glow + 2.5 * flash), POINTS_DIFFUSE, params().light);
+        c += diffuse(shown(L_MARKS, mix(tone(LIGHT, hue), vec3<f32>(1.0), 0.5) * rh * (1.0 + 1.2 * glow + 2.5 * flash)), POINTS_DIFFUSE, params().light);
         return c;
     }
     let gon = tone(ORGANS, hue);
@@ -204,57 +208,76 @@ fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
     var c = vec3<f32>(0.0);
     // The stomach in the middle, a four-cornered mouth.
     let st = smoothstep(0.15, 0.05, s * (1.0 + 0.3 * cos(ang * 4.0)));
-    c += mix(body, gon, 0.4) * st * 0.07;
-    // The gonads: four horseshoes, open toward the middle, each a ribbon
-    // folded on itself (bright where the ribbon turns, along its edges), and
-    // under each the round opening of its subgenital pit.
+    c += shown(L_ORGANS, mix(body, gon, 0.4) * st * 0.07);
+    // The gonads: four horseshoes round the stomach, open toward the middle.
+    // Each is a thick ribbon of milky tissue folded on itself: a soft tube
+    // across (fullest along its middle, a fine rim at each edge), its inner
+    // edge ruffled into a frill, lumpy along its length; under each, the
+    // round mouth of its subgenital pit.
     var g = 0.0;
+    var rims = 0.0;
     var pits = 0.0;
     for (var n = 0u; n < 4u; n++) {
         let a = (f32(n) + 0.5) * 1.5708;
         let dir = vec2<f32>(cos(a), sin(a));
-        let off = q - dir * 0.31;
+        let off = q - dir * 0.3;
         let l = length(off);
-        let ring = 0.125 + 0.022 * (noise(off * 13.0 + f32(n) * 7.0) - 0.5);
-        let open = smoothstep(-0.6, -0.2, dot(off / max(l, 1e-4), dir));
-        let dd = abs(l - ring);
         let round = atan2(off.y, off.x);
-        let folds = 0.55 + 0.45 * sin(round * 18.0 + 3.0 * noise(off * 20.0 + f32(n)));
-        let edges = mix(0.6, 1.0, smoothstep(0.012, 0.028, dd));
-        g += (thin_line(dd, 0.03, fq) * 0.75 * folds * edges + thin_line(abs(dd - 0.022), 0.006, fq) * 0.5) * open;
-        g += smoothstep(ring, 0.0, l) * 0.04 * open;
-        pits += thin_line(abs(length(off - dir * 0.02) - 0.055), 0.005, fq);
+        let open = smoothstep(-0.8, -0.45, dot(off / max(l, 1e-4), dir));
+        let ring = 0.105 + 0.02 * (noise(vec2<f32>(round * 1.5, f32(n) * 7.0)) - 0.5);
+        let frill = 0.008 * sin(round * 34.0 + 6.0 * noise(off * 22.0 + f32(n))) * (0.4 + 0.6 * noise(off * 30.0 + 3.0));
+        let half = select(0.032, 0.032 + frill, l < ring);
+        let t = (l - ring) / half;
+        let aa = fq / half;
+        let band = smoothstep(1.0 + aa, 1.0 - aa, abs(t));
+        let tube = sqrt(max(1.0 - t * t, 0.0));
+        g += band * (0.3 + 0.7 * tube) * open;
+        rims += thin_line(abs(abs(t) - 0.9) * half, 0.003, fq) * open;
+        pits += thin_line(abs(length(off) - 0.05), 0.004, fq);
     }
-    c += mix(body, vec3<f32>(1.0), 0.3) * pits * 0.12;
-    let lumps = cells(q * 80.0 + seed, 1.0, V.time * 0.2);
-    let folds = mix(0.6, 1.15, smoothstep(0.0, 0.18, lumps.y - lumps.x));
-    let grain = mix(1.0, folds * (0.75 + 0.5 * fbm(q * 40.0, 3)), keep_detail(fq * 80.0));
-    c += diffuse(gon * g * grain * (0.55 + glow * 1.3), ORGANS_DIFFUSE, params().light);
-    // Sixteen radial canals from the stomach out to the ring canal.
-    let u = L.th * 16.0;
-    let kc = floor(u + 0.5);
-    let wig = (noise(vec2<f32>(s * 9.0, kc * 3.7)) - 0.5) * 0.02;
-    var dx = abs((u - kc) / 16.0 * TAU * s + wig);
-    if (u32(kc) % 2u == 0u) {
-        dx = abs(dx - 0.06 * smoothstep(0.42, 0.6, s));
-        dx = abs(dx - 0.03 * smoothstep(0.6, 0.76, s));
-        dx = abs(dx - 0.015 * smoothstep(0.74, 0.88, s));
-    }
+    c += shown(L_ORGANS, mix(body, vec3<f32>(1.0), 0.3) * pits * 0.1);
+    let lumps = cells(q * 70.0 + seed, 1.0, V.time * 0.2);
+    let lumpy = mix(0.65, 1.15, smoothstep(0.0, 0.18, lumps.y - lumps.x));
+    let grain = mix(1.0, lumpy * (0.75 + 0.5 * fbm(q * 40.0, 3)), keep_detail(fq * 70.0));
+    let milky = mix(gon, vec3<f32>(1.0), 0.35);
+    c += diffuse(shown(L_ORGANS, (milky * g * grain * 0.5 + gon * rims * 0.4) * (0.55 + glow * 1.3)), ORGANS_DIFFUSE, params().light);
+    // Sixteen radial canals from the stomach out to the ring canal. The
+    // eight under the rhopalia and between them (per- and interradial)
+    // branch again and again on the way out, each branch wandering its own
+    // way, into a fan of fine twigs that join the ring canal; the eight
+    // between those (adradial) run out unbranched.
     let span = smoothstep(0.14, 0.2, s) * smoothstep(0.95, 0.92, s);
-    var canals = thin_line(dx, 0.005, fq) * span * mix(1.0, 0.55, s);
+    let u8 = L.th * 8.0;
+    let k8 = floor(u8 + 0.5);
+    var x = (u8 - k8) / 8.0 * TAU * s + (noise(vec2<f32>(s * 9.0, k8 * 3.7)) - 0.5) * 0.02;
+    var w = 0.0055;
+    var branch = 0.0;
+    var starts = array<f32, 4>(0.36, 0.52, 0.66, 0.78);
+    var spreads = array<f32, 4>(0.1, 0.055, 0.03, 0.016);
+    for (var lvl = 0u; lvl < 4u; lvl++) {
+        let grow = smoothstep(starts[lvl], starts[lvl] + 0.12, s);
+        let jitter = 0.75 + 0.5 * hash21(vec2<f32>(k8 * 7.0 + branch, f32(lvl)));
+        branch = branch * 2.0 + select(0.0, 1.0, x > 0.0);
+        x = abs(x) - spreads[lvl] * jitter * grow;
+        x += (noise(vec2<f32>(s * 5.0, branch * 3.1 + k8 * 11.0)) - 0.5) * 0.006 * grow;
+        w *= mix(1.0, 0.8, grow);
+    }
+    var canals = thin_line(abs(x), w, fq) * span;
+    let xa = (fract(u8) - 0.5) / 8.0 * TAU * s + (noise(vec2<f32>(s * 9.0, k8 * 5.3 + 2.0)) - 0.5) * 0.02;
+    canals += thin_line(abs(xa), 0.005, fq) * span * mix(1.0, 0.7, s);
     canals += thin_line(abs(s - 0.93), 0.005, L.fs) * 0.8;
-    c += canal * canals * (0.2 + 0.15 * glow);
+    c += shown(L_CANALS, canal * canals * (0.2 + 0.15 * glow));
     // The fringe's roots: a bead where each of the hundred and sixty
     // tentacles leaves the margin.
     let bx = abs(fract(L.th * 160.0 + 0.5) - 0.5) / 160.0 * TAU * s;
     let bulbs = thin_line(length(vec2<f32>(bx, 1.0 - s - 0.012)), 0.006, fq);
-    c += tone(STRANDS_C, hue) * bulbs * 0.5;
+    c += shown(L_MARKS, tone(STRANDS_C, hue) * bulbs * 0.5);
     // The swimming muscle: faint, uneven rings in the outer bell, lit by the squeeze.
     let freq = 46.0;
     let even = 0.4 + 1.2 * fbm(vec2<f32>(s * 25.0, L.th * 9.0) + seed, 2);
     let bands = mix(pow(0.5 + 0.5 * cos(s * TAU * freq), 4.0) * even, 0.3, clamp(L.fs * freq * 1.5, 0.0, 1.0));
     let zone = smoothstep(0.4, 0.5, s) * smoothstep(0.92, 0.85, s);
-    c += body * bands * zone * (0.008 + 0.15 * max(L.squeeze, 0.0));
+    c += shown(L_STROKE, body * bands * zone * (0.008 + 0.15 * max(L.squeeze, 0.0)));
     return c;
 }
 

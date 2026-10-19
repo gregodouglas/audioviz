@@ -34,6 +34,17 @@ use crate::settings::Layer;
 use crate::shaders::ShaderSet;
 
 pub const MAX_PARAMS: usize = 24;
+/// Most design layers a visual may name (bits of a float, exactly).
+pub const MAX_LAYERS_DESIGN: usize = 16;
+
+/// Which design layers draw (bit i: layer i). The app draws them all; the
+/// lab picks (ADR-0003).
+static DESIGN_LAYERS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+
+/// Show only the design layers in `mask` (bit i: layer i), in every visual.
+pub fn show_layers(mask: u32) {
+    DESIGN_LAYERS.store(mask, std::sync::atomic::Ordering::Relaxed);
+}
 /// Most items a prepare step may compute.
 pub const MAX_ITEMS: u32 = 262_144;
 /// Most triangles a loaded visual may draw.
@@ -167,6 +178,10 @@ struct Manifest {
     /// the engine applies its opacity inside its draws.
     #[serde(default)]
     space: bool,
+    /// Names of its design layers, which the code asks for with
+    /// `layer_on(i)`: the lab shows them alone or together (ADR-0003).
+    #[serde(default)]
+    layers: Vec<String>,
 }
 
 /// Where a visual's pictures come from: a choice control whose second
@@ -221,6 +236,8 @@ pub struct ShaderDef {
     pub camera: bool,
     /// Writes light that diffuses in a shared space (`write_glow`).
     pub glow: bool,
+    /// Its design layers' names (bit i of `layer_on`).
+    pub layers: Vec<String>,
     pub wgsl: String,
     /// The folder it came from, watched for changes (none for embedded copies).
     pub dir: Option<PathBuf>,
@@ -385,6 +402,9 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
     if m.space && (m.feedback || m.trail) {
         return Err("visual.json: \"space\" does not go with \"feedback\" or \"trail\" (in a shared space a layer has no picture of its own to keep)".into());
     }
+    if m.layers.len() > MAX_LAYERS_DESIGN {
+        return Err(format!("visual.json: at most {MAX_LAYERS_DESIGN} layers"));
+    }
     if defines(wgsl, "camera") && !m.space {
         return Err("visual.wgsl has fn camera, which leads a shared space's camera: set \"space\": true in visual.json".into());
     }
@@ -414,7 +434,7 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
         return Err(format!("visual.json: line_count \"{}\" is not a number param", m.line_count));
     }
     let short = if m.short.is_empty() { m.name.clone() } else { m.short };
-    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, uses: m.uses, level_bright: m.levelling == "bright", antialias: m.antialias && m.triangles > 0, space: m.space, camera: defines(wgsl, "camera"), glow: calls(wgsl, "write_glow"), wgsl: wgsl.to_string(), dir })
+    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, uses: m.uses, level_bright: m.levelling == "bright", antialias: m.antialias && m.triangles > 0, space: m.space, camera: defines(wgsl, "camera"), glow: calls(wgsl, "write_glow"), layers: m.layers, wgsl: wgsl.to_string(), dir })
 }
 
 // ------------------------------------------------------------ values
@@ -1869,7 +1889,7 @@ impl ShaderVisual {
             hits: f.onset_hit.map(|h| h as u32 as f32),
             strengths: f.onset_strength,
             chroma_slow,
-            space: [space.map_or(0.0, |_| 1.0), space.unwrap_or(1.0), 0.0, 0.0],
+            space: [space.map_or(0.0, |_| 1.0), space.unwrap_or(1.0), (DESIGN_LAYERS.load(std::sync::atomic::Ordering::Relaxed) & 0xffff) as f32, 0.0],
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
         // The album art, once per track.

@@ -1,6 +1,6 @@
 # ADR-0003 — The lab: one object, still, rendered by the engine
 
-- **Status:** Accepted 2026-10-19 (Greg: "something akin to Blender, but for us (AI and me) to quickly iterate over our designs"). Increment 1 done (0.4.6), the window of increment 3 (0.4.7); building the rest in increments.
+- **Status:** Accepted 2026-10-19 (Greg: "something akin to Blender, but for us (AI and me) to quickly iterate over our designs"). Increments 1 and 2 done (0.4.6, 0.4.8), the window of increment 3 (0.4.7); building the rest in increments.
 - **Context:** Designing the jellies in the app is slow and cannot be compared. A change to a visual costs a release build (the visuals are embedded, 35 to 60 s), a D3D12 shader build (the Jellyfish: 10 s on FXC, 2 s on Vulkan), a start and about 20 s for the exposure to settle, and the frame that comes out depends on a random layout, the build time and whatever music is playing, so a before and an after never show the same thing. Greg wants a tool to render **just the object being worked on**, held still if need be, to focus on its shaders and design, with **layers** as the highest return: seeing a design one part at a time and stacked back up, as Blender's render passes do.
 - **Reads:** ADR-0002 (the shared space the lab draws in), `docs/visuals.md`.
 
@@ -56,4 +56,11 @@ Greg, on the first sheets: the exposure, bloom and glow blew everything out, and
 - **Pan:** the camera nudge gained a slide of what it looks at (right, up, in units of the camera's distance before the zoom, so zooming keeps the framing): `--pan x,y`. The Close-up aims below the bell for its tentacles; `--pan 0,0.15` centres a moon jelly.
 - **`--window`:** the same core in a winit window on Vulkan. Left-drag orbits, right- or middle-drag pans, the wheel zooms; 1 2 3 pick the pass; Space runs or holds time, `.` steps one frame; R resets; S saves the window's picture as a PNG. It polls the visual's folder and the engine shaders and reloads what was saved. The title shows the pass, the time, the view and the frame's GPU time. Checked with a scripted drag and wheel: yaw 60, pitch 24, zoom 0.81.
 - **`scripts/lab-jelly.ps1 -Species <moon|nettle|crystal|atolla|comb|lion>`** opens one jelly of a species in its factory scene's colours (`-Png` for a sheet; further arguments go to the lab).
-- Still to come in increment 3: the visual's sliders and the layer toggles in the window.
+- Still to come in increment 3: the visual's sliders in the window.
+
+### Increment 2, design layers (0.4.8, 2026-10-19)
+
+- `"layers"` in visual.json (up to 16 names) and `layer_on(i)` in the API, read from the uniform's `V.space.z` as bits; the engine fills it from `shader_visual::show_layers` (all bits in the app). A visual pays nothing until it names some.
+- The lab: `--layers` takes sets (`all`, a name or a start of one, names joined by `+`), each a row of the sheet; with one view the tiles go four across. In the window, Tab shows the next layer alone, X everything but it, A all of them; the title says which.
+- The Jellyfish names twelve and gates every part of its look by them (`shown(i, c)`), before a light is split between sharp and glow, so a hidden layer leaves no glow behind. The moon jelly splits its own light over Organs (gonads, stomach, pits), Canals, Marks (warts, rhopalia, tentacle bulbs) and Stroke (the muscle rings); the other species' own light is Organs inside and Marks outside.
+- First use, Greg: more design and shader work on the moon jelly, more real, more detail. Layer by layer against *Aurelia aurita*: the gonads were small, thin, saturated stamps (now four separate thick milky horseshoes with a frilled inner edge, a rim along each edge, lumpy tissue and the subgenital pit under each); the canals were straight lines with three forks (now the per- and interradial canals branch four times in curves into a fan of twigs, the adradial ones run straight); the jelly itself was all but invisible (its milkiness 0.018 to 0.045, so the thick middle reads as gel). Two rounds in the lab: the first gonads ran into one clover and the canals looked like cracked glass. Cost unchanged (Jellyfish 3.29 ms).

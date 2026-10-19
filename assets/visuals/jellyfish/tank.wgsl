@@ -116,5 +116,5 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
         }
         c += s * P.plankton;
     }
-    return c;
+    return shown(L_TANK, c);
 }

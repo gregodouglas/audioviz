@@ -87,6 +87,26 @@ const ATOLLA: u32 = 3u;
 const COMB: u32 = 4u;
 const LION: u32 = 5u;
 
+// Design layers, as visual.json names them: the lab shows them alone or
+// together; in the app they are all on.
+const L_GLASS: u32 = 0u;     // the bell's jelly: light by how much of it the eye looks through
+const L_EDGES: u32 = 1u;     // edge glow and the lit margin
+const L_SHEEN: u32 = 2u;     // the light above on the wet skin
+const L_INNER: u32 = 3u;     // the inner skin's own faint light
+const L_STROKE: u32 = 4u;    // the swimming muscle lit by the squeeze
+const L_ORGANS: u32 = 5u;    // what shows inside: gonads, stomach, a species' inner light
+const L_CANALS: u32 = 6u;    // canals and the ring canal
+const L_MARKS: u32 = 7u;     // on the outer skin: warts, rhopalia, stripes, rim lights; tentacle bulbs
+const L_ARMS: u32 = 8u;
+const L_TENTACLES: u32 = 9u;
+const L_GLOW: u32 = 10u;     // its glow in the water round it
+const L_TANK: u32 = 11u;     // the water and plankton behind
+
+// c when design layer i is shown, else nothing.
+fn shown(i: u32, c: vec3<f32>) -> vec3<f32> {
+    return select(vec3<f32>(0.0), c, layer_on(i));
+}
+
 fn kind() -> u32 {
     return min(u32(params().species), 5u);
 }

@@ -8,6 +8,7 @@
   "parts": ["species.wgsl", "swim.wgsl", "body.wgsl", "mesh.wgsl", "looks.wgsl", "tank.wgsl"],
   "antialias": true,
   "space": true,
+  "layers": ["Glass", "Edges", "Sheen", "Inner skin", "Stroke", "Organs", "Canals", "Marks", "Arms", "Tentacles", "Glow", "Tank"],
   "levelling": "bright",
   "items": 31880,
   "triangles": 85272,

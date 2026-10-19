@@ -49,7 +49,7 @@ struct VisualIn {
     hits: vec4<f32>,    // 1 on the frame an onset is detected (low, mid, high, all), else 0
     strengths: vec4<f32>, // onset strength now, continuous (low, mid, high, all)
     chroma_slow_v: array<vec4<f32>, 3>, // 12 pitch classes, slow profile (the chord over seconds)
-    space: vec4<f32>,   // x: 1 in a shared space (in_space() reads it); y: the layer's opacity there (the engine applies it)
+    space: vec4<f32>,   // x: 1 in a shared space (in_space() reads it); y: the layer's opacity there (the engine applies it); z: the design layers shown, as bits (layer_on())
 };
 
 @group(0) @binding(0) var<uniform> V: VisualIn;
@@ -81,6 +81,12 @@ struct Camera {
     focal: f32,
     look: vec3<f32>,
 };
+
+// Whether design layer i (the i-th name in visual.json's "layers") is
+// shown. Always true in the app; the lab shows them alone or together.
+fn layer_on(i: u32) -> bool {
+    return ((u32(V.space.z) >> min(i, 15u)) & 1u) == 1u;
+}
 
 // 1 when the layer is in a shared space (with "space": true in visual.json).
 fn in_space() -> bool {

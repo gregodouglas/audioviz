@@ -24,6 +24,9 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> FsIn {
 // spread over the frame (plankton, glow in the water) neither drags the
 // mean down nor gets the bright things lifted until they bleach.
 const BRIGHT_PART: f32 = 1.0 / 32.0;
+// A shared space (flag bit 3) holds every member's faint fill in one
+// picture, so its floor is higher: only what is really lit counts.
+const SPACE_PART: f32 = 1.0 / 8.0;
 
 fn block(x: i32, y: i32) -> f32 {
     let uv = (vec2<f32>(f32(x), f32(y)) + 0.5) / 32.0;
@@ -41,7 +44,7 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
                 top = max(top, block(x, y));
             }
         }
-        floor_m = max(top * BRIGHT_PART, 1e-6);
+        floor_m = max(top * select(BRIGHT_PART, SPACE_PART, (L.flags & 8u) != 0u), 1e-6);
     }
     var sum = 0.0;
     var lit = 0.0;

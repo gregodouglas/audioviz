@@ -8,8 +8,12 @@
 //! ```json
 //! { "name": "Lantern", "tint": [1, 0.4, 0.8], "tint_from_art": false,
 //!   "picture": { "exposure": 1.0, "bloom": 0.4, ... },
+//!   "space": "shared",
 //!   "layers": [ { "visual": "crystal", "opacity": 1.0, ..., "crystal": { ... } } ] }
 //! ```
+//!
+//! `"space"` is written only for a shared space, so a stacked scene's file
+//! reads as it always has.
 //!
 //! Each layer carries its own visual's parameters and not the other
 //! visuals' (they take their defaults on load). Files from before this
@@ -22,7 +26,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::factory;
-use crate::settings::{Layer, PostSettings, Settings};
+use crate::settings::{Layer, PostSettings, Settings, Space};
 
 /// The on-disk shape of a scene, in the order a person reads it.
 #[derive(Serialize)]
@@ -31,6 +35,8 @@ struct SceneFile<'a> {
     tint: [f32; 3],
     tint_from_art: bool,
     picture: &'a PostSettings,
+    #[serde(skip_serializing_if = "Space::is_stacked")]
+    space: Space,
     layers: Vec<Value>,
 }
 
@@ -51,7 +57,7 @@ fn layer_json(l: &Layer) -> Value {
 
 /// The scene part of `settings` as the text of a scene file.
 pub fn to_text(settings: &Settings) -> anyhow::Result<String> {
-    let f = SceneFile { name: &settings.scene_name, tint: settings.tint, tint_from_art: settings.tint_from_art, picture: &settings.post, layers: settings.layers.iter().map(layer_json).collect() };
+    let f = SceneFile { name: &settings.scene_name, tint: settings.tint, tint_from_art: settings.tint_from_art, picture: &settings.post, space: settings.space, layers: settings.layers.iter().map(layer_json).collect() };
     Ok(serde_json::to_string_pretty(&f)? + "\n")
 }
 
@@ -223,7 +229,9 @@ mod tests {
             let v: Value = serde_json::from_str(text).unwrap();
             let o = v.as_object().unwrap();
             let keys: Vec<&str> = o.keys().map(|k| k.as_str()).collect();
-            assert_eq!(keys, ["name", "tint", "tint_from_art", "picture", "layers"], "{rel}");
+            let stacked = ["name", "tint", "tint_from_art", "picture", "layers"];
+            let shared = ["name", "tint", "tint_from_art", "picture", "space", "layers"];
+            assert!(keys == stacked || keys == shared, "{rel}: {keys:?}");
             assert_eq!(o["name"].as_str(), Some(factory::stem(rel)), "{rel}: name matches the file");
             // Written exactly as the app writes it, so a factory file is never "(edited)" on arrival.
             assert_eq!(to_text(&from_text(text).unwrap()).unwrap(), *text, "{rel}");

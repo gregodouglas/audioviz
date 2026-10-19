@@ -61,6 +61,23 @@ pub trait Scene {
     fn level_bright(&self) -> bool {
         false
     }
+    /// A shared space (ADR-0002): whether this visual can join one now (it
+    /// asks to, and its pipelines for one are built).
+    fn joins_space(&self) -> bool {
+        false
+    }
+    /// Whether it says where the space's camera is (`fn camera`).
+    fn leads_space(&self) -> bool {
+        false
+    }
+    /// Its frame in the space, before anything draws: uniforms (with the
+    /// layer's `opacity`, which it applies inside its draws), prepare step,
+    /// line points.
+    fn space_update(&mut self, _queue: &wgpu::Queue, _encoder: &mut wgpu::CommandEncoder, _ctx: &FrameCtx, _layer: &Layer, _opacity: f32) {}
+    /// Hand its camera to the space (the leading layer, after its update).
+    fn space_camera(&self, _encoder: &mut wgpu::CommandEncoder) {}
+    /// Draw into the space's pass.
+    fn space_draw(&self, _pass: &mut wgpu::RenderPass<'_>) {}
     /// Visual-specific controls in the panel.
     fn ui(&mut self, _ui: &mut egui::Ui, _layer: &mut Layer) {}
 }

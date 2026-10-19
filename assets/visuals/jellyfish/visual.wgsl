@@ -113,7 +113,8 @@ fn tank() -> vec3<f32> {
     return vec3<f32>(1.7 * a.x - 0.3, 1.25 * a.y - 0.15, 1.3);
 }
 
-fn the_camera() -> Camera {
+// This layer's camera; in a shared space led by this layer, the space's.
+fn camera() -> Camera {
     let P = params();
     // A little from below, as in an aquarium: bells show what glows inside.
     var c = drifting_camera(P.camera * 0.8, 4.6, 2.3);
@@ -130,9 +131,21 @@ fn the_camera() -> Camera {
     return c;
 }
 
+// The camera everything is seen through: in a shared space, the space's
+// (the leading layer's camera()), so every layer's jellies share one tank.
+fn the_camera() -> Camera {
+    if (in_space()) {
+        return scene_camera();
+    }
+    return camera();
+}
+
 // How far from the eye the water starts to dim things (the camera's
 // distance to what it looks at, less a unit), without working out the camera.
 fn eye_near() -> f32 {
+    if (in_space()) {
+        return scene_cam[0].z - 1.0;
+    }
     return select(4.6, item(3u).w, params().view > 0.5) - 1.0;
 }
 

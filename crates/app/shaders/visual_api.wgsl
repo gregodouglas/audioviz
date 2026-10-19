@@ -49,6 +49,7 @@ struct VisualIn {
     hits: vec4<f32>,    // 1 on the frame an onset is detected (low, mid, high, all), else 0
     strengths: vec4<f32>, // onset strength now, continuous (low, mid, high, all)
     chroma_slow_v: array<vec4<f32>, 3>, // 12 pitch classes, slow profile (the chord over seconds)
+    space: vec4<f32>,   // x: 1 in a shared space (in_space() reads it); y: the layer's opacity there (the engine applies it)
 };
 
 @group(0) @binding(0) var<uniform> V: VisualIn;
@@ -63,8 +64,36 @@ struct VisualIn {
 @group(0) @binding(8) var mirror_samp: sampler;
 // Last frame's trail (with "trail": true; black otherwise).
 @group(0) @binding(9) var trail_tex: texture_2d<f32>;
+// The shared space's camera (see scene_camera()): (yaw, pitch, dist, focal), (look, 0).
+@group(0) @binding(10) var<storage, read> scene_cam: array<vec4<f32>, 2>;
 
 const TAU: f32 = 6.2831853;
+
+// A camera looking at `look` from `dist` away, turned `yaw` about the
+// vertical and tipped `pitch` (radians); `focal` is centred units per unit
+// of depth. The "creatures" library works with it (to_camera, project,
+// clip_pos); a visual that can lead a shared space says where its camera
+// is with fn camera() -> Camera.
+struct Camera {
+    yaw: f32,
+    pitch: f32,
+    dist: f32,
+    focal: f32,
+    look: vec3<f32>,
+};
+
+// 1 when the layer is in a shared space (with "space": true in visual.json).
+fn in_space() -> bool {
+    return V.space.x > 0.5;
+}
+
+// The shared space's camera this frame: the leading layer's camera(). Only
+// meaningful in a shared space (see in_space()).
+fn scene_camera() -> Camera {
+    let a = scene_cam[0];
+    let b = scene_cam[1];
+    return Camera(a.x, a.y, a.z, a.w, b.xyz);
+}
 
 @vertex
 fn vs_main(@builtin(vertex_index) vi: u32) -> FsIn {

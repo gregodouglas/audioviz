@@ -9,17 +9,11 @@
 // units: the tank is a few units across, y up. How things look (light,
 // glass, tissue) is the "luminous" library; bells are "jelly".
 
-// A camera looking at `look` (the origin unless set) from `dist` away,
-// turned `yaw` about the vertical and tipped `pitch` (radians). `focal` is
-// centred units per unit of depth: 2.2 at a distance of 4.2 shows about 1.9
-// units above and below the middle.
-struct Camera {
-    yaw: f32,
-    pitch: f32,
-    dist: f32,
-    focal: f32,
-    look: vec3<f32>,
-};
+// The `Camera` (in the API, so a shared space can pass it between layers)
+// looks at `look` (the origin unless set) from `dist` away, turned `yaw`
+// about the vertical and tipped `pitch` (radians). `focal` is centred units
+// per unit of depth: 2.2 at a distance of 4.2 shows about 1.9 units above
+// and below the middle.
 
 // A camera that swings slowly round the tank by up to `drift` radians.
 fn drifting_camera(drift: f32, dist: f32, focal: f32) -> Camera {

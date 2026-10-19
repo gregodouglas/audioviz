@@ -7,6 +7,7 @@
   "uses": ["jelly"],
   "parts": ["species.wgsl", "swim.wgsl", "body.wgsl", "mesh.wgsl", "looks.wgsl", "tank.wgsl"],
   "antialias": true,
+  "space": true,
   "levelling": "bright",
   "items": 31880,
   "triangles": 85272,

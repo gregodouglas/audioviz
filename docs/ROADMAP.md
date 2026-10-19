@@ -83,6 +83,10 @@ Modifier candidates: ~~warp~~ (built 2026-10-18), ~~halftone~~ (built 2026-10-18
 
 On the reference rig with wired output: press **C**, tap along for ten beats, read the offset the sheet shows (it is also in the Sync section after applying). Tell the session the number; if it is clearly non-zero it becomes `audio_delay_ms`'s shipped default, with a note in the Sync hint that it was measured on one rig.
 
+## Revisit: effects in a shared space (Greg, 2026-10-19)
+
+ADR-0002 bypasses a layer's effect chain while the layer is in a shared space (the layers share one picture, so a per-layer 2D chain has nothing of its own to work on). Greg agreed for now and asked that it be revisited. The likely answer is a **Space effects** chain: one 2D chain over the finished space, before it meets the flat layers, reusing `render_layer`'s chain code. Decide after the jellies' diffusion and refraction land.
+
 ## Shipping (deferred by Greg, 2026-10-18 late)
 
 - **Bespoke installer** (issue #3): the app's own design instead of Inno. Deferred; Inno stays. When it comes back: a dark Inno skin on the app's theme tokens is a day, a self-made installer is a week and worse for SmartScreen while unsigned.

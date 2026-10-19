@@ -64,6 +64,7 @@ visuals/jellyfish/mesh.wgsl f3f54eee7c8beddf
 visuals/jellyfish/species.wgsl db4b784bd9526a88
 visuals/jellyfish/swim.wgsl dafc2147e57a4802
 visuals/jellyfish/tank.wgsl ac8fa45963941546
+visuals/jellyfish/visual.json 81df9c6aa9108a0c
 visuals/jellyfish/visual.json 837f24cda13524c0
 visuals/jellyfish/visual.json aed7919e047bb97e
 visuals/jellyfish/visual.json c015f5b23cf4d721
@@ -71,6 +72,7 @@ visuals/jellyfish/visual.json ff539e84884582cc
 visuals/jellyfish/visual.wgsl 2c5ccee4c4862f6e
 visuals/jellyfish/visual.wgsl 4d31203da1ac986d
 visuals/jellyfish/visual.wgsl 73bc208e278951de
+visuals/jellyfish/visual.wgsl 89230517d1ae4fbc
 visuals/jellyfish/visual.wgsl a53cec636c4e4c2b
 visuals/kaleido/visual.json 61603cabff3e5530
 visuals/kaleido/visual.wgsl 069d6bcf431d8c05

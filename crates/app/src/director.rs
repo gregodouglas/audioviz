@@ -17,7 +17,7 @@ use crate::bandfilter::{BandPass, band_features};
 use crate::color;
 use crate::scene::{self, FrameCtx, HDR_FORMAT, Pyramid, Scene, fullscreen_pass, fullscreen_pass2, hdr_pyramid, hdr_texture};
 use crate::rng::Rng;
-use crate::settings::{DirectorMode, EdgeColour, FoldMode, FractalMode, HalftoneShape, Layer, MirrorSide, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode};
+use crate::settings::{DirectorMode, EdgeColour, Space, FoldMode, FractalMode, HalftoneShape, Layer, MirrorSide, MAX_LAYERS, MAX_MODS, MaskShape, Modifier, Settings, TintMode};
 use crate::shaders::ShaderSet;
 use crate::gpu_timer::{GpuTimer, Part};
 
@@ -27,7 +27,8 @@ struct LayerParams {
     opacity: f32,
     dt: f32,
     /// bit0: apply the layer's levelling gain; bit1: first layer (meets
-    /// black); bit2: level by the bright part only (`Scene::level_bright`).
+    /// black); bit2: level by the bright part only (`Scene::level_bright`);
+    /// bit3: a shared space (a higher bright-part floor).
     flags: u32,
     /// `settings::Blend` as u32.
     blend: u32,
@@ -388,6 +389,30 @@ impl Slot {
     }
 }
 
+/// A shared space's targets (ADR-0002): the multisampled picture every
+/// member draws into, what it resolves to, and the space's one meter and
+/// compositor uniform. Made when a scene shares its space, dropped when not.
+struct SpaceTargets {
+    ms: wgpu::TextureView,
+    out: wgpu::TextureView,
+    meter: Meter,
+    buf: wgpu::Buffer,
+}
+
+impl SpaceTargets {
+    fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
+        Self { ms: crate::shader_visual::msaa_target(device, width, height), out: hdr_texture(device, "space", width, height), meter: Meter::new(device, MAX_LAYERS, width, height), buf: scene::uniform_buffer(device, "space", std::mem::size_of::<LayerParams>() as u64) }
+    }
+}
+
+/// One entry of the stack, bottom to top: a layer (outgoing or not, its
+/// slot, its level), or the shared space, drawn where its top member sits.
+#[derive(Clone, Copy)]
+enum Entry {
+    Layer(bool, usize, f32),
+    Space,
+}
+
 /// A visual that was replaced in its slot. It keeps rendering with the layer
 /// settings it had while its opacity ramps to zero, then it is dropped.
 struct Outgoing {
@@ -448,6 +473,8 @@ pub struct Director {
     composite: wgpu::TextureView,
     /// The other half of the composite ping-pong (blend passes read one, write the other).
     composite_b: wgpu::TextureView,
+    /// The shared space, while the scene has one.
+    space: Option<SpaceTargets>,
     width: u32,
     height: u32,
     /// (seconds, stagger per slot) for whatever changes next frame.
@@ -710,6 +737,7 @@ impl Director {
             one_buf,
             composite: hdr_texture(device, "composite", width, height),
             composite_b: hdr_texture(device, "composite b", width, height),
+            space: None,
             width,
             height,
             pending: None,
@@ -866,6 +894,9 @@ impl Director {
         }
         self.composite = hdr_texture(device, "composite", width, height);
         self.composite_b = hdr_texture(device, "composite b", width, height);
+        if self.space.is_some() {
+            self.space = Some(SpaceTargets::new(device, width, height));
+        }
         for (i, s) in self.slots.iter_mut().enumerate() {
             s.resize(device, i, width, height);
         }
@@ -955,18 +986,37 @@ impl Director {
             }
         }
 
+        // In a shared space, the layers whose visual can join draw as one
+        // entry where the top one of them sits; the rest stay flat.
+        let shared = settings.space == Space::Shared;
+        let members: Vec<(bool, usize, f32)> = if shared { entries.iter().copied().filter(|&(out, i, _)| self.visual(out, i).joins_space()).collect() } else { Vec::new() };
+        let top = members.last().copied();
+        let stack: Vec<Entry> = entries.iter().filter_map(|&e| if !members.contains(&e) { Some(Entry::Layer(e.0, e.1, e.2)) } else if Some(e) == top { Some(Entry::Space) } else { None }).collect();
+        if members.is_empty() {
+            self.space = None;
+        } else if self.space.is_none() {
+            self.space = Some(SpaceTargets::new(device, self.width, self.height));
+        }
+
         // The composite ping-pongs between two textures; the last pass lands
         // in `composite`.
-        let n = entries.len();
-        for (pass, &(out, i, level)) in entries.iter().enumerate() {
+        let n = stack.len();
+        for (pass, &entry) in stack.iter().enumerate() {
             let first = pass == 0;
             let (dst_read, dst_write) = if (n - 1 - pass) % 2 == 0 { (&self.composite_b, &self.composite) } else { (&self.composite, &self.composite_b) };
-            if out {
-                let o = self.outgoing[i].as_mut().expect("outgoing entry");
-                render_layer(device, queue, encoder, &self.pipes, &frame, o.scene.as_mut(), &mut o.slot, &o.layer, level, first, dst_read, dst_write, timer);
-            } else {
-                let layer = settings.layer(i);
-                render_layer(device, queue, encoder, &self.pipes, &frame, self.layers[i].as_mut(), &mut self.slots[i], &layer, level, first, dst_read, dst_write, timer);
+            match entry {
+                Entry::Layer(true, i, level) => {
+                    let o = self.outgoing[i].as_mut().expect("outgoing entry");
+                    render_layer(device, queue, encoder, &self.pipes, &frame, o.scene.as_mut(), &mut o.slot, &o.layer, level, first, dst_read, dst_write, timer);
+                }
+                Entry::Layer(false, i, level) => {
+                    let layer = settings.layer(i);
+                    render_layer(device, queue, encoder, &self.pipes, &frame, self.layers[i].as_mut(), &mut self.slots[i], &layer, level, first, dst_read, dst_write, timer);
+                }
+                Entry::Space => {
+                    let (dst_read, dst_write) = (dst_read.clone(), dst_write.clone());
+                    self.render_space(device, queue, encoder, settings, &frame, &members, first, &dst_read, &dst_write, timer);
+                }
             }
         }
         if n == 0 {
@@ -987,29 +1037,106 @@ impl Director {
     }
 }
 
-/// One layer's frame: filter its audio, slew its tint, shift its palette,
-/// render the visual, run the modifier chain, meter it, and blend it onto
-/// the composite at `level` opacity.
-#[allow(clippy::too_many_arguments)]
-fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, pipes: &Pipes, fr: &Frame, visual: &mut dyn Scene, slot: &mut Slot, layer: &Layer, level: f32, first: bool, dst_read: &wgpu::TextureView, dst_write: &wgpu::TextureView, timer: &mut GpuTimer) {
-    let (dt, time) = (fr.dt, fr.time);
-    let si = slot.chain.index as u8;
+impl Director {
+    /// The visual of a stack entry: slot `i`'s, or the one fading out of it.
+    fn visual(&self, out: bool, i: usize) -> &dyn Scene {
+        if out { self.outgoing[i].as_ref().expect("outgoing entry").scene.as_ref() } else { self.layers[i].as_ref() }
+    }
+
+    /// The shared space's frame (ADR-0002): every member's update (the
+    /// leading one first, which hands the space its camera), then one
+    /// multisampled pass they all draw into, bottom to top, then one meter
+    /// and one blend onto the composite. Members' effects are bypassed: the
+    /// space is one picture.
+    #[allow(clippy::too_many_arguments)]
+    fn render_space(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, settings: &Settings, fr: &Frame, members: &[(bool, usize, f32)], first: bool, dst_read: &wgpu::TextureView, dst_write: &wgpu::TextureView, timer: &mut GpuTimer) {
+        let lead = members.iter().rposition(|&(out, i, _)| self.visual(out, i).leads_space());
+        let order: Vec<usize> = lead.into_iter().chain((0..members.len()).filter(|&k| Some(k) != lead)).collect();
+        for k in order {
+            let (out, i, level) = members[k];
+            timer.mark(encoder, Part::Visual(i as u8));
+            let (visual, slot, layer) = if out {
+                let o = self.outgoing[i].as_mut().expect("outgoing entry");
+                (o.scene.as_mut(), &mut o.slot, o.layer.clone())
+            } else {
+                (self.layers[i].as_mut(), &mut self.slots[i], settings.layer(i))
+            };
+            let input = layer_input(fr, slot, &layer);
+            let ctx = input.ctx(fr, slot, &layer);
+            visual.space_update(queue, encoder, &ctx, &layer, level);
+            if Some(k) == lead {
+                visual.space_camera(encoder);
+            }
+        }
+        let Some(sp) = self.space.as_mut() else { return };
+        let top = members.last().map_or(0, |m| m.1) as u8;
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("shared space"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &sp.ms, depth_slice: None, resolve_target: Some(&sp.out), ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Discard } })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            for &(out, i, _) in members {
+                let v: &dyn Scene = if out { self.outgoing[i].as_ref().expect("outgoing entry").scene.as_ref() } else { self.layers[i].as_ref() };
+                v.space_draw(&mut pass);
+            }
+        }
+        let bright = members.iter().any(|&(out, i, _)| self.visual(out, i).level_bright());
+        // Stacked, each layer is levelled to the target and they add; the
+        // space is levelled once, so it counts as its members (by their
+        // levels) to reach the Picture as bright as they would have.
+        let weight = members.iter().map(|m| m.2.min(1.0)).sum::<f32>().max(1.0);
+        let sp = self.space.as_mut().expect("space targets");
+        queue.write_buffer(&sp.buf, 0, bytemuck::bytes_of(&LayerParams { opacity: if fr.level { weight } else { 1.0 }, dt: fr.dt, flags: fr.level as u32 | if first { 2 } else { 0 } | if bright { 4 | 8 } else { 0 }, blend: 0 }));
+        timer.mark(encoder, Part::Blend(top));
+        meter_and_blend(device, encoder, &self.pipes, fr.level, &mut sp.meter, &sp.buf, &sp.out, dst_read, dst_write);
+    }
+}
+
+/// A layer's own view of the frame: its band's features and waveform (when
+/// it filters), after slewing its tint and moving its palette.
+struct LayerInput {
+    features: Option<FeatureFrame>,
+    points: Option<Vec<[f32; 2]>>,
+}
+
+impl LayerInput {
+    /// The frame as the layer's visual sees it.
+    fn ctx<'a>(&'a self, fr: &'a Frame, slot: &'a Slot, layer: &Layer) -> FrameCtx<'a> {
+        let pal_active = layer.palette.active();
+        FrameCtx {
+            features: self.features.as_ref().unwrap_or(fr.features),
+            tint: slot.tint,
+            dt: fr.dt,
+            time: fr.time,
+            sample_rate: fr.sample_rate,
+            width: fr.width,
+            height: fr.height,
+            points: self.points.as_deref().unwrap_or(fr.points),
+            auto_gain: fr.auto_gain,
+            art: fr.art_image,
+            art_id: fr.art_id,
+            photos_folder: fr.photos_folder,
+            palette: pal_active.then_some(&slot.palette.table),
+            palette_shift: slot.palette.shift,
+            palette_amount: if pal_active { layer.palette.amount } else { 0.0 },
+        }
+    }
+}
+
+/// Filter a layer's audio, slew its tint and shift its palette for this frame.
+fn layer_input(fr: &Frame, slot: &mut Slot, layer: &Layer) -> LayerInput {
+    let dt = fr.dt;
     let band = layer.band;
-    let filtered_features;
-    let feats: &FeatureFrame = if band.enabled {
-        filtered_features = band_features(fr.features, band.lo_hz, band.hi_hz);
-        &filtered_features
-    } else {
-        fr.features
-    };
-    let filtered_points;
-    let pts: &[[f32; 2]] = if band.enabled && crate::visuals::get(&layer.visual).is_some_and(|d| d.band_waveform) {
+    let features = band.enabled.then(|| band_features(fr.features, band.lo_hz, band.hi_hz));
+    let points = (band.enabled && crate::visuals::get(&layer.visual).is_some_and(|d| d.band_waveform)).then(|| {
         slot.filter.retune(band.lo_hz, band.hi_hz, fr.sample_rate as f32);
-        filtered_points = slot.filter.process(fr.points);
-        &filtered_points
-    } else {
-        fr.points
-    };
+        slot.filter.process(fr.points)
+    });
+    let feats = features.as_ref().unwrap_or(fr.features);
     // Per-layer tint: the scene's, the art's, or its own, slewed like the scene tint.
     let want = match layer.tint.mode {
         TintMode::Scene => fr.tint,
@@ -1021,26 +1148,52 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
         slot.tint[c] += (want[c] - slot.tint[c]) * k;
     }
     // Palette: rebake when the selection changed; shift it with the music.
-    {
-        let ps = &mut slot.palette;
-        let key = color::key(&layer.palette.name, &layer.palette.custom, layer.palette.cyclic);
-        if key != ps.key {
-            ps.key = key;
-            ps.table = color::bake(&layer.palette.stops(), layer.palette.cyclic);
-        }
-        let energy = energy_of(feats);
-        let beat = feats.beat_pulse * feats.beat_confidence;
-        if beat > ps.last_beat + 0.4 && layer.palette.cycle != 0.0 {
-            ps.shift += 0.04 * layer.palette.react * layer.palette.cycle.signum();
-        }
-        ps.last_beat = beat;
-        ps.shift = (ps.shift + dt * layer.palette.cycle * (0.5 + 0.5 * energy * layer.palette.react)).rem_euclid(1.0);
+    let ps = &mut slot.palette;
+    let key = color::key(&layer.palette.name, &layer.palette.custom, layer.palette.cyclic);
+    if key != ps.key {
+        ps.key = key;
+        ps.table = color::bake(&layer.palette.stops(), layer.palette.cyclic);
     }
-    let pal_active = layer.palette.active();
-    let (pal_table, pal_shift, pal_amount) = (&slot.palette.table, slot.palette.shift, if pal_active { layer.palette.amount } else { 0.0 });
-    let ctx = FrameCtx { features: feats, tint: slot.tint, dt, time, sample_rate: fr.sample_rate, width: fr.width, height: fr.height, points: pts, auto_gain: fr.auto_gain, art: fr.art_image, art_id: fr.art_id, photos_folder: fr.photos_folder, palette: pal_active.then_some(pal_table), palette_shift: pal_shift, palette_amount: pal_amount };
+    let energy = energy_of(feats);
+    let beat = feats.beat_pulse * feats.beat_confidence;
+    if beat > ps.last_beat + 0.4 && layer.palette.cycle != 0.0 {
+        ps.shift += 0.04 * layer.palette.react * layer.palette.cycle.signum();
+    }
+    ps.last_beat = beat;
+    ps.shift = (ps.shift + dt * layer.palette.cycle * (0.5 + 0.5 * energy * layer.palette.react)).rem_euclid(1.0);
+    LayerInput { features, points }
+}
+
+/// Meter a picture (when levelling is on) and blend it onto the composite
+/// by the uniform already in `buf`.
+#[allow(clippy::too_many_arguments)]
+fn meter_and_blend(device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder, pipes: &Pipes, level: bool, m: &mut Meter, buf: &wgpu::Buffer, out: &wgpu::TextureView, dst_read: &wgpu::TextureView, dst_write: &wgpu::TextureView) {
+    let (prev_s, cur_s) = (m.cur, 1 - m.cur);
+    if level {
+        let g = scene::tex_group(device, &pipes.layer_layout, &[out, &m.state[prev_s]], &pipes.sampler, buf);
+        fullscreen_pass(encoder, "layer down", &m.down, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.layer_pipelines.down, &g);
+        let g = scene::tex_group(device, &pipes.layer_layout, &[&m.down, &m.state[prev_s]], &pipes.sampler, buf);
+        fullscreen_pass(encoder, "layer meter", &m.state[cur_s], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.layer_pipelines.meter, &g);
+    }
+    let group = scene::tex_group(device, &pipes.blend_layout, &[out, &m.state[cur_s], dst_read], &pipes.sampler, buf);
+    fullscreen_pass(encoder, "layer", dst_write, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.layer_pipelines.blend, &group);
+    if level {
+        m.cur = cur_s;
+    }
+}
+
+/// One layer's frame: filter its audio, slew its tint, shift its palette,
+/// render the visual, run the modifier chain, meter it, and blend it onto
+/// the composite at `level` opacity.
+#[allow(clippy::too_many_arguments)]
+fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, pipes: &Pipes, fr: &Frame, visual: &mut dyn Scene, slot: &mut Slot, layer: &Layer, level: f32, first: bool, dst_read: &wgpu::TextureView, dst_write: &wgpu::TextureView, timer: &mut GpuTimer) {
+    let (dt, time) = (fr.dt, fr.time);
+    let si = slot.chain.index as u8;
+    let input = layer_input(fr, slot, layer);
     timer.mark(encoder, Part::Visual(si));
-    visual.render(queue, encoder, &ctx, layer);
+    visual.render(queue, encoder, &input.ctx(fr, slot, layer), layer);
+    let feats: &FeatureFrame = input.features.as_ref().unwrap_or(fr.features);
+    let (pal_table, pal_shift) = (&slot.palette.table, slot.palette.shift);
     queue.write_buffer(&slot.buf, 0, bytemuck::bytes_of(&LayerParams { opacity: level, dt, flags: fr.level as u32 | if first { 2 } else { 0 } | if visual.level_bright() { 4 } else { 0 }, blend: layer.blend as u32 }));
 
     // Effects director: which pool effects are live, and a gate per slot
@@ -1215,19 +1368,7 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
     }
     let out = src;
     timer.mark(encoder, Part::Blend(si));
-    let m = &slot.meter;
-    let (prev_s, cur_s) = (m.cur, 1 - m.cur);
-    if fr.level {
-        let g = scene::tex_group(device, &pipes.layer_layout, &[out, &m.state[prev_s]], &pipes.sampler, &slot.buf);
-        fullscreen_pass(encoder, "layer down", &m.down, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.layer_pipelines.down, &g);
-        let g = scene::tex_group(device, &pipes.layer_layout, &[&m.down, &m.state[prev_s]], &pipes.sampler, &slot.buf);
-        fullscreen_pass(encoder, "layer meter", &m.state[cur_s], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.layer_pipelines.meter, &g);
-    }
-    let group = scene::tex_group(device, &pipes.blend_layout, &[out, &m.state[cur_s], dst_read], &pipes.sampler, &slot.buf);
-    fullscreen_pass(encoder, "layer", dst_write, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.layer_pipelines.blend, &group);
-    if fr.level {
-        slot.meter.cur = cur_s;
-    }
+    meter_and_blend(device, encoder, pipes, fr.level, &mut slot.meter, &slot.buf, out, dst_read, dst_write);
     for j in flips {
         slot.chain.hist_cur[j] = 1 - slot.chain.hist_cur[j];
     }

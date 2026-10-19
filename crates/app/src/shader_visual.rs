@@ -163,6 +163,10 @@ struct Manifest {
     /// Smooth the triangles' edges (4x multisampling of the triangle pass).
     #[serde(default)]
     antialias: bool,
+    /// Can join a shared space (ADR-0002): it reads the space's camera, and
+    /// the engine applies its opacity inside its draws.
+    #[serde(default)]
+    space: bool,
 }
 
 /// Where a visual's pictures come from: a choice control whose second
@@ -211,6 +215,10 @@ pub struct ShaderDef {
     pub level_bright: bool,
     /// The triangles are multisampled ("antialias": true).
     pub antialias: bool,
+    /// Can join a shared space ("space": true).
+    pub space: bool,
+    /// Says where a shared space's camera is (`fn camera`), when it leads.
+    pub camera: bool,
     pub wgsl: String,
     /// The folder it came from, watched for changes (none for embedded copies).
     pub dir: Option<PathBuf>,
@@ -361,6 +369,12 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
     if m.antialias && m.trail {
         return Err("visual.json: \"antialias\" and \"trail\" do not go together yet".into());
     }
+    if m.space && (m.feedback || m.trail) {
+        return Err("visual.json: \"space\" does not go with \"feedback\" or \"trail\" (in a shared space a layer has no picture of its own to keep)".into());
+    }
+    if defines(wgsl, "camera") && !m.space {
+        return Err("visual.wgsl has fn camera, which leads a shared space's camera: set \"space\": true in visual.json".into());
+    }
     if m.trail && !defines(wgsl, "shade") {
         return Err("visual.json sets \"trail\": fn shade writes it, and visual.wgsl has none".into());
     }
@@ -387,7 +401,7 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
         return Err(format!("visual.json: line_count \"{}\" is not a number param", m.line_count));
     }
     let short = if m.short.is_empty() { m.name.clone() } else { m.short };
-    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, uses: m.uses, level_bright: m.levelling == "bright", antialias: m.antialias && m.triangles > 0, wgsl: wgsl.to_string(), dir })
+    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, uses: m.uses, level_bright: m.levelling == "bright", antialias: m.antialias && m.triangles > 0, space: m.space, camera: defines(wgsl, "camera"), wgsl: wgsl.to_string(), dir })
 }
 
 // ------------------------------------------------------------ values
@@ -467,30 +481,36 @@ impl ShaderDef {
         // error lines in visual.wgsl keep their offset.
         // Both write group 1, binding 0: one pipeline uses each.
         let mut prepare = String::new();
-        if self.items > 0 || self.line > 0 {
+        if self.items > 0 || self.line > 0 || self.camera {
             prepare.push_str("\n@group(1) @binding(0) var<storage, read_write> items_out: array<vec4<f32>>;\n");
         }
         if self.items > 0 {
             prepare.push_str(&format!("\n@compute @workgroup_size({PREPARE_GROUP})\nfn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {{\n    if (id.x < ITEMS) {{\n        items_out[id.x] = prepare(id.x);\n    }}\n}}\n"));
         }
         if self.line > 0 {
-            prepare.push_str(&format!("\n@compute @workgroup_size({PREPARE_GROUP})\nfn cs_line(@builtin(global_invocation_id) id: vec3<u32>) {{\n    if (id.x < LINE_POINTS) {{\n        let q = point(id.x);\n        items_out[2u * id.x] = vec4<f32>(q.pos, q.width, 0.0);\n        items_out[2u * id.x + 1u] = vec4<f32>(q.colour, 0.0);\n    }}\n}}\n"));
+            prepare.push_str(&format!("\n@compute @workgroup_size({PREPARE_GROUP})\nfn cs_line(@builtin(global_invocation_id) id: vec3<u32>) {{\n    if (id.x < LINE_POINTS) {{\n        let q = point(id.x);\n        items_out[2u * id.x] = vec4<f32>(q.pos, q.width, 0.0);\n        items_out[2u * id.x + 1u] = vec4<f32>(q.colour * V.space.y, 0.0);\n    }}\n}}\n"));
+        }
+        // The leading layer of a shared space hands its camera to the others.
+        if self.camera {
+            prepare.push_str("\n@compute @workgroup_size(1)\nfn cs_camera() {\n    let c = camera();\n    items_out[0] = vec4<f32>(c.yaw, c.pitch, c.dist, c.focal);\n    items_out[1] = vec4<f32>(c.look, 0.0);\n}\n");
         }
         if self.triangles > 0 {
             let paint = if self.paint { "paint(f)" } else { "f.colour" };
             prepare.push_str(&format!(
-                "\nstruct MeshOut {{\n    @builtin(position) clip: vec4<f32>,\n    @location(0) colour: vec4<f32>,\n    @location(1) data: vec4<f32>,\n}};\n\n@vertex\nfn vs_mesh(@builtin(vertex_index) vi: u32) -> MeshOut {{\n    let v = vertex(vi);\n    let short = min(V.resolution.x, V.resolution.y);\n    var o: MeshOut;\n    o.clip = vec4<f32>(v.pos.x * short / V.resolution.x, v.pos.y * short / V.resolution.y, 0.0, v.pos.w);\n    o.colour = v.colour;\n    o.data = v.data;\n    return o;\n}}\n\n@fragment\nfn fs_mesh(m: MeshOut) -> @location(0) vec4<f32> {{\n    var f: MeshFragment;\n    f.colour = m.colour;\n    f.data = m.data;\n    f.pixel = m.clip.xy;\n    let c = {paint};\n    // A NaN must not reach the levelling.\n    if (!all(c == c)) {{\n        return vec4<f32>(0.0);\n    }}\n    return vec4<f32>(max(c.rgb, vec3<f32>(0.0)), clamp(c.a, 0.0, 1.0));\n}}\n"
+                "\nstruct MeshOut {{\n    @builtin(position) clip: vec4<f32>,\n    @location(0) colour: vec4<f32>,\n    @location(1) data: vec4<f32>,\n}};\n\n@vertex\nfn vs_mesh(@builtin(vertex_index) vi: u32) -> MeshOut {{\n    let v = vertex(vi);\n    let short = min(V.resolution.x, V.resolution.y);\n    var o: MeshOut;\n    o.clip = vec4<f32>(v.pos.x * short / V.resolution.x, v.pos.y * short / V.resolution.y, 0.0, v.pos.w);\n    o.colour = v.colour;\n    o.data = v.data;\n    return o;\n}}\n\n@fragment\nfn fs_mesh(m: MeshOut) -> @location(0) vec4<f32> {{\n    var f: MeshFragment;\n    f.colour = m.colour;\n    f.data = m.data;\n    f.pixel = m.clip.xy;\n    let c = {paint};\n    // A NaN must not reach the levelling.\n    if (!all(c == c)) {{\n        return vec4<f32>(0.0);\n    }}\n    return vec4<f32>(max(c.rgb, vec3<f32>(0.0)), clamp(c.a, 0.0, 1.0)) * V.space.y;\n}}\n"
             ));
         }
         // A line visual may leave out shade(): the line pass clears instead.
         if !self.shade {
             prepare.push_str("\nfn shade(uv: vec2<f32>) -> vec3<f32> {\n    return vec3<f32>(0.0);\n}\n");
         }
-        // One NaN pixel would black out the layer's levelling: drop it.
+        // One NaN pixel would black out the layer's levelling: drop it. The
+        // wrappers scale by V.space.y: a layer's opacity in a shared space
+        // (1 otherwise).
         let main = if self.trail {
             "@fragment\nfn fs_main(in: FsIn) -> TrailOut {\n    trail_out = vec3<f32>(0.0);\n    let c = shade(in.uv);\n    let t = trail_out;\n    var o: TrailOut;\n    o.colour = vec4<f32>(select(vec3<f32>(0.0), max(c, vec3<f32>(0.0)), all(c == c)), 1.0);\n    o.trail = vec4<f32>(select(vec3<f32>(0.0), max(t, vec3<f32>(0.0)), all(t == t)), 1.0);\n    return o;\n}\n\nstruct TrailOut {\n    @location(0) colour: vec4<f32>,\n    @location(1) trail: vec4<f32>,\n};\n"
         } else {
-            "@fragment\nfn fs_main(in: FsIn) -> @location(0) vec4<f32> {\n    let c = shade(in.uv);\n    let ok = all(c == c);\n    return vec4<f32>(select(vec3<f32>(0.0), max(c, vec3<f32>(0.0)), ok), 1.0);\n}\n"
+            "@fragment\nfn fs_main(in: FsIn) -> @location(0) vec4<f32> {\n    let c = shade(in.uv);\n    let ok = all(c == c);\n    return vec4<f32>(select(vec3<f32>(0.0), max(c, vec3<f32>(0.0)), ok) * V.space.y, 1.0);\n}\n"
         };
         prepare_after(&prepare, format!("{}{}\n\n{main}", self.prefix(shaders), wgsl))
     }
@@ -502,15 +522,16 @@ impl ShaderDef {
         let src = self.source(shaders, &self.wgsl);
         let (prepare, line, mesh, trail) = (self.items > 0, self.line > 0, self.triangles > 0, self.trail);
         let samples = if mesh && self.antialias { MESH_SAMPLES } else { 1 };
+        let (space, camera) = (self.space, self.camera);
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        (&src, prepare, line, mesh, trail, samples).hash(&mut h);
+        (&src, prepare, line, mesh, trail, samples, space, camera).hash(&mut h);
         let line_src = line.then(|| {
             let text = shaders.source("visual_lines.wgsl");
             let mut h = std::collections::hash_map::DefaultHasher::new();
             text.hash(&mut h);
             (h.finish(), text)
         });
-        Job { key: h.finish(), id: self.id.clone(), src, prepare, line, mesh, trail, samples, line_src }
+        Job { key: h.finish(), id: self.id.clone(), src, prepare, line, mesh, trail, samples, space, camera, line_src }
     }
 }
 
@@ -770,6 +791,8 @@ struct Uniform {
     hits: [f32; 4],
     strengths: [f32; 4],
     chroma_slow: [[f32; 4]; 3],
+    /// (1 in a shared space, the layer's opacity there (1 otherwise), 0, 0).
+    space: [f32; 4],
 }
 
 // ------------------------------------------------------------ building off the render thread
@@ -790,6 +813,8 @@ struct Shared {
     layout: wgpu::BindGroupLayout,
     out_layout: wgpu::BindGroupLayout,
     line_layout: wgpu::BindGroupLayout,
+    /// The shared space's camera, which every visual reads (binding 10).
+    camera: wgpu::Buffer,
     work: Mutex<Work>,
     wake: Condvar,
 }
@@ -799,8 +824,9 @@ struct Work {
     jobs: VecDeque<Job>,
     queued: HashSet<u64>,
     done: HashMap<u64, Result<Arc<Built>, String>>,
-    /// The engine's line pipeline by the hash of `visual_lines.wgsl`.
-    lines: HashMap<u64, Option<wgpu::RenderPipeline>>,
+    /// The engine's line pipeline by the hash of `visual_lines.wgsl` and
+    /// its samples.
+    lines: HashMap<(u64, u32), Option<wgpu::RenderPipeline>>,
 }
 
 struct Job {
@@ -813,6 +839,9 @@ struct Job {
     trail: bool,
     /// The triangle pass's samples (1, or MESH_SAMPLES when antialiased).
     samples: u32,
+    /// Build the shared-space pipelines too, and the camera pass.
+    space: bool,
+    camera: bool,
     line_src: Option<(u64, String)>,
 }
 
@@ -825,7 +854,22 @@ struct Built {
     line_draw: Option<wgpu::RenderPipeline>,
     /// Samples per pixel of the picture and triangles (1, or MESH_SAMPLES).
     samples: u32,
+    /// With "space": how it draws in a shared space.
+    space: Option<SpaceBuilt>,
 }
+
+/// A visual's pipelines in a shared space: everything draws into the
+/// space's multisampled target, the picture added (the layers share it), and
+/// a leading visual's camera pass.
+struct SpaceBuilt {
+    picture: wgpu::RenderPipeline,
+    mesh: Option<wgpu::RenderPipeline>,
+    line_draw: Option<wgpu::RenderPipeline>,
+    camera: Option<wgpu::ComputePipeline>,
+}
+
+/// Bytes of a shared space's camera: (yaw, pitch, dist, focal), (look, 0).
+const CAMERA_BYTES: u64 = 32;
 
 fn shared(device: &wgpu::Device) -> Arc<Shared> {
     static SHARED: OnceLock<Arc<Shared>> = OnceLock::new();
@@ -846,6 +890,7 @@ fn shared(device: &wgpu::Device) -> Arc<Shared> {
                     entry(7, texture),
                     entry(8, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
                     entry(9, texture),
+                    entry(10, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }),
                 ],
             });
             let out_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -859,7 +904,13 @@ fn shared(device: &wgpu::Device) -> Arc<Shared> {
                     wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::VERTEX, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
                 ],
             });
-            let sh = Arc::new(Shared { device: device.clone(), layout, out_layout, line_layout, work: Mutex::new(Work::default()), wake: Condvar::new() });
+            // One space at a time, so one camera; it starts where the tank's would.
+            let camera = device.create_buffer(&wgpu::BufferDescriptor { label: Some("shared space camera"), size: CAMERA_BYTES, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: true });
+            if let Ok(mut v) = camera.slice(..).get_mapped_range_mut() {
+                v.copy_from_slice(bytemuck::cast_slice(&[0.0f32, 0.0, 4.6, 2.3, 0.0, 0.0, 0.0, 0.0]));
+            }
+            camera.unmap();
+            let sh = Arc::new(Shared { device: device.clone(), layout, out_layout, line_layout, camera, work: Mutex::new(Work::default()), wake: Condvar::new() });
             let worker = sh.clone();
             if let Err(e) = std::thread::Builder::new().name("visual builder".into()).spawn(move || worker.run()) {
                 tracing::error!("could not start the visual builder: {e}");
@@ -911,22 +962,26 @@ impl Shared {
                 w.jobs.pop_front().expect("a job")
             };
             let started = Instant::now();
-            let line_draw = job.line_src.as_ref().map(|(k, src)| {
-                if let Some(p) = self.work.lock().ok().and_then(|w| w.lines.get(k).cloned()) {
+            let line_draw = |samples: u32| {
+                let (k, src) = job.line_src.as_ref()?;
+                if let Some(p) = self.work.lock().ok().and_then(|w| w.lines.get(&(*k, samples)).cloned()) {
                     return p;
                 }
                 let p = scene::guarded(&self.device, || {
                     let m = self.device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("visual_lines.wgsl"), source: wgpu::ShaderSource::Wgsl(src.as_str().into()) });
-                    scene::pipeline(&self.device, "loaded visual line", &self.line_layout, &m, HDR_FORMAT, Some(scene::ADDITIVE))
+                    scene::pipeline_samples(&self.device, "loaded visual line", &self.line_layout, &m, HDR_FORMAT, Some(scene::ADDITIVE), samples)
                 })
                 .map_err(|e| tracing::warn!("visual_lines.wgsl: {e}"))
                 .ok();
                 if let Ok(mut w) = self.work.lock() {
-                    w.lines.insert(*k, p.clone());
+                    w.lines.insert((*k, samples), p.clone());
                 }
                 p
+            };
+            let built = self.compile(&job).map(|(picture, prepare, line, mesh, space)| {
+                let space = space.map(|s| SpaceBuilt { line_draw: line_draw(MESH_SAMPLES), ..s });
+                Arc::new(Built { picture, prepare, line, mesh, line_draw: line_draw(1), samples: job.samples, space })
             });
-            let built = self.compile(&job).map(|(picture, prepare, line, mesh)| Arc::new(Built { picture, prepare, line, mesh, line_draw: line_draw.flatten(), samples: job.samples }));
             match &built {
                 Ok(_) => tracing::debug!("visual {} built in {} ms", job.id, started.elapsed().as_millis()),
                 Err(e) => tracing::debug!("visual {} failed to build: {e}", job.id),
@@ -939,7 +994,7 @@ impl Shared {
     }
 
     #[allow(clippy::type_complexity)]
-    fn compile(&self, job: &Job) -> Result<(wgpu::RenderPipeline, Option<wgpu::ComputePipeline>, Option<wgpu::ComputePipeline>, Option<wgpu::RenderPipeline>), String> {
+    fn compile(&self, job: &Job) -> Result<(wgpu::RenderPipeline, Option<wgpu::ComputePipeline>, Option<wgpu::ComputePipeline>, Option<wgpu::RenderPipeline>, Option<SpaceBuilt>), String> {
         let (device, layout, out_layout) = (&self.device, &self.layout, &self.out_layout);
         scene::guarded(device, || {
             let m = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(&job.id), source: wgpu::ShaderSource::Wgsl(job.src.as_str().into()) });
@@ -951,7 +1006,14 @@ impl Shared {
             let line = job.line.then(|| compute("loaded visual line points", "cs_line"));
             let mesh = job.mesh.then(|| mesh_pipeline(device, layout, &m, job.samples));
             let picture = if job.trail { scene::pipeline2(device, &job.id, layout, &m, HDR_FORMAT) } else { scene::pipeline_samples(device, &job.id, layout, &m, HDR_FORMAT, None, job.samples) };
-            (picture, prepare, line, mesh)
+            // In a shared space everything is multisampled and the picture adds.
+            let space = job.space.then(|| SpaceBuilt {
+                picture: scene::pipeline_samples(device, &format!("{} in a shared space", job.id), layout, &m, HDR_FORMAT, Some(scene::ADDITIVE), MESH_SAMPLES),
+                mesh: job.mesh.then(|| if job.samples == MESH_SAMPLES { mesh.clone() } else { None }.unwrap_or_else(|| mesh_pipeline(device, layout, &m, MESH_SAMPLES))),
+                line_draw: None,
+                camera: job.camera.then(|| compute("loaded visual camera", "cs_camera")),
+            });
+            (picture, prepare, line, mesh, space)
         })
     }
 }
@@ -1045,6 +1107,14 @@ pub struct ShaderVisual {
     mirror: wgpu::Sampler,
     /// How many times each button control was pressed (what the shader sees).
     presses: BTreeMap<String, u32>,
+    /// The build with its shared-space pipelines (with "space").
+    space: Option<Arc<Built>>,
+    /// Where a leading visual's camera pass writes, before it is copied to
+    /// the space's camera, and the group that writes it.
+    camera_out: wgpu::Buffer,
+    camera_group: wgpu::BindGroup,
+    /// How many line points this frame draws (0: no line).
+    line_now: u32,
 }
 
 /// A picture texture filled with `rgba` (sRGB, one level); unfilled it is
@@ -1109,7 +1179,7 @@ const MESH_SAMPLES: u32 = 4;
 
 /// The multisampled target an antialiased visual draws its picture and
 /// triangles in before they resolve into its output.
-fn msaa_target(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
+pub(crate) fn msaa_target(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
     device
         .create_texture(&wgpu::TextureDescriptor {
             label: Some("loaded visual msaa"),
@@ -1185,6 +1255,8 @@ impl ShaderVisual {
         let line_uniform = scene::uniform_buffer(device, "loaded visual line", 16);
         let line_points = line_buffer(device, def.line);
         let (line_out_group, line_group) = line_groups(device, &out_layout, &line_layout, &line_points, &line_uniform);
+        let camera_out = device.create_buffer(&wgpu::BufferDescriptor { label: Some("loaded visual camera"), size: CAMERA_BYTES, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
+        let camera_group = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("loaded visual camera out"), layout: &out_layout, entries: &[wgpu::BindGroupEntry { binding: 0, resource: camera_out.as_entire_binding() }] });
         let mut me = Self {
             line_cs: None,
             line_points,
@@ -1248,6 +1320,10 @@ impl ShaderVisual {
                 ..Default::default()
             }),
             presses: BTreeMap::new(),
+            space: None,
+            camera_out,
+            camera_group,
+            line_now: 0,
         };
         me.make_groups(device);
         me.reload(shaders);
@@ -1260,6 +1336,7 @@ impl ShaderVisual {
     }
 
     fn make_groups(&mut self, device: &wgpu::Device) {
+        let sh = shared(device);
         let group = |prev: &wgpu::TextureView, trail: &wgpu::TextureView, items: &wgpu::Buffer| {
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("loaded visual"),
@@ -1275,6 +1352,7 @@ impl ShaderVisual {
                     wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::TextureView(&self.pics[1]) },
                     wgpu::BindGroupEntry { binding: 8, resource: wgpu::BindingResource::Sampler(&self.mirror) },
                     wgpu::BindGroupEntry { binding: 9, resource: wgpu::BindingResource::TextureView(trail) },
+                    wgpu::BindGroupEntry { binding: 10, resource: sh.camera.as_entire_binding() },
                 ],
             })
         };
@@ -1308,6 +1386,7 @@ impl ShaderVisual {
                 self.prepare = b.prepare.clone();
                 self.line_cs = b.line.clone();
                 self.mesh = b.mesh.clone();
+                self.space = b.space.is_some().then(|| b.clone());
                 if (b.samples > 1) != self.msaa.is_some() {
                     self.msaa = (b.samples > 1).then(|| msaa_target(&device, self.size.0, self.size.1));
                 }
@@ -1404,190 +1483,55 @@ impl Scene for ShaderVisual {
     }
 
     fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer) {
-        self.collect();
-        let f = ctx.features;
-        let dt = ctx.dt;
-        let energy = ((f.bass_att + f.mid_att + f.treb_att) / 3.0).clamp(0.0, 2.5);
-        self.flow += dt * (0.5 + 0.5 * energy);
-        let want = (f.bass_att - 1.0).max(0.0) * 0.8 + f.onset_pulse[0].min(1.0) * 0.6;
-        self.swell += (want - self.swell) * (1.0 - (-dt / if want > self.swell { 0.04 } else { 0.35 }).exp());
-        let (attack, release) = (1.0 - (-dt / 0.03).exp(), 1.0 - (-dt / 0.2).exp());
-        let mut raw = [[0.0f32; 4]; 8];
-        let mut smooth = [[0.0f32; 4]; 8];
-        for i in 0..32 {
-            let v = f.bands.get(i).copied().unwrap_or(0.0).max(0.0);
-            let c = self.bands[i];
-            self.bands[i] = c + (v - c) * if v > c { attack } else { release };
-            raw[i / 4][i % 4] = v;
-            smooth[i / 4][i % 4] = self.bands[i];
+        if self.update(queue, encoder, ctx, layer, None) {
+            self.draw(encoder);
         }
-        let mut chroma = [[0.0f32; 4]; 3];
-        for (i, c) in f.chroma.iter().enumerate() {
-            chroma[i / 4][i % 4] = *c;
+    }
+
+    fn joins_space(&self) -> bool {
+        self.live.space && self.space.as_ref().is_some_and(|b| b.space.is_some())
+    }
+
+    fn leads_space(&self) -> bool {
+        self.joins_space() && self.space.as_ref().and_then(|b| b.space.as_ref()).is_some_and(|s| s.camera.is_some())
+    }
+
+    fn space_update(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer, opacity: f32) {
+        self.update(queue, encoder, ctx, layer, Some(opacity));
+    }
+
+    fn space_camera(&self, encoder: &mut wgpu::CommandEncoder) {
+        let Some(cs) = self.space.as_ref().and_then(|b| b.space.as_ref()).and_then(|s| s.camera.as_ref()) else { return };
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("loaded visual camera"), timestamp_writes: None });
+            pass.set_pipeline(cs);
+            pass.set_bind_group(0, &self.groups[self.icur], &[]);
+            pass.set_bind_group(1, &self.camera_group, &[]);
+            pass.dispatch_workgroups(1, 1, 1);
         }
-        let stored = layer.params.get(&self.def.id).and_then(Value::as_object);
-        let mut p = [[0.0f32; 4]; MAX_PARAMS / 4];
-        for (i, d) in self.live.params.iter().enumerate().take(MAX_PARAMS) {
-            p[i / 4][i % 4] = if d.kind == ParamKind::Button { self.presses.get(&d.id).copied().unwrap_or(0) as f32 } else { d.number(stored.and_then(|o| o.get(&d.id))) };
-        }
-        let mut chroma_slow = [[0.0f32; 4]; 3];
-        for (i, c) in f.chroma_slow.iter().enumerate() {
-            chroma_slow[i / 4][i % 4] = *c;
-        }
-        self.feed_pictures(queue, ctx, stored, dt);
-        let u = Uniform {
-            resolution: [ctx.width as f32, ctx.height as f32],
-            time: ctx.time,
-            dt,
-            flow: self.flow,
-            energy,
-            bass: f.bass_att,
-            mid: f.mid_att,
-            treble: f.treb_att,
-            beat: f.beat_pulse * f.beat_confidence,
-            beat_phase: f.beat_phase,
-            beat_count: f.beat_count as f32,
-            bpm: f.bpm,
-            onset: f.onset_pulse[3].min(1.0),
-            swell: self.swell,
-            key: f.key_class as f32,
-            onsets: f.onset_pulse.map(|o| o.min(1.0)),
-            tint: [ctx.tint[0], ctx.tint[1], ctx.tint[2], 1.0],
-            palette_mix: ctx.palette_amount,
-            palette_shift: ctx.palette_shift,
-            quiet: f.quiet as u32 as f32,
-            has_art: self.has_art as u32 as f32,
-            p,
-            bands: smooth,
-            raw,
-            chroma,
-            palette: ctx.palette.copied().unwrap_or([[0.0; 4]; crate::color::ENTRIES]),
-            wave_new: ctx.points.len().min(WAVE - 1) as f32,
-            auto_gain: ctx.auto_gain,
-            sample_rate: ctx.sample_rate as f32,
-            // The track id hashed to 0..1.
-            track: crate::rng::Rng::seeded(&[ctx.art_id]).next(),
-            instance: self.instance,
-            picture_fade: { let t = self.pic_fade.clamp(0.0, 1.0); t * t * (3.0 - 2.0 * t) },
-            picture_aspect: self.pic_size[0].0 as f32 / self.pic_size[0].1.max(1) as f32,
-            picture_prev_aspect: self.pic_size[1].0 as f32 / self.pic_size[1].1.max(1) as f32,
-            picture_count: self.pic_count as f32,
-            confidence: f.beat_confidence,
-            silent: f.silent as u32 as f32,
-            _pad8: 0.0,
-            hits: f.onset_hit.map(|h| h as u32 as f32),
-            strengths: f.onset_strength,
-            chroma_slow,
-        };
-        queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
-        // The album art, once per track.
-        if ctx.art_id != self.art_id {
-            self.art_id = ctx.art_id;
-            let px = ctx.art.and_then(art_pixels);
-            if let Some(px) = &px {
-                let size = wgpu::Extent3d { width: ART, height: ART, depth_or_array_layers: 1 };
-                queue.write_texture(
-                    wgpu::TexelCopyTextureInfo { texture: &self.art, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-                    px,
-                    wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * ART), rows_per_image: Some(ART) },
-                    size,
-                );
-            }
-            self.has_art = px.is_some();
-        }
-        let gain = ctx.auto_gain;
-        for s in ctx.points {
-            self.ring.push_back([s[0] * gain, s[1] * gain]);
-        }
-        while self.ring.len() > WAVE {
-            self.ring.pop_front();
-        }
-        let mut wave = vec![[0.0f32; 2]; WAVE];
-        let off = WAVE - self.ring.len();
-        for (i, s) in self.ring.iter().enumerate() {
-            wave[off + i] = *s;
-        }
-        queue.write_buffer(&self.wave_buf, 0, bytemuck::cast_slice(&wave));
-        let Some(pipeline) = &self.pipeline else {
-            scene::clear_pass(encoder, "loaded visual (no shader)", &self.out[self.cur]);
+        encoder.copy_buffer_to_buffer(&self.camera_out, 0, &shared(&self.device).camera, 0, CAMERA_BYTES);
+    }
+
+    fn space_draw(&self, pass: &mut wgpu::RenderPass<'_>) {
+        let Some(sp) = self.space.as_ref().and_then(|b| b.space.as_ref()) else { return };
+        if self.pipeline.is_none() {
             return;
-        };
-        // With feedback (or a trail) the two outputs ping-pong and `prev` reads the other.
-        let (write, prev) = if self.live.feedback || self.trail.is_some() { (1 - self.cur, 1 + self.cur) } else { (self.cur, 0) };
-        // The prepare step reads last frame's items and writes this frame's.
-        if let Some(prepare) = &self.prepare {
-            let next = 1 - self.icur;
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("loaded visual prepare"), timestamp_writes: None });
-            pass.set_pipeline(prepare);
-            pass.set_bind_group(0, &self.groups[prev * 2 + self.icur], &[]);
-            pass.set_bind_group(1, &self.item_groups[next], &[]);
-            pass.dispatch_workgroups(self.items_len.div_ceil(PREPARE_GROUP), 1, 1);
-            drop(pass);
-            self.icur = next;
         }
-        let group = &self.groups[prev * 2 + self.icur];
-        // The line's points, after prepare so point() can read this frame's items.
-        // How many points to draw: all, or what the line_count param says.
-        let count = match self.live.params.iter().position(|d| d.id == self.live.line_count) {
-            Some(k) => (p[k / 4][k % 4].round().max(2.0) as u32).min(self.line_len),
-            None => self.line_len,
-        };
-        let line = match (&self.line_cs, &self.line_draw) {
-            (Some(cs), Some(draw)) if count >= 2 => {
-                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("loaded visual line points"), timestamp_writes: None });
-                pass.set_pipeline(cs);
-                pass.set_bind_group(0, group, &[]);
-                pass.set_bind_group(1, &self.line_out_group, &[]);
-                pass.dispatch_workgroups(count.div_ceil(PREPARE_GROUP), 1, 1);
-                Some(draw)
-            }
-            _ => None,
-        };
-        let mesh = self.mesh.as_ref().filter(|_| self.live.triangles > 0);
-        // The passes in order (picture, triangles, line); the first clears.
-        let picture = self.live.shade || (line.is_none() && mesh.is_none());
-        if let (Some(ms), Some(mesh)) = (&self.msaa, mesh) {
-            // Antialiased: the picture and the triangles in one multisampled
-            // pass, resolved into the output.
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("loaded visual antialiased"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: ms, depth_slice: None, resolve_target: Some(&self.out[write]), ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Discard } })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_bind_group(0, group, &[]);
-            if picture {
-                pass.set_pipeline(pipeline);
-                pass.draw(0..3, 0..1);
-            }
+        // No feedback in a space: `prev` reads black.
+        pass.set_bind_group(0, &self.groups[self.icur], &[]);
+        if self.live.shade {
+            pass.set_pipeline(&sp.picture);
+            pass.draw(0..3, 0..1);
+        }
+        if let Some(mesh) = sp.mesh.as_ref().filter(|_| self.live.triangles > 0) {
             pass.set_pipeline(mesh);
             pass.draw(0..self.live.triangles * 3, 0..1);
-        } else if picture {
-            match &self.trail {
-                Some(t) if self.live.trail => scene::fullscreen_pass2(encoder, &self.def.id, &self.out[write], &t[write], pipeline, group),
-                _ => fullscreen_pass(encoder, &self.def.id, &self.out[write], wgpu::LoadOp::Clear(wgpu::Color::BLACK), pipeline, group),
-            }
         }
-        if let (Some(mesh), None) = (mesh, &self.msaa) {
-            let load = if picture { wgpu::LoadOp::Load } else { wgpu::LoadOp::Clear(wgpu::Color::BLACK) };
-            let mut pass = scene::begin_pass(encoder, "loaded visual triangles", &self.out[write], load);
-            pass.set_pipeline(mesh);
-            pass.set_bind_group(0, group, &[]);
-            pass.draw(0..self.live.triangles * 3, 0..1);
-        }
-        let picture = picture || mesh.is_some();
-        if let Some(draw) = line {
-            let u: [u32; 4] = [(ctx.width as f32).to_bits(), (ctx.height as f32).to_bits(), count, self.live.beam as u32];
-            queue.write_buffer(&self.line_uniform, 0, bytemuck::cast_slice(&u));
-            let load = if picture { wgpu::LoadOp::Load } else { wgpu::LoadOp::Clear(wgpu::Color::BLACK) };
-            let mut pass = scene::begin_pass(encoder, "loaded visual line", &self.out[write], load);
-            pass.set_pipeline(draw);
+        if let Some(line) = sp.line_draw.as_ref().filter(|_| self.line_now >= 2) {
+            pass.set_pipeline(line);
             pass.set_bind_group(0, &self.line_group, &[]);
-            pass.draw(0..6, 0..count - 1);
+            pass.draw(0..6, 0..self.line_now - 1);
         }
-        self.cur = write;
     }
 
     fn output(&self) -> &wgpu::TextureView {
@@ -1703,6 +1647,218 @@ impl Scene for ShaderVisual {
 }
 
 impl ShaderVisual {
+    /// A frame before anything draws: the uniforms, the album art, the
+    /// waveform, the prepare step and the line's points. `space` is the
+    /// layer's opacity when it is in a shared space. False when there is no
+    /// pipeline yet (on its own, the output is cleared).
+    fn update(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, ctx: &FrameCtx, layer: &Layer, space: Option<f32>) -> bool {
+        self.collect();
+        let f = ctx.features;
+        let dt = ctx.dt;
+        let energy = ((f.bass_att + f.mid_att + f.treb_att) / 3.0).clamp(0.0, 2.5);
+        self.flow += dt * (0.5 + 0.5 * energy);
+        let want = (f.bass_att - 1.0).max(0.0) * 0.8 + f.onset_pulse[0].min(1.0) * 0.6;
+        self.swell += (want - self.swell) * (1.0 - (-dt / if want > self.swell { 0.04 } else { 0.35 }).exp());
+        let (attack, release) = (1.0 - (-dt / 0.03).exp(), 1.0 - (-dt / 0.2).exp());
+        let mut raw = [[0.0f32; 4]; 8];
+        let mut smooth = [[0.0f32; 4]; 8];
+        for i in 0..32 {
+            let v = f.bands.get(i).copied().unwrap_or(0.0).max(0.0);
+            let c = self.bands[i];
+            self.bands[i] = c + (v - c) * if v > c { attack } else { release };
+            raw[i / 4][i % 4] = v;
+            smooth[i / 4][i % 4] = self.bands[i];
+        }
+        let mut chroma = [[0.0f32; 4]; 3];
+        for (i, c) in f.chroma.iter().enumerate() {
+            chroma[i / 4][i % 4] = *c;
+        }
+        let stored = layer.params.get(&self.def.id).and_then(Value::as_object);
+        let mut p = [[0.0f32; 4]; MAX_PARAMS / 4];
+        for (i, d) in self.live.params.iter().enumerate().take(MAX_PARAMS) {
+            p[i / 4][i % 4] = if d.kind == ParamKind::Button { self.presses.get(&d.id).copied().unwrap_or(0) as f32 } else { d.number(stored.and_then(|o| o.get(&d.id))) };
+        }
+        let mut chroma_slow = [[0.0f32; 4]; 3];
+        for (i, c) in f.chroma_slow.iter().enumerate() {
+            chroma_slow[i / 4][i % 4] = *c;
+        }
+        self.feed_pictures(queue, ctx, stored, dt);
+        let u = Uniform {
+            resolution: [ctx.width as f32, ctx.height as f32],
+            time: ctx.time,
+            dt,
+            flow: self.flow,
+            energy,
+            bass: f.bass_att,
+            mid: f.mid_att,
+            treble: f.treb_att,
+            beat: f.beat_pulse * f.beat_confidence,
+            beat_phase: f.beat_phase,
+            beat_count: f.beat_count as f32,
+            bpm: f.bpm,
+            onset: f.onset_pulse[3].min(1.0),
+            swell: self.swell,
+            key: f.key_class as f32,
+            onsets: f.onset_pulse.map(|o| o.min(1.0)),
+            tint: [ctx.tint[0], ctx.tint[1], ctx.tint[2], 1.0],
+            palette_mix: ctx.palette_amount,
+            palette_shift: ctx.palette_shift,
+            quiet: f.quiet as u32 as f32,
+            has_art: self.has_art as u32 as f32,
+            p,
+            bands: smooth,
+            raw,
+            chroma,
+            palette: ctx.palette.copied().unwrap_or([[0.0; 4]; crate::color::ENTRIES]),
+            wave_new: ctx.points.len().min(WAVE - 1) as f32,
+            auto_gain: ctx.auto_gain,
+            sample_rate: ctx.sample_rate as f32,
+            // The track id hashed to 0..1.
+            track: crate::rng::Rng::seeded(&[ctx.art_id]).next(),
+            instance: self.instance,
+            picture_fade: { let t = self.pic_fade.clamp(0.0, 1.0); t * t * (3.0 - 2.0 * t) },
+            picture_aspect: self.pic_size[0].0 as f32 / self.pic_size[0].1.max(1) as f32,
+            picture_prev_aspect: self.pic_size[1].0 as f32 / self.pic_size[1].1.max(1) as f32,
+            picture_count: self.pic_count as f32,
+            confidence: f.beat_confidence,
+            silent: f.silent as u32 as f32,
+            _pad8: 0.0,
+            hits: f.onset_hit.map(|h| h as u32 as f32),
+            strengths: f.onset_strength,
+            chroma_slow,
+            space: [space.map_or(0.0, |_| 1.0), space.unwrap_or(1.0), 0.0, 0.0],
+        };
+        queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
+        // The album art, once per track.
+        if ctx.art_id != self.art_id {
+            self.art_id = ctx.art_id;
+            let px = ctx.art.and_then(art_pixels);
+            if let Some(px) = &px {
+                let size = wgpu::Extent3d { width: ART, height: ART, depth_or_array_layers: 1 };
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo { texture: &self.art, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                    px,
+                    wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * ART), rows_per_image: Some(ART) },
+                    size,
+                );
+            }
+            self.has_art = px.is_some();
+        }
+        let gain = ctx.auto_gain;
+        for s in ctx.points {
+            self.ring.push_back([s[0] * gain, s[1] * gain]);
+        }
+        while self.ring.len() > WAVE {
+            self.ring.pop_front();
+        }
+        let mut wave = vec![[0.0f32; 2]; WAVE];
+        let off = WAVE - self.ring.len();
+        for (i, s) in self.ring.iter().enumerate() {
+            wave[off + i] = *s;
+        }
+        queue.write_buffer(&self.wave_buf, 0, bytemuck::cast_slice(&wave));
+        if self.pipeline.is_none() {
+            if space.is_none() {
+                scene::clear_pass(encoder, "loaded visual (no shader)", &self.out[self.cur]);
+            }
+            self.line_now = 0;
+            return false;
+        }
+        // With feedback (or a trail) the two outputs ping-pong and `prev`
+        // reads the other; in a shared space there is none.
+        let prev = if space.is_none() && (self.live.feedback || self.trail.is_some()) { 1 + self.cur } else { 0 };
+        // The prepare step reads last frame's items and writes this frame's.
+        if let Some(prepare) = &self.prepare {
+            let next = 1 - self.icur;
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("loaded visual prepare"), timestamp_writes: None });
+            pass.set_pipeline(prepare);
+            pass.set_bind_group(0, &self.groups[prev * 2 + self.icur], &[]);
+            pass.set_bind_group(1, &self.item_groups[next], &[]);
+            pass.dispatch_workgroups(self.items_len.div_ceil(PREPARE_GROUP), 1, 1);
+            drop(pass);
+            self.icur = next;
+        }
+        let group = &self.groups[prev * 2 + self.icur];
+        // The line's points, after prepare so point() can read this frame's items.
+        // How many points to draw: all, or what the line_count param says.
+        let count = match self.live.params.iter().position(|d| d.id == self.live.line_count) {
+            Some(k) => (p[k / 4][k % 4].round().max(2.0) as u32).min(self.line_len),
+            None => self.line_len,
+        };
+        let line = match (&self.line_cs, &self.line_draw) {
+            (Some(cs), Some(_)) if count >= 2 => {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("loaded visual line points"), timestamp_writes: None });
+                pass.set_pipeline(cs);
+                pass.set_bind_group(0, group, &[]);
+                pass.set_bind_group(1, &self.line_out_group, &[]);
+                pass.dispatch_workgroups(count.div_ceil(PREPARE_GROUP), 1, 1);
+                Some(())
+            }
+            _ => None,
+        };
+        self.line_now = if line.is_some() { count } else { 0 };
+        if self.line_now > 0 {
+            let u: [u32; 4] = [(ctx.width as f32).to_bits(), (ctx.height as f32).to_bits(), count, self.live.beam as u32];
+            queue.write_buffer(&self.line_uniform, 0, bytemuck::cast_slice(&u));
+        }
+        true
+    }
+
+    /// Draw this frame's picture, triangles and line into its own output
+    /// (after `update`).
+    fn draw(&mut self, encoder: &mut wgpu::CommandEncoder) {
+        let Some(pipeline) = &self.pipeline else { return };
+        let (write, prev) = if self.live.feedback || self.trail.is_some() { (1 - self.cur, 1 + self.cur) } else { (self.cur, 0) };
+        let group = &self.groups[prev * 2 + self.icur];
+        let line = self.line_draw.as_ref().filter(|_| self.line_now >= 2);
+        let count = self.line_now;
+        let mesh = self.mesh.as_ref().filter(|_| self.live.triangles > 0);
+        // The passes in order (picture, triangles, line); the first clears.
+        let picture = self.live.shade || (line.is_none() && mesh.is_none());
+        if let (Some(ms), Some(mesh)) = (&self.msaa, mesh) {
+            // Antialiased: the picture and the triangles in one multisampled
+            // pass, resolved into the output.
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("loaded visual antialiased"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: ms, depth_slice: None, resolve_target: Some(&self.out[write]), ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Discard } })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_bind_group(0, group, &[]);
+            if picture {
+                pass.set_pipeline(pipeline);
+                pass.draw(0..3, 0..1);
+            }
+            pass.set_pipeline(mesh);
+            pass.draw(0..self.live.triangles * 3, 0..1);
+        } else if picture {
+            match &self.trail {
+                Some(t) if self.live.trail => scene::fullscreen_pass2(encoder, &self.def.id, &self.out[write], &t[write], pipeline, group),
+                _ => fullscreen_pass(encoder, &self.def.id, &self.out[write], wgpu::LoadOp::Clear(wgpu::Color::BLACK), pipeline, group),
+            }
+        }
+        if let (Some(mesh), None) = (mesh, &self.msaa) {
+            let load = if picture { wgpu::LoadOp::Load } else { wgpu::LoadOp::Clear(wgpu::Color::BLACK) };
+            let mut pass = scene::begin_pass(encoder, "loaded visual triangles", &self.out[write], load);
+            pass.set_pipeline(mesh);
+            pass.set_bind_group(0, group, &[]);
+            pass.draw(0..self.live.triangles * 3, 0..1);
+        }
+        let picture = picture || mesh.is_some();
+        if let Some(draw) = line {
+            let load = if picture { wgpu::LoadOp::Load } else { wgpu::LoadOp::Clear(wgpu::Color::BLACK) };
+            let mut pass = scene::begin_pass(encoder, "loaded visual line", &self.out[write], load);
+            pass.set_pipeline(draw);
+            pass.set_bind_group(0, &self.line_group, &[]);
+            pass.draw(0..6, 0..count - 1);
+        }
+        self.cur = write;
+    }
+}
+
+impl ShaderVisual {
     /// A new picture replaces the current one, which becomes the previous.
     fn incoming(&mut self, queue: &wgpu::Queue, width: u32, height: u32, rgba: &[u8]) {
         let view = picture_texture(&self.device, Some((queue, rgba)), width, height);
@@ -1810,7 +1966,8 @@ mod tests {
         assert_eq!(std::mem::offset_of!(Uniform, wave_new), 512 + 512);
         assert_eq!(std::mem::offset_of!(Uniform, hits), 512 + 512 + 48);
         assert_eq!(std::mem::offset_of!(Uniform, chroma_slow), 512 + 512 + 80);
-        assert_eq!(std::mem::size_of::<Uniform>(), 512 + 512 + 128);
+        assert_eq!(std::mem::offset_of!(Uniform, space), 512 + 512 + 128);
+        assert_eq!(std::mem::size_of::<Uniform>(), 512 + 512 + 144);
     }
 
     #[test]

@@ -1027,6 +1027,25 @@ impl Default for LayerTint {
     }
 }
 
+/// How a scene's layers meet (ADR-0002). Stacked: each layer is its own
+/// picture, levelled, put through its effects and blended over the ones
+/// below. Shared: layers whose visual can (`"space": true`) draw into one
+/// space with one camera, levelled as one picture; the rest stay flat
+/// pictures in slot order around it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Space {
+    #[default]
+    Stacked,
+    Shared,
+}
+
+impl Space {
+    pub fn is_stacked(&self) -> bool {
+        *self == Space::Stacked
+    }
+}
+
 /// Layer blend mode. Add is order-free; the others let a higher layer
 /// cover, lighten or mask what is beneath it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -1229,6 +1248,8 @@ pub struct Settings {
     pub solo: Option<usize>,
     /// Name of the active scene ("" = unsaved).
     pub scene_name: String,
+    /// Whether the layers share one space (a scene setting).
+    pub space: Space,
     pub post: PostSettings,
     /// Base colour for every visual.
     pub tint: [f32; 3],
@@ -1336,6 +1357,7 @@ impl Settings {
         self.layers = other.layers.clone();
         self.editing = other.editing.min(MAX_LAYERS - 1);
         self.post = other.post;
+        self.space = other.space;
         self.tint = other.tint;
         self.tint_from_art = other.tint_from_art;
         self.scene_name = other.scene_name.clone();
@@ -1349,6 +1371,7 @@ impl Default for Settings {
             solo: None,
             editing: 0,
             scene_name: String::new(),
+            space: Space::Stacked,
             post: PostSettings::default(),
             tint: [0.40, 1.0, 0.55],
             tint_from_art: false,

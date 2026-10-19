@@ -1,10 +1,12 @@
 //! audioviz-lab (ADR-0003): one visual on its own, held still, rendered by
-//! the engine off-screen into PNGs and a contact sheet, for design work.
-//! It reads the visuals and engine shaders from this checkout, so a shader
-//! edit needs no rebuild; time is its own and the music is silence, so the
-//! same arguments give the same pixels.
+//! the engine, in a window to turn it round or off-screen into PNGs and a
+//! contact sheet, for design work. It reads the visuals and engine shaders
+//! from this checkout, so a shader edit needs no rebuild (the window reloads
+//! on save); time is its own and the music is silence, so the same arguments
+//! give the same pixels.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
@@ -14,12 +16,18 @@ use audioviz::post::{Post, PostParams};
 use audioviz::settings::{Layer, Look, Settings, Space};
 use audioviz::shaders::ShaderSet;
 use audioviz_analysis::FeatureFrame;
+use winit::application::ApplicationHandler;
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::{Key, NamedKey};
+use winit::window::{Window, WindowId};
 
 const HELP: &str = "\
 audioviz-lab - one visual, still, rendered by the engine (ADR-0003)
 
 usage: audioviz-lab <visual> [options]
 
+  --window            open a window to turn it round (default: write PNGs)
   --scene <name>      start from a factory scene's picture, tint and the
                       visual's layer in it (e.g. --scene Jellyfish)
   --layer <n>         which of the scene's layers (default: the first
@@ -29,28 +37,38 @@ usage: audioviz-lab <visual> [options]
   --shots a,b,...     views: front side back above below close, or
                       yaw:pitch:zoom (degrees, degrees, distance factor);
                       default front,side,below
+  --pan x,y           slide what the camera looks at right and up, in units
+                      of its distance (every shot; default 0,0)
   --passes a,b,...    all (the picture), sharp (no diffusion), glow (only
                       the diffusion); default all
   --exposure <x>      a fixed exposure, levelling and auto exposure off
                       (default 1); auto levels it as the app does (a lone
                       object fills the frame, so auto lifts it further)
+  --bloom <x>         the Picture's bloom (default 0: off for design work)
   --size WxH          default 1600x1000
   --out <dir>         default tmp/lab
   --name <prefix>     file names start with it (default the visual's id)
   --dx12              D3D12 instead of Vulkan (slower to build shaders)
   --seed <n>          the layer's instance seed (default 1)
 
-writes <out>/<name>_<shot>_<pass>.png for each, and <out>/<name>_sheet.png
+PNGs: <out>/<name>_<shot>_<pass>.png for each, and <out>/<name>_sheet.png
 (shots across, passes down).
+
+window: left-drag orbits, right- or middle-drag pans, the wheel zooms;
+1 2 3 the pass (all, sharp, glow); Space runs or holds time; . steps one
+frame; R resets the view; S saves a PNG into --out; Esc quits. Saving a
+visual's files or an engine shader reloads it.
 ";
 
 struct Args {
     visual: String,
+    window: bool,
     scene: Option<String>,
     layer: Option<usize>,
     sets: Vec<(String, serde_json::Value)>,
     at: f32,
     shots: Vec<(String, [f32; 3])>,
+    pan: [f32; 2],
     passes: Vec<SpacePass>,
     size: (u32, u32),
     out: PathBuf,
@@ -58,6 +76,7 @@ struct Args {
     dx12: bool,
     seed: u64,
     exposure: Option<f32>,
+    bloom: f32,
 }
 
 fn shot(name: &str) -> anyhow::Result<[f32; 3]> {
@@ -98,7 +117,7 @@ fn pass_name(p: SpacePass) -> &'static str {
 
 fn parse_args() -> anyhow::Result<Option<Args>> {
     let mut args = std::env::args().skip(1);
-    let mut a = Args { visual: String::new(), scene: None, layer: None, sets: Vec::new(), at: 4.0, shots: Vec::new(), passes: vec![SpacePass::All], size: (1600, 1000), out: PathBuf::from("tmp/lab"), name: None, dx12: false, seed: 1, exposure: Some(1.0) };
+    let mut a = Args { visual: String::new(), window: false, scene: None, layer: None, sets: Vec::new(), at: 4.0, shots: Vec::new(), pan: [0.0, 0.0], passes: vec![SpacePass::All], size: (1600, 1000), out: PathBuf::from("tmp/lab"), name: None, dx12: false, seed: 1, exposure: Some(1.0), bloom: 0.0 };
     let mut shots = "front,side,below".to_string();
     while let Some(arg) = args.next() {
         let mut value = |what: &str| args.next().with_context(|| format!("{arg} needs {what}"));
@@ -107,6 +126,7 @@ fn parse_args() -> anyhow::Result<Option<Args>> {
                 print!("{HELP}");
                 return Ok(None);
             }
+            "--window" => a.window = true,
             "--scene" => a.scene = Some(value("a scene name")?),
             "--layer" => a.layer = Some(value("a layer number")?.parse()?),
             "--set" => {
@@ -116,6 +136,11 @@ fn parse_args() -> anyhow::Result<Option<Args>> {
             }
             "--at" => a.at = value("seconds")?.parse()?,
             "--shots" => shots = value("a list of shots")?,
+            "--pan" => {
+                let v = value("x,y")?;
+                let (x, y) = v.split_once(',').context("--pan x,y")?;
+                a.pan = [x.parse()?, y.parse()?];
+            }
             "--passes" => a.passes = value("a list of passes")?.split(',').map(pass).collect::<anyhow::Result<_>>()?,
             "--size" => {
                 let v = value("WxH")?;
@@ -130,6 +155,7 @@ fn parse_args() -> anyhow::Result<Option<Args>> {
                 let v = value("auto or a number")?;
                 a.exposure = if v == "auto" { None } else { Some(v.parse()?) };
             }
+            "--bloom" => a.bloom = value("a number")?.parse()?,
             other if !other.starts_with('-') && a.visual.is_empty() => a.visual = other.to_string(),
             other => bail!("unknown option {other} (see --help)"),
         }
@@ -153,8 +179,6 @@ fn repo() -> PathBuf {
 fn settings(a: &Args) -> anyhow::Result<Settings> {
     let mut s = Settings::default();
     let mut layer = Layer::new(&a.visual, true, 1.0);
-    // Still pictures: no grain, the jellies' neon look.
-    s.post.grain = 0.0;
     s.post.look = Look::Neon;
     if let Some(name) = &a.scene {
         let path = repo().join("assets").join("scenes").join(format!("{name}.json"));
@@ -168,7 +192,6 @@ fn settings(a: &Args) -> anyhow::Result<Settings> {
         layer.enabled = true;
         layer.opacity = 1.0;
         s.post = scene.post;
-        s.post.grain = 0.0;
         s.tint = scene.tint;
     }
     let params = layer.params.entry(a.visual.clone()).or_insert_with(|| serde_json::Value::Object(Default::default()));
@@ -177,6 +200,10 @@ fn settings(a: &Args) -> anyhow::Result<Settings> {
             obj.insert(k.clone(), v.clone());
         }
     }
+    // Still pictures for design work: no grain, bloom only when asked, a
+    // fixed exposure unless asked to level.
+    s.post.grain = 0.0;
+    s.post.bloom = a.bloom;
     if let Some(x) = a.exposure {
         s.post.auto_exposure = false;
         s.post.exposure = x;
@@ -188,6 +215,35 @@ fn settings(a: &Args) -> anyhow::Result<Settings> {
     Ok(s)
 }
 
+/// Read this checkout's visuals and shaders, never the user's folder, with
+/// a fixed instance. Called before any other thread starts.
+fn set_env(a: &Args) {
+    unsafe {
+        std::env::set_var("AUDIOVIZ_REPO", repo());
+        std::env::set_var("AUDIOVIZ_DEFAULTS", "1");
+        std::env::set_var("AUDIOVIZ_SEED", a.seed.to_string());
+    }
+}
+
+fn instance(a: &Args) -> wgpu::Instance {
+    let mut desc = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
+    desc.backends = if a.dx12 { wgpu::Backends::DX12 } else { wgpu::Backends::VULKAN };
+    wgpu::Instance::new(desc)
+}
+
+fn device(adapter: &wgpu::Adapter) -> anyhow::Result<(wgpu::Device, wgpu::Queue)> {
+    pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("audioviz lab"),
+        required_features: GpuTimer::features(adapter),
+        required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+        experimental_features: wgpu::ExperimentalFeatures::disabled(),
+        memory_hints: wgpu::MemoryHints::Performance,
+        trace: wgpu::Trace::Off,
+    }))
+    .context("request device")
+}
+
+/// The engine with one visual, its picture going to a texture of `format`.
 struct Lab {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -196,83 +252,140 @@ struct Lab {
     post: Post,
     timer: GpuTimer,
     settings: Settings,
-    target: wgpu::Texture,
-    view: wgpu::TextureView,
-    size: (u32, u32),
     features: FeatureFrame,
+    time: f32,
+}
+
+impl Lab {
+    fn new(device: wgpu::Device, queue: wgpu::Queue, settings: Settings, size: (u32, u32), format: wgpu::TextureFormat) -> anyhow::Result<Self> {
+        let shaders = ShaderSet::load();
+        let director = Director::new(&device, &shaders, size.0, size.1, &settings).map_err(|e| anyhow::anyhow!("director: {e}"))?;
+        let post = Post::new(&device, format, size.0, size.1, &shaders).map_err(|e| anyhow::anyhow!("post: {e}"))?;
+        let timer = GpuTimer::new(&device, &queue);
+        Ok(Self { device, queue, shaders, director, post, timer, settings, features: FeatureFrame::default(), time: 0.0 })
+    }
+
+    /// Wait for the visual's build (on the engine's worker); how long it took.
+    fn built(&mut self, visual: &str) -> anyhow::Result<Duration> {
+        let start = Instant::now();
+        while !self.director.layers[0].ready() {
+            if start.elapsed() > Duration::from_secs(120) {
+                bail!("{visual} did not build in 120 s");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+            self.director.poll(&self.device, &self.shaders);
+        }
+        if let Some(e) = &self.director.last_error {
+            bail!("{e}");
+        }
+        Ok(start.elapsed())
+    }
+
+    /// Run to `at` on a 60 Hz clock.
+    fn settle(&mut self, view: &wgpu::TextureView, at: f32) {
+        let steps = (at * 60.0).round().max(1.0) as u32;
+        for _ in 0..steps {
+            self.frame(view, 1.0 / 60.0, None);
+        }
+    }
+
+    /// One frame into `view`, `dt` on from the last; `then` adds commands
+    /// after it (a read back) to the same submission.
+    fn frame(&mut self, view: &wgpu::TextureView, dt: f32, then: Option<&dyn Fn(&mut wgpu::CommandEncoder)>) {
+        self.time += dt;
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("lab") });
+        self.timer.begin(&self.device);
+        let s = &self.settings;
+        self.director.render(&self.device, &self.queue, &mut encoder, s, &self.features, &[], 48000, s.tint, None, None, 0, dt, self.time, 1.0, self.post.input(), &mut self.timer);
+        let p = s.post;
+        self.post.render(&self.queue, &mut encoder, view, PostParams { exposure: p.exposure, bloom: p.bloom, grain: p.grain, time: self.time, dt, flags: p.auto_exposure as u32, flash_rise: 2.0, saturation: p.saturation, look: (p.look == Look::Neon) as u32, ..Default::default() });
+        self.timer.finish(&mut encoder);
+        if let Some(then) = then {
+            then(&mut encoder);
+        }
+        self.queue.submit([encoder.finish()]);
+        self.timer.after_submit();
+    }
+
+    /// Pick up saved files: the visual's (the director polls its folder) and
+    /// the engine's shaders.
+    fn reload(&mut self) {
+        self.director.poll(&self.device, &self.shaders);
+        if self.shaders.poll() {
+            self.director.reload_shaders(&self.device, &self.shaders);
+            if let Err(e) = self.post.reload_shaders(&self.device, &self.shaders) {
+                eprintln!("post: {e}");
+            }
+            if let Some(e) = &self.director.last_error {
+                eprintln!("{e}");
+            }
+        }
+    }
+
+    fn resize(&mut self, w: u32, h: u32) {
+        self.director.resize(&self.device, w, h);
+        self.post.resize(&self.device, w, h);
+    }
+}
+
+/// Render a frame into `texture` (RGBA or BGRA, 8 bits) and copy it out.
+fn read_back(lab: &mut Lab, view: &wgpu::TextureView, texture: &wgpu::Texture, dt: f32) -> anyhow::Result<image::RgbaImage> {
+    let (w, h) = (texture.width(), texture.height());
+    let row = (w * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+    let buf = lab.device.create_buffer(&wgpu::BufferDescriptor { label: Some("lab read"), size: (row * h) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+    let copy = |encoder: &mut wgpu::CommandEncoder| {
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo { texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyBufferInfo { buffer: &buf, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(h) } },
+            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        );
+    };
+    lab.frame(view, dt, Some(&copy));
+    buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+    let _ = lab.device.poll(wgpu::PollType::wait_indefinitely());
+    let data = buf.slice(..).get_mapped_range().map_err(|e| anyhow::anyhow!("{e:?}"))?;
+    let bgra = matches!(texture.format(), wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb);
+    let mut img = image::RgbaImage::new(w, h);
+    for y in 0..h {
+        let line = &data[(y * row) as usize..(y * row + w * 4) as usize];
+        let out = &mut img.as_mut()[(y * w * 4) as usize..((y + 1) * w * 4) as usize];
+        out.copy_from_slice(line);
+        if bgra {
+            for px in out.chunks_exact_mut(4) {
+                px.swap(0, 2);
+            }
+        }
+    }
+    Ok(img)
 }
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
-impl Lab {
-    /// One frame at `time`, `dt` after the last; with `read`, its pixels.
-    fn frame(&mut self, time: f32, dt: f32, read: bool) -> Option<image::RgbaImage> {
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("lab") });
-        self.timer.begin(&self.device);
-        let s = &self.settings;
-        self.director.render(&self.device, &self.queue, &mut encoder, s, &self.features, &[], 48000, s.tint, None, None, 0, dt, time, 1.0, self.post.input(), &mut self.timer);
-        let p = s.post;
-        self.post.render(&self.queue, &mut encoder, &self.view, PostParams { exposure: p.exposure, bloom: p.bloom, grain: p.grain, time, dt, flags: p.auto_exposure as u32, flash_rise: 2.0, saturation: p.saturation, look: (p.look == Look::Neon) as u32, ..Default::default() });
-        self.timer.finish(&mut encoder);
-        let (w, h) = self.size;
-        let row = (w * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
-        let buf = read.then(|| self.device.create_buffer(&wgpu::BufferDescriptor { label: Some("lab read"), size: (row * h) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false }));
-        if let Some(buf) = &buf {
-            encoder.copy_texture_to_buffer(
-                wgpu::TexelCopyTextureInfo { texture: &self.target, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-                wgpu::TexelCopyBufferInfo { buffer: buf, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(h) } },
-                wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-            );
-        }
-        self.queue.submit([encoder.finish()]);
-        self.timer.after_submit();
-        let buf = buf?;
-        buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
-        let data = buf.slice(..).get_mapped_range().ok()?;
-        let mut img = image::RgbaImage::new(w, h);
-        for y in 0..h {
-            let line = &data[(y * row) as usize..(y * row + w * 4) as usize];
-            img.as_mut()[(y * w * 4) as usize..((y + 1) * w * 4) as usize].copy_from_slice(line);
-        }
-        Some(img)
-    }
-}
-
 fn main() -> anyhow::Result<()> {
     let Some(a) = parse_args()? else { return Ok(()) };
-    // Read this checkout's visuals and shaders, never the user's folder,
-    // with a fixed instance: before any other thread starts.
-    unsafe {
-        std::env::set_var("AUDIOVIZ_REPO", repo());
-        std::env::set_var("AUDIOVIZ_DEFAULTS", "1");
-        std::env::set_var("AUDIOVIZ_SEED", a.seed.to_string());
-    }
+    set_env(&a);
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"))).init();
-    let started = Instant::now();
     let settings = settings(&a)?;
     if audioviz::visuals::get(&a.visual).is_none() {
         bail!("no visual \"{}\" in {}", a.visual, repo().join("assets").join("visuals").display());
     }
+    if a.window {
+        let event_loop = EventLoop::new()?;
+        event_loop.set_control_flow(ControlFlow::Poll);
+        let mut viewer = Viewer { args: a, settings: Some(settings), view: None, error: None };
+        event_loop.run_app(&mut viewer)?;
+        return viewer.error.map_or(Ok(()), Err);
+    }
+    shots(&a, settings)
+}
 
-    let mut desc = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
-    desc.backends = if a.dx12 { wgpu::Backends::DX12 } else { wgpu::Backends::VULKAN };
-    let instance = wgpu::Instance::new(desc);
+/// The batch lab: every shot in every pass, as PNGs and a contact sheet.
+fn shots(a: &Args, settings: Settings) -> anyhow::Result<()> {
+    let started = Instant::now();
+    let instance = instance(a);
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::HighPerformance, compatible_surface: None, ..Default::default() })).context("no GPU adapter")?;
-    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("audioviz lab"),
-        required_features: GpuTimer::features(&adapter),
-        required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-        memory_hints: wgpu::MemoryHints::Performance,
-        trace: wgpu::Trace::Off,
-    }))
-    .context("request device")?;
+    let (device, queue) = device(&adapter)?;
     let (w, h) = a.size;
-    let shaders = ShaderSet::load();
-    let director = Director::new(&device, &shaders, w, h, &settings).map_err(|e| anyhow::anyhow!("director: {e}"))?;
-    let post = Post::new(&device, FORMAT, w, h, &shaders).map_err(|e| anyhow::anyhow!("post: {e}"))?;
-    let timer = GpuTimer::new(&device, &queue);
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("lab picture"),
         size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
@@ -284,54 +397,214 @@ fn main() -> anyhow::Result<()> {
         view_formats: &[],
     });
     let view = target.create_view(&Default::default());
-    let mut lab = Lab { device, queue, shaders, director, post, timer, settings, target, view, size: a.size, features: FeatureFrame::default() };
-
-    // Wait for the visual's build (on the engine's worker).
-    let build = Instant::now();
-    while !lab.director.layers[0].ready() {
-        if build.elapsed() > Duration::from_secs(120) {
-            bail!("{} did not build in 120 s", a.visual);
-        }
-        std::thread::sleep(Duration::from_millis(10));
-        lab.director.poll(&lab.device, &lab.shaders);
-    }
-    if let Some(e) = &lab.director.last_error {
-        bail!("{e}");
-    }
-    let built = build.elapsed();
-
-    // Run to `at` on a 60 Hz clock, then hold there.
-    let steps = (a.at * 60.0).round().max(1.0) as u32;
-    for k in 0..steps {
-        lab.frame(k as f32 / 60.0, 1.0 / 60.0, false);
-    }
-    let held = steps as f32 / 60.0;
-    let mut gpu = Vec::new();
+    let mut lab = Lab::new(device, queue, settings, a.size, FORMAT)?;
+    let built = lab.built(&a.visual)?;
+    lab.settle(&view, a.at);
     std::fs::create_dir_all(&a.out)?;
     let name = a.name.clone().unwrap_or_else(|| a.visual.clone());
     let mut tiles = Vec::new();
+    let mut gpu = Vec::new();
     for &p in &a.passes {
-        for (sname, nudge) in &a.shots {
-            lab.director.camera_nudge = *nudge;
+        for (sname, [yaw, pitch, zoom]) in &a.shots {
+            lab.director.camera_nudge = [*yaw, *pitch, *zoom, a.pan[0], a.pan[1]];
             lab.director.pass = p;
             // A few frames, so whatever reads last frame's camera has it.
             for _ in 0..3 {
-                lab.frame(held, 0.0, false);
+                lab.frame(&view, 0.0, None);
             }
-            let img = lab.frame(held, 0.0, true).context("read back")?;
+            let img = read_back(&mut lab, &view, &target, 0.0)?;
             gpu.push(lab.timer.frame_ms);
-            let file = a.out.join(format!("{name}_{sname}_{}.png", pass_name(p)));
-            img.save(&file)?;
+            img.save(a.out.join(format!("{name}_{sname}_{}.png", pass_name(p))))?;
             tiles.push((format!("{sname} {}", pass_name(p)), img));
         }
     }
     let sheet = a.out.join(format!("{name}_sheet.png"));
     contact_sheet(&tiles, a.shots.len()).save(&sheet)?;
     gpu.sort_by(f32::total_cmp);
-    println!("{}: built in {:.1} s, held at {held:.2} s, {} shots, frame {:.2} ms on the GPU, {:.1} s in all", a.visual, built.as_secs_f32(), tiles.len(), gpu.get(gpu.len() / 2).copied().unwrap_or(0.0), started.elapsed().as_secs_f32());
+    println!("{}: built in {:.1} s, held at {:.2} s, {} shots, frame {:.2} ms on the GPU, {:.1} s in all", a.visual, built.as_secs_f32(), lab.time, tiles.len(), gpu.get(gpu.len() / 2).copied().unwrap_or(0.0), started.elapsed().as_secs_f32());
     println!("{}", sheet.display());
     Ok(())
 }
+
+// ---------------------------------------------------------------- the window
+
+struct Viewer {
+    args: Args,
+    settings: Option<Settings>,
+    view: Option<View>,
+    error: Option<anyhow::Error>,
+}
+
+struct View {
+    window: Arc<Window>,
+    surface: wgpu::Surface<'static>,
+    config: wgpu::SurfaceConfiguration,
+    lab: Lab,
+    /// The camera nudge: yaw, pitch (degrees), zoom, pan right, pan up.
+    cam: [f32; 5],
+    drag: Option<MouseButton>,
+    cursor: (f64, f64),
+    running: bool,
+    step: bool,
+    save: bool,
+    shown: Instant,
+}
+
+impl View {
+    fn open(event_loop: &ActiveEventLoop, a: &Args, settings: Settings) -> anyhow::Result<Self> {
+        let window = Arc::new(event_loop.create_window(Window::default_attributes().with_title(format!("audioviz-lab: {}", a.visual)).with_inner_size(winit::dpi::PhysicalSize::new(a.size.0, a.size.1)))?);
+        let instance = instance(a);
+        let surface = instance.create_surface(window.clone())?;
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::HighPerformance, compatible_surface: Some(&surface), ..Default::default() })).context("no GPU adapter")?;
+        let (device, queue) = device(&adapter)?;
+        let size = window.inner_size();
+        let (w, h) = (size.width.max(1), size.height.max(1));
+        let caps = surface.get_capabilities(&adapter);
+        let format = caps.formats.iter().copied().find(|f| f.is_srgb()).unwrap_or(caps.formats[0]);
+        let mut config = surface.get_default_config(&adapter, w, h).context("surface not supported")?;
+        config.format = format;
+        config.present_mode = wgpu::PresentMode::Fifo;
+        // Saving a PNG copies the picture out of the window.
+        if caps.usages.contains(wgpu::TextureUsages::COPY_SRC) {
+            config.usage |= wgpu::TextureUsages::COPY_SRC;
+        }
+        surface.configure(&device, &config);
+        let mut lab = Lab::new(device, queue, settings, (w, h), format)?;
+        let built = lab.built(&a.visual)?;
+        // Settle off-screen, then show it held.
+        let scratch = lab.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("lab settle"),
+            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        lab.settle(&scratch.create_view(&Default::default()), a.at);
+        println!("{}: built in {:.1} s, held at {:.2} s", a.visual, built.as_secs_f32(), lab.time);
+        lab.director.pass = a.passes.first().copied().unwrap_or_default();
+        Ok(Self { window, surface, config, lab, cam: [0.0, 0.0, 1.0, a.pan[0], a.pan[1]], drag: None, cursor: (0.0, 0.0), running: false, step: false, save: false, shown: Instant::now() })
+    }
+
+    fn redraw(&mut self, a: &Args) {
+        self.lab.reload();
+        self.lab.director.camera_nudge = self.cam;
+        let dt = if self.running || std::mem::take(&mut self.step) { 1.0 / 60.0 } else { 0.0 };
+        let frame = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
+            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => return,
+            _ => {
+                self.surface.configure(&self.lab.device, &self.config);
+                return;
+            }
+        };
+        let view = frame.texture.create_view(&Default::default());
+        if std::mem::take(&mut self.save) && self.config.usage.contains(wgpu::TextureUsages::COPY_SRC) {
+            match read_back(&mut self.lab, &view, &frame.texture, dt) {
+                Ok(img) => {
+                    let name = a.name.clone().unwrap_or_else(|| a.visual.clone());
+                    let [y, p, z, ..] = self.cam;
+                    let file = a.out.join(format!("{name}_{y:.0}_{p:.0}_{z:.2}_{}.png", pass_name(self.lab.director.pass)));
+                    let saved = std::fs::create_dir_all(&a.out).map_err(anyhow::Error::from).and_then(|_| img.save(&file).map_err(anyhow::Error::from));
+                    match saved {
+                        Ok(()) => println!("saved {}", file.display()),
+                        Err(e) => eprintln!("could not save {}: {e}", file.display()),
+                    }
+                }
+                Err(e) => eprintln!("could not read the picture back: {e}"),
+            }
+        } else {
+            self.lab.frame(&view, dt, None);
+        }
+        self.window.pre_present_notify();
+        self.lab.queue.present(frame);
+        if self.shown.elapsed() > Duration::from_millis(250) {
+            self.shown = Instant::now();
+            let [y, p, z, ..] = self.cam;
+            let state = if self.running { "running" } else { "held" };
+            let error = if self.lab.director.last_error.is_some() { " | shader error (see the console)" } else { "" };
+            self.window.set_title(&format!("audioviz-lab: {} | {} | {state} at {:.2} s | yaw {y:.0} pitch {p:.0} zoom {z:.2} | {:.2} ms{error} | drag orbit, right-drag pan, wheel zoom, 1 2 3 pass, Space run, . step, R reset, S save", a.visual, pass_name(self.lab.director.pass), self.lab.time, self.lab.timer.frame_ms));
+        }
+    }
+}
+
+impl ApplicationHandler for Viewer {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let Some(settings) = self.settings.take() else { return };
+        match View::open(event_loop, &self.args, settings) {
+            Ok(v) => self.view = Some(v),
+            Err(e) => {
+                self.error = Some(e);
+                event_loop.exit();
+            }
+        }
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        let Some(v) = self.view.as_mut() else { return };
+        match event {
+            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::Resized(size) => {
+                let (w, h) = (size.width.max(1), size.height.max(1));
+                v.config.width = w;
+                v.config.height = h;
+                v.surface.configure(&v.lab.device, &v.config);
+                v.lab.resize(w, h);
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                v.drag = (state == ElementState::Pressed).then_some(button);
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let (dx, dy) = ((position.x - v.cursor.0) as f32, (position.y - v.cursor.1) as f32);
+                v.cursor = (position.x, position.y);
+                match v.drag {
+                    Some(MouseButton::Left) => {
+                        v.cam[0] += dx * 0.3;
+                        v.cam[1] = (v.cam[1] - dy * 0.3).clamp(-89.0, 89.0);
+                    }
+                    Some(MouseButton::Right | MouseButton::Middle) => {
+                        // Pan in units of the camera's distance: about one
+                        // distance across the picture's height.
+                        let k = 0.9 / v.config.height as f32 * v.cam[2];
+                        v.cam[3] -= dx * k;
+                        v.cam[4] += dy * k;
+                    }
+                    _ => {}
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let lines = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y,
+                    MouseScrollDelta::PixelDelta(p) => p.y as f32 / 40.0,
+                };
+                v.cam[2] = (v.cam[2] * 0.9f32.powf(lines)).clamp(0.05, 20.0);
+            }
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => match event.logical_key.as_ref() {
+                Key::Named(NamedKey::Escape) => event_loop.exit(),
+                Key::Named(NamedKey::Space) => v.running = !v.running,
+                Key::Character("1") => v.lab.director.pass = SpacePass::All,
+                Key::Character("2") => v.lab.director.pass = SpacePass::Sharp,
+                Key::Character("3") => v.lab.director.pass = SpacePass::Glow,
+                Key::Character(".") => v.step = true,
+                Key::Character("r" | "R") => v.cam = [0.0, 0.0, 1.0, self.args.pan[0], self.args.pan[1]],
+                Key::Character("s" | "S") => v.save = true,
+                _ => {}
+            },
+            WindowEvent::RedrawRequested => v.redraw(&self.args),
+            _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        if let Some(v) = &self.view {
+            v.window.request_redraw();
+        }
+    }
+}
+
+// ---------------------------------------------------------------- the sheet
 
 /// Tiles in rows of `cols`, each scaled to fit 800 px across, labelled.
 fn contact_sheet(tiles: &[(String, image::RgbaImage)], cols: usize) -> image::RgbaImage {

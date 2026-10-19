@@ -1,6 +1,6 @@
 # ADR-0003 — The lab: one object, still, rendered by the engine
 
-- **Status:** Accepted 2026-10-19 (Greg: "something akin to Blender, but for us (AI and me) to quickly iterate over our designs"). Increment 1 done (0.4.6); building the rest in increments.
+- **Status:** Accepted 2026-10-19 (Greg: "something akin to Blender, but for us (AI and me) to quickly iterate over our designs"). Increment 1 done (0.4.6), the window of increment 3 (0.4.7); building the rest in increments.
 - **Context:** Designing the jellies in the app is slow and cannot be compared. A change to a visual costs a release build (the visuals are embedded, 35 to 60 s), a D3D12 shader build (the Jellyfish: 10 s on FXC, 2 s on Vulkan), a start and about 20 s for the exposure to settle, and the frame that comes out depends on a random layout, the build time and whatever music is playing, so a before and an after never show the same thing. Greg wants a tool to render **just the object being worked on**, held still if need be, to focus on its shaders and design, with **layers** as the highest return: seeing a design one part at a time and stacked back up, as Blender's render passes do.
 - **Reads:** ADR-0002 (the shared space the lab draws in), `docs/visuals.md`.
 
@@ -47,3 +47,13 @@ Two kinds, shown one at a time or stacked:
 - Engine hooks, inert in the app: `Director::camera_nudge` (a one-thread compute pass, `CameraNudge`, turns the space's camera after the lead's camera pass) and `Director::pass` (`SpacePass`: all, sharp, glow).
 - `--scene` takes a factory scene's picture, tint and the visual's layer from the checkout's `assets/scenes/`; `--set` overrides params. The exposure is fixed by default (`--exposure 1`, levelling and auto exposure off): a lone object filling the frame was lifted until it bleached. `--exposure auto` levels it as the app does.
 - **Measured:** one moon jelly, three shots by three passes at 1600x1000: 4.1 s from the command with a cold shader cache (built in 1.7 s on Vulkan), under 1 s warm. Two runs wrote byte-identical PNGs.
+
+### The window, done ahead of design layers (0.4.7, 2026-10-19)
+
+Greg, on the first sheets: the exposure, bloom and glow blew everything out, and he asked for a window to turn the object round instead of only PNGs. So:
+
+- **Design defaults:** bloom 0 (`--bloom` to add it), grain 0, a fixed exposure; the glow stays, and the passes show it alone or without it. (His first sheet had been levelled by auto exposure; a lone jelly filling the frame bleached.)
+- **Pan:** the camera nudge gained a slide of what it looks at (right, up, in units of the camera's distance before the zoom, so zooming keeps the framing): `--pan x,y`. The Close-up aims below the bell for its tentacles; `--pan 0,0.15` centres a moon jelly.
+- **`--window`:** the same core in a winit window on Vulkan. Left-drag orbits, right- or middle-drag pans, the wheel zooms; 1 2 3 pick the pass; Space runs or holds time, `.` steps one frame; R resets; S saves the window's picture as a PNG. It polls the visual's folder and the engine shaders and reloads what was saved. The title shows the pass, the time, the view and the frame's GPU time. Checked with a scripted drag and wheel: yaw 60, pitch 24, zoom 0.81.
+- **`scripts/lab-jelly.ps1 -Species <moon|nettle|crystal|atolla|comb|lion>`** opens one jelly of a species in its factory scene's colours (`-Png` for a sheet; further arguments go to the lab).
+- Still to come in increment 3: the visual's sliders and the layer toggles in the window.

@@ -1071,8 +1071,8 @@ pub fn prewarm<'a>(device: &wgpu::Device, shaders: &ShaderSet, ids: impl IntoIte
 }
 
 /// The lab's hand on a shared space's camera (ADR-0003): after the leading
-/// visual's camera pass, it turns the camera round what it looks at and
-/// moves it nearer or further.
+/// visual's camera pass, it turns the camera round what it looks at, moves
+/// it nearer or further, and slides what it looks at across the screen.
 pub struct CameraNudge {
     pipeline: wgpu::ComputePipeline,
     group: wgpu::BindGroup,
@@ -1081,13 +1081,20 @@ pub struct CameraNudge {
 
 const NUDGE_WGSL: &str = "
 @group(0) @binding(0) var<storage, read_write> cam: array<vec4<f32>, 2>;
-@group(0) @binding(1) var<uniform> n: vec4<f32>;
+@group(0) @binding(1) var<uniform> n: array<vec4<f32>, 2>;
 
 @compute @workgroup_size(1)
 fn main() {
-    cam[0].x += n.x;
-    cam[0].y = clamp(cam[0].y + n.y, -1.55, 1.55);
-    cam[0].z *= n.z;
+    let yaw = cam[0].x + n[0].x;
+    let pitch = clamp(cam[0].y + n[0].y, -1.55, 1.55);
+    let dist = cam[0].z * n[0].z;
+    // The camera's right and up in the world (camera_dir, inverted).
+    let right = vec3<f32>(cos(yaw), 0.0, -sin(yaw));
+    let up = vec3<f32>(-sin(pitch) * sin(yaw), cos(pitch), -sin(pitch) * cos(yaw));
+    // Pan in units of the distance before the zoom, so zooming in keeps
+    // what was framed in the middle.
+    cam[1] = vec4<f32>(cam[1].xyz + (right * n[1].x + up * n[1].y) * cam[0].z, cam[1].w);
+    cam[0] = vec4<f32>(yaw, pitch, dist, cam[0].w);
 }
 ";
 
@@ -1096,7 +1103,7 @@ impl CameraNudge {
         let sh = shared(device);
         let m = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("camera nudge"), source: wgpu::ShaderSource::Wgsl(NUDGE_WGSL.into()) });
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("camera nudge"), layout: None, module: &m, entry_point: Some("main"), compilation_options: Default::default(), cache: None });
-        let buf = scene::uniform_buffer(device, "camera nudge", 16);
+        let buf = scene::uniform_buffer(device, "camera nudge", 32);
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("camera nudge"),
             layout: &pipeline.get_bind_group_layout(0),
@@ -1105,10 +1112,11 @@ impl CameraNudge {
         Self { pipeline, group, buf }
     }
 
-    /// Turn the space's camera by `yaw` and `pitch` (degrees) and scale its
-    /// distance by `zoom`.
-    pub fn apply(&self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, [yaw, pitch, zoom]: [f32; 3]) {
-        queue.write_buffer(&self.buf, 0, bytemuck::cast_slice(&[yaw.to_radians(), pitch.to_radians(), zoom, 0.0]));
+    /// Turn the space's camera by `yaw` and `pitch` (degrees), scale its
+    /// distance by `zoom`, and slide what it looks at right and up by `pan`
+    /// (in units of its distance before the zoom).
+    pub fn apply(&self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, [yaw, pitch, zoom, px, py]: [f32; 5]) {
+        queue.write_buffer(&self.buf, 0, bytemuck::cast_slice(&[yaw.to_radians(), pitch.to_radians(), zoom, 0.0, px, py, 0.0, 0.0]));
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("camera nudge"), timestamp_writes: None });
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.group, &[]);

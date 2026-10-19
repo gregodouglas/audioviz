@@ -520,11 +520,15 @@ pub struct Director {
     pub last_cue: &'static str,
     pub last_error: Option<String>,
     /// The lab's view of a shared space (ADR-0003): the camera turned by
-    /// (yaw, pitch) degrees and its distance scaled, and which pass shows.
-    pub camera_nudge: [f32; 3],
+    /// (yaw, pitch) degrees, its distance scaled, what it looks at slid
+    /// (right, up) in units of the distance; and which pass shows.
+    pub camera_nudge: [f32; 5],
     pub pass: SpacePass,
     nudge: Option<crate::shader_visual::CameraNudge>,
 }
+
+/// The camera nudge that leaves the camera as the visual put it.
+pub const LAB_CAMERA: [f32; 5] = [0.0, 0.0, 1.0, 0.0, 0.0];
 
 /// What of a shared space reaches the picture (the lab's passes; the app
 /// always shows `All`).
@@ -799,7 +803,7 @@ impl Director {
             trend_peak: 0.0,
             last_cue: "manual",
             last_error: None,
-            camera_nudge: [0.0, 0.0, 1.0],
+            camera_nudge: LAB_CAMERA,
             pass: SpacePass::All,
             nudge: None,
         })
@@ -1126,7 +1130,7 @@ impl Director {
             visual.space_update(queue, encoder, &ctx, &layer, level * layer.brightness.exp2());
             if Some(k) == lead {
                 visual.space_camera(encoder);
-                if self.camera_nudge != [0.0, 0.0, 1.0] {
+                if self.camera_nudge != LAB_CAMERA {
                     self.nudge.get_or_insert_with(|| crate::shader_visual::CameraNudge::new(device)).apply(queue, encoder, self.camera_nudge);
                 }
             }

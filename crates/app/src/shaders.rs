@@ -65,12 +65,13 @@ pub struct ShaderSet {
 
 impl ShaderSet {
     pub fn load() -> Self {
-        let dir = if cfg!(debug_assertions) {
-            let d = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders");
-            d.is_dir().then_some(d)
-        } else {
-            None
-        };
+        // AUDIOVIZ_REPO=<checkout> reads that checkout's files in any build.
+        let dir = match std::env::var_os("AUDIOVIZ_REPO") {
+            Some(r) => Some(PathBuf::from(r).join("crates").join("app").join("shaders")),
+            None if cfg!(debug_assertions) => Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders")),
+            None => None,
+        }
+        .filter(|d| d.is_dir());
         let mut set = Self { sources: EMBEDDED.iter().map(|s| s.to_string()).collect(), dir, mtimes: vec![None; NAMES.len()], last_poll: Instant::now() };
         set.read_all();
         set

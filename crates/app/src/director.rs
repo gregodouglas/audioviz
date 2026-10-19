@@ -519,6 +519,24 @@ pub struct Director {
     trend_peak: f32,
     pub last_cue: &'static str,
     pub last_error: Option<String>,
+    /// The lab's view of a shared space (ADR-0003): the camera turned by
+    /// (yaw, pitch) degrees and its distance scaled, and which pass shows.
+    pub camera_nudge: [f32; 3],
+    pub pass: SpacePass,
+    nudge: Option<crate::shader_visual::CameraNudge>,
+}
+
+/// What of a shared space reaches the picture (the lab's passes; the app
+/// always shows `All`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SpacePass {
+    /// The space as it is: sharp light and its diffusion.
+    #[default]
+    All,
+    /// Only the sharp light (no diffusion).
+    Sharp,
+    /// Only what diffusion adds.
+    Glow,
 }
 
 
@@ -781,6 +799,9 @@ impl Director {
             trend_peak: 0.0,
             last_cue: "manual",
             last_error: None,
+            camera_nudge: [0.0, 0.0, 1.0],
+            pass: SpacePass::All,
+            nudge: None,
         })
     }
 
@@ -1105,6 +1126,9 @@ impl Director {
             visual.space_update(queue, encoder, &ctx, &layer, level * layer.brightness.exp2());
             if Some(k) == lead {
                 visual.space_camera(encoder);
+                if self.camera_nudge != [0.0, 0.0, 1.0] {
+                    self.nudge.get_or_insert_with(|| crate::shader_visual::CameraNudge::new(device)).apply(queue, encoder, self.camera_nudge);
+                }
             }
         }
         let glows = members.iter().any(|&(out, i, _)| self.visual(out, i).space_glows());
@@ -1141,7 +1165,10 @@ impl Director {
         if fr.level {
             meter_down(device, encoder, &self.pipes, &sp.meter, &sp.buf, &sp.out, glows.then_some(&sp.light));
         }
-        if glows {
+        if self.pass == SpacePass::Glow {
+            scene::clear_pass(encoder, "space glow only", &sp.out);
+        }
+        if glows && self.pass != SpacePass::Sharp {
             timer.mark(encoder, Part::Diffusion);
             diffuse(device, queue, encoder, &self.pipes, sp, fr);
         }

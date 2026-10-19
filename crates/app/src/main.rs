@@ -1,39 +1,10 @@
 // No console window in release builds; debug keeps it for logs.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod app;
-mod bandfilter;
-mod chrome;
-mod color;
-mod config;
-mod director;
-mod rng;
-mod engine;
-mod factory;
-mod gpu;
-mod gpu_timer;
-mod hittest;
-mod overlays;
-mod panel;
-mod platform;
-mod post;
-mod scene;
-mod preset_store;
-mod pictures;
-mod scene_store;
-mod settings;
-mod shader_visual;
-mod shaders;
-mod strip;
-mod theme;
-mod tray;
-mod visuals;
-mod widgets;
-
 use tracing_subscriber::EnvFilter;
 use winit::event_loop::{ControlFlow, EventLoop};
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+use audioviz::{VERSION, app, config};
 
 const HELP: &str = "\
 audioviz {version} - a spacey, line-based music visualizer

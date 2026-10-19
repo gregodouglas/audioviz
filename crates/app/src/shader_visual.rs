@@ -621,12 +621,14 @@ fn folder() -> Option<PathBuf> {
 }
 
 /// Debug builds on a dev run read the repo's folder, so editing a factory
-/// visual reloads live.
+/// visual reloads live; AUDIOVIZ_REPO=<checkout> reads that checkout's in
+/// any build (the lab sets it).
 fn repo_folder() -> Option<PathBuf> {
-    if !cfg!(debug_assertions) {
-        return None;
-    }
-    let d = Path::new(env!("CARGO_MANIFEST_DIR")).parent()?.parent()?.join("assets").join("visuals");
+    let d = match std::env::var_os("AUDIOVIZ_REPO") {
+        Some(r) => PathBuf::from(r).join("assets").join("visuals"),
+        None if cfg!(debug_assertions) => Path::new(env!("CARGO_MANIFEST_DIR")).parent()?.parent()?.join("assets").join("visuals"),
+        None => return None,
+    };
     d.is_dir().then_some(d)
 }
 
@@ -1065,6 +1067,52 @@ pub fn prewarm<'a>(device: &wgpu::Device, shaders: &ShaderSet, ids: impl IntoIte
         if let Some(crate::visuals::Source::Loaded(d)) = crate::visuals::get(id).map(|v| &v.source) {
             sh.request(d.job(shaders), false);
         }
+    }
+}
+
+/// The lab's hand on a shared space's camera (ADR-0003): after the leading
+/// visual's camera pass, it turns the camera round what it looks at and
+/// moves it nearer or further.
+pub struct CameraNudge {
+    pipeline: wgpu::ComputePipeline,
+    group: wgpu::BindGroup,
+    buf: wgpu::Buffer,
+}
+
+const NUDGE_WGSL: &str = "
+@group(0) @binding(0) var<storage, read_write> cam: array<vec4<f32>, 2>;
+@group(0) @binding(1) var<uniform> n: vec4<f32>;
+
+@compute @workgroup_size(1)
+fn main() {
+    cam[0].x += n.x;
+    cam[0].y = clamp(cam[0].y + n.y, -1.55, 1.55);
+    cam[0].z *= n.z;
+}
+";
+
+impl CameraNudge {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let sh = shared(device);
+        let m = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("camera nudge"), source: wgpu::ShaderSource::Wgsl(NUDGE_WGSL.into()) });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("camera nudge"), layout: None, module: &m, entry_point: Some("main"), compilation_options: Default::default(), cache: None });
+        let buf = scene::uniform_buffer(device, "camera nudge", 16);
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("camera nudge"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: sh.camera.as_entire_binding() }, wgpu::BindGroupEntry { binding: 1, resource: buf.as_entire_binding() }],
+        });
+        Self { pipeline, group, buf }
+    }
+
+    /// Turn the space's camera by `yaw` and `pitch` (degrees) and scale its
+    /// distance by `zoom`.
+    pub fn apply(&self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, [yaw, pitch, zoom]: [f32; 3]) {
+        queue.write_buffer(&self.buf, 0, bytemuck::cast_slice(&[yaw.to_radians(), pitch.to_radians(), zoom, 0.0]));
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("camera nudge"), timestamp_writes: None });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.group, &[]);
+        pass.dispatch_workgroups(1, 1, 1);
     }
 }
 

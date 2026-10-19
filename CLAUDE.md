@@ -17,6 +17,7 @@ Spotify-fed, Windows-first music visualizer (Rust, wgpu, WGSL). Start with `docs
 - After changing any factory file (`assets/visuals`, `assets/presets`, `assets/scenes`), run `cargo test -p audioviz rewrite_factory_history -- --ignored`. After editing a scene file by hand, normalise it first with `rewrite_factory_scene_files`.
 - **Measure** windowed 2560x1440, release build. Logs go to stdout with `RUST_LOG=audioviz=debug`, one line per second with `gpu n ms` and `worst n ms`. Report the median of 8 lines over two runs; layouts vary per run, because `V.instance` is random.
 - Dev runs use `AUDIOVIZ_DEFAULTS=1`. Never touch `%APPDATA%\audioviz\settings.json`.
+- **The lab** (ADR-0003) renders one visual, still, off-screen, from this checkout's files (a shader edit needs no rebuild): `target/release/audioviz-lab.exe jellyfish --scene Jellyfish --layer 1 --set count=1 --set plankton=0 --set view=close-up --shots front,side,below --passes all,sharp,glow --name moon` writes PNGs and `tmp/lab/moon_sheet.png` in a few seconds, identical every run. `--help` lists the rest. Design there; tune in scenes.
 - **A fresh-install state** for testing the installer and the first run: `scripts/reset-install.ps1`.
   - It uninstalls silently and sweeps up the leftovers: the install folder, the shortcuts, the start-at-sign-in value and the uninstall entry.
   - It then removes `%APPDATA%\audioviz`, after zipping it into `tmp\reset-backups\`.
@@ -28,6 +29,7 @@ Spotify-fed, Windows-first music visualizer (Rust, wgpu, WGSL). Start with `docs
   - `AUDIOVIZ_SIZE=WxH` sets the window size.
   - `AUDIOVIZ_PANEL=<section>` opens the panel there and skips the welcome sheet.
   - `AUDIOVIZ_SEED=n` gives each layer the same `V.instance` every run, for snapshots of two builds (motion still drifts with build time and music).
+  - `AUDIOVIZ_REPO=<checkout>` reads that checkout's visuals and engine shaders, live, in any build (the lab sets it).
 - **UI:**
   - Labels are in proper case.
   - One object is in focus at a time.

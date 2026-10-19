@@ -23,7 +23,7 @@ The quickest start is the Visual tab's **Your own visuals** group: type a name a
 
 `shade` is called once for every pixel of the layer, every frame. It returns the colour of that pixel as linear light. That is the whole contract: no vertex buffers, no render passes, no Rust.
 
-The visuals that ship with the app live in the repo under `assets/visuals/` and are copied into your folder on first run. Four of them are worth reading next to this guide: **Polygon**, **Pulse** and **Comet** (the three worked examples below) and **Eclipse** (a full visual, ported from a compiled-in one).
+The visuals that ship with the app live in the repo under `assets/visuals/` and are copied into your folder on first run. When an update changes one you never edited, your copy is updated; once you edit one it is yours and stays as you left it (Restore factory visuals brings the shipped version back). Four of them are worth reading next to this guide: **Polygon**, **Pulse** and **Comet** (the three worked examples below) and **Eclipse** (a full visual, ported from a compiled-in one).
 
 ## visual.json, field by field
 

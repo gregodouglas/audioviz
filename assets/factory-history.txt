@@ -1,0 +1,80 @@
+presets/crystal/Cut stone.json da62510cfc0352ce
+presets/ribbons/Deep field.json b60d2f5bfb24f0b7
+presets/ribbons/Sparks.json 2116c67c5c5fdc38
+presets/ribbons/Starfield.json 330f6e0f5415b32b
+presets/scope/Fine beam.json ce71f3a303c1edfd
+presets/scope/Long phosphor.json cf0c1e76fb38a328
+presets/starfield/Quiet sky.json 9d839eb910ce8b65
+presets/waves/Spectrum ridge.json d307ca2c5e853ff5
+presets/wheel/Rays only.json 4a22989164256cb2
+scenes/Crystal.json 5a598fbbd8cebbbe
+scenes/Crystal.json 8772c78b51b38be8
+scenes/Deep field.json 2ac1b63faf77d969
+scenes/Deep field.json 654b5fabf89e6fed
+scenes/Eclipse.json 5d27bd8aff9e5f85
+scenes/Eclipse.json b88e1fe1ea1400b6
+scenes/Harmonograph.json fefa1b43690af818
+scenes/Kaleidoscope.json 579a60634c495148
+scenes/Kaleidoscope.json 5d870f2232b99e9b
+scenes/Lantern.json 22eaca7d10529ade
+scenes/Lantern.json 27024442b45c9071
+scenes/Lantern.json f79e7f1d810fd98f
+scenes/Loop.json 454f15bf0f1c7f10
+scenes/Loop.json eb5a56734e91635f
+scenes/Night.json 5a924f65e5817d4c
+scenes/Night.json fa16ab31e44a317d
+scenes/Party.json a6fb5b612a552bdd
+scenes/Party.json ca4369b52c4b2028
+scenes/Ribbons.json 98f75dec815dae68
+scenes/Ribbons.json c86018b331dbb81f
+scenes/Ripples.json d12f0ded36354106
+scenes/Ripples.json fd9202341ae4f853
+scenes/Scope.json c7c18e592328e309
+scenes/Scope.json ce6b72bea48ae6a4
+scenes/Sigil.json d5d8279dc02b4d00
+scenes/Sigil.json ff696700d78c1356
+scenes/Spiral.json 0b46b4ef3a6f4928
+scenes/Spiral.json ce99d327c5c0d013
+scenes/Starfield.json 6f6e83ee11d7769b
+scenes/Starfield.json da5f7b79b7670354
+scenes/Studio.json 3266d1f806409187
+scenes/Studio.json 66e9b219a2785c68
+scenes/Waves.json 264a255fc93b1c61
+scenes/Waves.json f17cac56fb05722c
+visuals/blackhole/visual.json c56fecbb8618b96a
+visuals/blackhole/visual.wgsl 8c2bda9bb021fa82
+visuals/comet/visual.json af4fe33e5adbc2de
+visuals/comet/visual.wgsl 72cf89c4c0757c6a
+visuals/crystal/visual.json ce070f972a683422
+visuals/crystal/visual.wgsl 95b0a0089734f49d
+visuals/eclipse/visual.json 3b64408c51cb4c85
+visuals/eclipse/visual.json bd94daa2bfb77c12
+visuals/eclipse/visual.wgsl b063ce848062b898
+visuals/eclipse/visual.wgsl d19bd98f6a6ffb3d
+visuals/harmonograph/visual.json 548d04f846e1fcb4
+visuals/harmonograph/visual.wgsl 3ea8bf81525e9a66
+visuals/harmonograph/visual.wgsl cdfe8fe68fcd9536
+visuals/kaleido/visual.json 61603cabff3e5530
+visuals/kaleido/visual.wgsl 069d6bcf431d8c05
+visuals/loop/visual.json 5ba7be6418b67ffc
+visuals/loop/visual.wgsl bb9af58dbfaceaa3
+visuals/polygon/visual.json d64bb9c281a38d14
+visuals/polygon/visual.json f26215cab841c69e
+visuals/polygon/visual.wgsl afd98df47f322ff1
+visuals/pulse/visual.json 68b8a4e53955c8c6
+visuals/pulse/visual.wgsl 945718839378ec48
+visuals/ribbons/visual.json 69b7ba5ca5fdf1f4
+visuals/ribbons/visual.wgsl d81a0ad02d20c2b5
+visuals/ripples/visual.json 0e3915513da15719
+visuals/ripples/visual.json 3bf591ddb14b6864
+visuals/ripples/visual.wgsl e3d319b8183efad7
+visuals/scope/visual.json 0c4af80f6715b4b4
+visuals/scope/visual.wgsl 77c4af8171c05ffe
+visuals/sigil/visual.json d0b034c94ca53ad1
+visuals/sigil/visual.wgsl c623951ad1ae7b2b
+visuals/spiral/visual.json 034bff86ec31bd3a
+visuals/spiral/visual.wgsl 5356d77738139725
+visuals/waves/visual.json 51bc9b8a31515303
+visuals/waves/visual.wgsl b489e62bc8465d04
+visuals/wheel/visual.json 3e12321ce65881ba
+visuals/wheel/visual.wgsl 9953eb5d30239238

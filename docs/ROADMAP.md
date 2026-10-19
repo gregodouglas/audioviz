@@ -58,7 +58,7 @@ The engine and the visuals are separate: a visual is a registry entry (`docs/vis
 
 **Build pipelines off the render thread** (found during the Sigil port). Picking a heavy visual stalls the app while its shaders compile: Black hole 1.6 s, Sigil 1.4, Crystal 1.2, Waves 0.9, Ribbons 0.6 (release, D3D12 with FXC). This was as true of the compiled-in visuals. A worker thread could build the pipelines while the outgoing visual keeps drawing, the new layer fading in when ready. DXC instead of FXC barely helped (1.0 s for the Sigil), so most of it is the driver.
 
-Next candidates for the format: a depth test, pictures of a visual's own, upgrading unedited factory visuals in place.
+Next candidates for the format: a depth test, pictures of a visual's own. ~~Upgrading unedited factory files in place~~ done 2026-10-19 (visuals, presets and scenes: a copy matching a version that shipped is updated, an edited one kept; `assets/factory-history.txt`).
 
 Modifier candidates: ~~warp~~ (built 2026-10-18), ~~halftone~~ (built 2026-10-18; dither still open), ~~scanlines~~ and ~~mirror~~ (built 2026-10-18), ~~glow~~, ~~vignette~~ and ~~colorify~~ (built 2026-10-18 late night; Lantern's Crystal runs Glow and Vignette pinned, Colorify in the pool), ~~beat roll~~ (built 2026-10-18 as the **effects director**, `docs/model.md`), **glitch** (block displacement and channel tears on onsets), **posterize / hue cycle**, **scanlines / CRT**, **echo** (a delayed copy under the picture, reusing the history pair).
 

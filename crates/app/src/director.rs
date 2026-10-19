@@ -214,6 +214,26 @@ const MOD_COLORIFY: usize = 16;
 /// Mip levels a fractal's input keeps: 1.9^5 of magnification is lod 4.6.
 const PYRAMID_LEVELS: u32 = 6;
 
+/// Below this zoom a kaleidoscope reads its input through a mip pyramid.
+const FOLD_PYRAMID_ZOOM: f32 = 0.9;
+const MOD_FOLD: usize = 0;
+
+/// The mip level a kaleidoscope at `zoom` reads (0 when it has no pyramid).
+fn fold_lod(zoom: f32) -> f32 {
+    if zoom < FOLD_PYRAMID_ZOOM { (-zoom.max(0.05).log2()).clamp(0.0, (PYRAMID_LEVELS - 1) as f32) } else { 0.0 }
+}
+
+/// Whether this modifier reads its input through a mip pyramid.
+fn uses_pyramid(m: &Modifier) -> bool {
+    match m {
+        Modifier::Fractal(_) => true,
+        // The zoom breathes with the bass by a few percent; the margin keeps
+        // the pyramid from being made and dropped around the threshold.
+        Modifier::Fold(k) => k.zoom < FOLD_PYRAMID_ZOOM,
+        _ => false,
+    }
+}
+
 fn uses_history(pi: usize) -> bool {
     pi == MOD_FEEDBACK || pi == MOD_LUMI
 }
@@ -518,7 +538,7 @@ fn mod_params(m: &Modifier, st: &mut ModState, f: &FeatureFrame, tint: [f32; 3],
                 FoldMode::Pinwheel => 2.0,
             };
             p.p0 = [st.seg_cur, st.angle, zoom, mode];
-            p.p1 = [0.45, off[0], off[1], 0.0];
+            p.p1 = [0.45, off[0], off[1], fold_lod(zoom)];
         }
         Modifier::Feedback(k) => {
             let zoom = 1.0 + k.zoom * dt * (0.6 + 0.4 * energy * k.react);
@@ -1083,7 +1103,7 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
                 continue;
             }
             chain.want_history(device, j, uses_history(mod_index(m)), fr.width, fr.height);
-            chain.want_pyramid(device, j, mod_index(m) == MOD_FRACTAL, fr.width, fr.height);
+            chain.want_pyramid(device, j, uses_pyramid(m), fr.width, fr.height);
             chain.want_glow(device, j, mod_index(m) == MOD_GLOW, fr.width, fr.height);
             // The modifier follows the layer's band unless it has its own.
             let own_band;
@@ -1157,7 +1177,7 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
         // A fractal reads a mip pyramid of its input: copy, then halve level
         // by level (the blit's one linear tap at half size is a 2x2 box).
         let mut first_tex = src;
-        if let (MOD_FRACTAL, Some(py)) = (pi, chain.pyramid[j].as_ref()) {
+        if let (MOD_FRACTAL | MOD_FOLD, Some(py)) = (pi, chain.pyramid[j].as_ref()) {
             let mut from = src;
             for (lvl, view) in py.levels.iter().enumerate() {
                 let g = scene::tex_group(device, &pipes.mod_layout, &[from, from], &pipes.mirror_sampler, &chain.bufs[j]);

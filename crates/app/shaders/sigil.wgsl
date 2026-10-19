@@ -92,6 +92,11 @@ fn trace_at(t: f32, tn: u32) -> vec2<f32> {
 // A neon tube at distance `d` with half-width `w`: white-hot core plus a
 // coloured halo with a long tail.
 fn tube(d: f32, w: f32, c: vec3<f32>) -> vec3<f32> {
+    // Far from the line only the 1/d tail is left (the core and the near
+    // halo are below 1e-5 there), so skip their exponentials.
+    if (d > w * 48.0) {
+        return c * (0.07 * w / (d + w * 0.5)) * P.style.x;
+    }
     let core = exp(-(d * d) / (w * w));
     let halo = exp(-d / (w * 4.0)) * 0.45 + 0.07 * w / (d + w * 0.5);
     let hot = P.pen.y;
@@ -129,11 +134,17 @@ fn segment(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> vec2<f32> {
 // Outline distance to the star polygon {n/k} of circumradius `r`: every
 // vertex joined to the k-th next one (k = 1 is the plain polygon).
 fn polygram(p: vec2<f32>, n: u32, k: u32, r: f32, rot: f32) -> f32 {
+    // One sin/cos for the figure: vertex i+1 is vertex i turned by a step,
+    // and the k-th next vertex is vertex i turned by k steps.
     var d = 1e3;
+    let st = TAU / f32(n);
+    let cs = vec2<f32>(cos(st), sin(st));
+    let ck = vec2<f32>(cos(st * f32(k)), sin(st * f32(k)));
+    var v = r * vec2<f32>(cos(rot), sin(rot));
     for (var i = 0u; i < n; i++) {
-        let a0 = rot + f32(i) * TAU / f32(n);
-        let a1 = rot + f32((i + k) % n) * TAU / f32(n);
-        d = min(d, segment(p, r * vec2<f32>(cos(a0), sin(a0)), r * vec2<f32>(cos(a1), sin(a1))).x);
+        let w = vec2<f32>(v.x * ck.x - v.y * ck.y, v.x * ck.y + v.y * ck.x);
+        d = min(d, segment(p, v, w).x);
+        v = vec2<f32>(v.x * cs.x - v.y * cs.y, v.x * cs.y + v.y * cs.x);
     }
     return d;
 }
@@ -289,7 +300,12 @@ fn fs_main(in: FsIn) -> Out {
             let rr = P.shape.z * shrink * (1.0 + 0.05 * bass * react);
             // Levels overlay: each a fraction of a step round, alternate ones counter-turning.
             let rot = P.shape.w * select(1.0, -1.3, (lv & 1u) == 1u) + f32(lv) * PI / f32(n) / f32(max(nest, 1u)) * 2.0;
-            let d = polygram(p, n, k, rr, rot);
+            // Far outside the figure the distance is about r - rr and the tube is
+            // only its faint tail: skip the segments.
+            var d = r - rr;
+            if (d < w * 48.0) {
+                d = polygram(p, n, k, rr, rot);
+            }
             let bright = (0.45 + 0.35 * bass * react + 0.5 * beat * react) * P.tri.w;
             acc += tube(d, w, pcol) * bright * lit(0.15 + 0.08 * f32(lv), 200.0 + f32(lv));
         }
@@ -312,7 +328,10 @@ fn fs_main(in: FsIn) -> Out {
             let tcol = col_at(0.65);
             for (var lv = 0u; lv < nest; lv++) {
                 let size = P.tri.y * pow(0.62, f32(lv));
-                let d = abs(polygon(q, 3.0, size, -ca + P.tri.z * select(1.0, -1.0, (lv & 1u) == 1u)));
+                var d = length(q) - size;
+                if (d < w * 48.0) {
+                    d = abs(polygon(q, 3.0, size, -ca + P.tri.z * select(1.0, -1.0, (lv & 1u) == 1u)));
+                }
                 let bright = (0.4 + 0.5 * mid * react) * P.tri.w;
                 acc += tube(d, w, tcol) * bright * lit(0.4 + 0.07 * f32(lv), 300.0 + f32(lv) + f32(kq8));
             }

@@ -259,7 +259,10 @@ fn march(x0: vec3<f32>, v0: vec3<f32>) -> Ray {
         let r = length(x);
         if (r < rs * 1.02) { ray.captured = 1.0; done = true; break; }
         if (r > exit_r && dot(x, v) > 0.0) { break; }
-        let dl = clamp(0.09 * r, 0.035 * rs, 0.7 * rs);
+        // Steps grow outside the disk, where the field is weak and nothing is
+        // drawn but the faint streams; inside it they stay fine.
+        let far = smoothstep(R_OUT * rs, R_FAR * rs, r);
+        let dl = clamp(0.09 * r * (1.0 + 1.5 * far), 0.035 * rs, mix(0.7, 2.4, far) * rs);
         // Midpoint step of the pseudo-Newtonian geodesic.
         let xm = x + v * (0.5 * dl);
         let rm = length(xm);
@@ -359,11 +362,13 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
         col += stars(sky + vec2<f32>(P.az * 0.05, 0.0), inv, 75.0, 0.30 * dens, 0.8, 2.0, 1.0) * fade2;
         col += stars(sky + vec2<f32>(P.az * 0.09, 0.0), inv, 26.0, 0.12 * dens, 1.8, 3.0, 1.0) * fade2;
         // Nebula haze and the band's dust, faint, in the disk's cool colour.
-        let neb = fbm(sky * 3.0 + vec2<f32>(7.0, 2.0) + P.az * 0.02);
-        let dust = fbm(sky * 9.0 - 3.0);
-        let fine = fbm(sky * 22.0 + 11.0);
-        let haze = (0.5 * neb * neb * neb * (0.5 + fine) + 0.7 * band_w * dust * dust * fine) * P.nebula;
-        col += mix(disk_palette(0.35), P.tint.rgb, 0.35) * haze * 0.07;
+        if (P.nebula > 0.001) {
+            let neb = fbm(sky * 3.0 + vec2<f32>(7.0, 2.0) + P.az * 0.02);
+            let dust = fbm(sky * 9.0 - 3.0);
+            let fine = fbm(sky * 22.0 + 11.0);
+            let haze = (0.5 * neb * neb * neb * (0.5 + fine) + 0.7 * band_w * dust * dust * fine) * P.nebula;
+            col += mix(disk_palette(0.35), P.tint.rgb, 0.35) * haze * 0.07;
+        }
     }
 
     // Disk over the stars. A soft knee keeps the photon ring, where images of

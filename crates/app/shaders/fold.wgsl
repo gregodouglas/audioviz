@@ -3,7 +3,9 @@
 // three mirrors at 60 degrees (a triangular tiling of one cell). The apex can
 // sit off the source's centre (p1.yz), which is what makes a real
 // kaleidoscope's patterns rich. Four rotated-grid taps soften the seams.
-//   p0 = (segments, angle, zoom, mode)   p1 = (cell size, offset x, offset y, 0)
+// Zoomed out, `src` is a mip pyramid of the input and the taps read at the
+// zoom's lod, which keeps them in cache and stops the shimmer.
+//   p0 = (segments, angle, zoom, mode)   p1 = (cell size, offset x, offset y, lod)
 
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;          // mirror-repeat
@@ -67,7 +69,7 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
         let s = (uv * 2.0 - 1.0) * vec2<f32>(aspect, -1.0);
         let q = fold(s) / max(M.p0.z, 0.05) + M.p1.yz;
         let suv = (q * vec2<f32>(1.0 / aspect, -1.0) + 1.0) * 0.5;
-        col += textureSampleLevel(src, samp, suv, 0.0).rgb;
+        col += textureSampleLevel(src, samp, suv, M.p1.w).rgb;
     }
     return vec4<f32>(col * 0.25, 1.0);
 }

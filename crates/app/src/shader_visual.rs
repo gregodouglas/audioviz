@@ -31,6 +31,8 @@ use crate::shaders::ShaderSet;
 pub const MAX_PARAMS: usize = 16;
 /// Most items a prepare step may compute.
 pub const MAX_ITEMS: u32 = 16384;
+/// Most triangles a loaded visual may draw.
+pub const MAX_TRIANGLES: u32 = 1 << 20;
 /// Most points a loaded visual's line may have.
 pub const MAX_LINE: u32 = 65536;
 const PREPARE_GROUP: u32 = 64;
@@ -122,6 +124,9 @@ struct Manifest {
     /// The layer's band filters the waveform itself (as the scope does).
     #[serde(default)]
     band_waveform: bool,
+    /// Triangles `vertex(i)` gives, drawn in order over the picture (0 = none).
+    #[serde(default)]
+    triangles: u32,
 }
 
 /// A loaded visual, as the registry holds it.
@@ -145,6 +150,9 @@ pub struct ShaderDef {
     pub shade: bool,
     /// The line is a phosphor beam (Gaussian, dimmer when fast).
     pub beam: bool,
+    /// Triangles drawn by `vertex(i)` (0 = none), and whether `paint` colours them.
+    pub triangles: u32,
+    pub paint: bool,
     pub band_waveform: bool,
     pub wgsl: String,
     /// The folder it came from, watched for changes (none for embedded copies).
@@ -219,14 +227,22 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
     if !matches!(m.line_style.as_str(), "" | "line" | "beam") {
         return Err(format!("visual.json: line_style \"{}\" is not \"line\" or \"beam\"", m.line_style));
     }
-    if !defines(wgsl, "shade") && m.line == 0 {
-        return Err("visual.wgsl needs fn shade(uv: vec2<f32>) -> vec3<f32> (only a visual with a line may leave it out)".into());
+    if !defines(wgsl, "shade") && m.line == 0 && m.triangles == 0 {
+        return Err("visual.wgsl needs fn shade(uv: vec2<f32>) -> vec3<f32> (only a visual with a line or triangles may leave it out)".into());
+    }
+    if m.triangles > MAX_TRIANGLES {
+        return Err(format!("visual.json: at most {MAX_TRIANGLES} triangles"));
+    }
+    match (defines(wgsl, "vertex"), m.triangles > 0) {
+        (true, false) => return Err("visual.wgsl has fn vertex: set \"triangles\" in visual.json to how many it draws".into()),
+        (false, true) => return Err("visual.json sets \"triangles\" but visual.wgsl has no fn vertex(i: u32) -> MeshVertex".into()),
+        _ => {}
     }
     if !m.line_count.is_empty() && !m.params.iter().any(|p| p.id == m.line_count && matches!(p.kind, ParamKind::Integer | ParamKind::Slider)) {
         return Err(format!("visual.json: line_count \"{}\" is not a number param", m.line_count));
     }
     let short = if m.short.is_empty() { m.name.clone() } else { m.short };
-    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", band_waveform: m.band_waveform, wgsl: wgsl.to_string(), dir })
+    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, wgsl: wgsl.to_string(), dir })
 }
 
 // ------------------------------------------------------------ values
@@ -311,6 +327,12 @@ impl ShaderDef {
         }
         if self.line > 0 {
             prepare.push_str(&format!("\n@compute @workgroup_size({PREPARE_GROUP})\nfn cs_line(@builtin(global_invocation_id) id: vec3<u32>) {{\n    if (id.x < LINE_POINTS) {{\n        let q = point(id.x);\n        items_out[2u * id.x] = vec4<f32>(q.pos, q.width, 0.0);\n        items_out[2u * id.x + 1u] = vec4<f32>(q.colour, 0.0);\n    }}\n}}\n"));
+        }
+        if self.triangles > 0 {
+            let paint = if self.paint { "paint(f)" } else { "f.colour" };
+            prepare.push_str(&format!(
+                "\nstruct MeshOut {{\n    @builtin(position) clip: vec4<f32>,\n    @location(0) colour: vec4<f32>,\n    @location(1) data: vec4<f32>,\n}};\n\n@vertex\nfn vs_mesh(@builtin(vertex_index) vi: u32) -> MeshOut {{\n    let v = vertex(vi);\n    let short = min(V.resolution.x, V.resolution.y);\n    var o: MeshOut;\n    o.clip = vec4<f32>(v.pos.x * short / V.resolution.x, v.pos.y * short / V.resolution.y, 0.0, v.pos.w);\n    o.colour = v.colour;\n    o.data = v.data;\n    return o;\n}}\n\n@fragment\nfn fs_mesh(m: MeshOut) -> @location(0) vec4<f32> {{\n    var f: MeshFragment;\n    f.colour = m.colour;\n    f.data = m.data;\n    f.pixel = m.clip.xy;\n    let c = {paint};\n    // A NaN must not reach the levelling.\n    if (!all(c == c)) {{\n        return vec4<f32>(0.0);\n    }}\n    return vec4<f32>(max(c.rgb, vec3<f32>(0.0)), clamp(c.a, 0.0, 1.0));\n}}\n"
+            ));
         }
         // A line visual may leave out shade(): the line pass clears instead.
         if !self.shade {
@@ -528,7 +550,7 @@ struct Uniform {
     wave_new: f32,
     auto_gain: f32,
     sample_rate: f32,
-    _pad2: f32,
+    track: f32,
 }
 
 pub struct ShaderVisual {
@@ -559,6 +581,8 @@ pub struct ShaderVisual {
     line_layout: wgpu::BindGroupLayout,
     line_group: wgpu::BindGroup,
     line_draw: Option<wgpu::RenderPipeline>,
+    /// The triangles' pipeline (premultiplied over the picture).
+    mesh: Option<wgpu::RenderPipeline>,
     uniform: wgpu::Buffer,
     wave_buf: wgpu::Buffer,
     sampler: wgpu::Sampler,
@@ -599,6 +623,28 @@ fn art_pixels(a: &audioviz_metadata::ArtImage) -> Option<Vec<u8>> {
     }
     let img = image::RgbaImage::from_raw(a.width, a.height, a.rgba.clone())?;
     Some(image::imageops::resize(&img, ART, ART, image::imageops::FilterType::Triangle).into_raw())
+}
+
+/// Blending for triangles: premultiplied over, so alpha 0 adds light and
+/// alpha 1 covers.
+const PREMULTIPLIED_OVER: wgpu::BlendState = wgpu::BlendState {
+    color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
+    alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
+};
+
+fn mesh_pipeline(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, module: &wgpu::ShaderModule) -> wgpu::RenderPipeline {
+    let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("loaded visual triangles"), bind_group_layouts: &[Some(layout)], immediate_size: 0 });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("loaded visual triangles"),
+        layout: Some(&pl),
+        vertex: wgpu::VertexState { module, entry_point: Some("vs_mesh"), buffers: &[], compilation_options: Default::default() },
+        fragment: Some(wgpu::FragmentState { module, entry_point: Some("fs_mesh"), targets: &[Some(wgpu::ColorTargetState { format: HDR_FORMAT, blend: Some(PREMULTIPLIED_OVER), write_mask: wgpu::ColorWrites::ALL })], compilation_options: Default::default() }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
 }
 
 fn line_buffer(device: &wgpu::Device, n: u32) -> wgpu::Buffer {
@@ -675,6 +721,7 @@ impl ShaderVisual {
             line_layout,
             line_group,
             line_draw,
+            mesh: None,
             def,
             art_view: art.create_view(&wgpu::TextureViewDescriptor::default()),
             art,
@@ -744,6 +791,7 @@ impl ShaderVisual {
         let id = self.live.id.clone();
         let with_prepare = self.live.items > 0;
         let with_line = self.live.line > 0;
+        let with_mesh = self.live.triangles > 0;
         let built = scene::guarded(device, || {
             let m = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(&id), source: wgpu::ShaderSource::Wgsl(src.into()) });
             let prepare = with_prepare.then(|| {
@@ -754,13 +802,15 @@ impl ShaderVisual {
                 let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("loaded visual line points"), bind_group_layouts: &[Some(layout), Some(out_layout)], immediate_size: 0 });
                 device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("loaded visual line points"), layout: Some(&pl), module: &m, entry_point: Some("cs_line"), compilation_options: Default::default(), cache: None })
             });
-            (scene::pipeline(device, &id, layout, &m, HDR_FORMAT, None), prepare, line)
+            let mesh = with_mesh.then(|| mesh_pipeline(device, layout, &m));
+            (scene::pipeline(device, &id, layout, &m, HDR_FORMAT, None), prepare, line, mesh)
         });
         match built {
-            Ok((p, prepare, line)) => {
+            Ok((p, prepare, line, mesh)) => {
                 self.pipeline = Some(p);
                 self.prepare = prepare;
                 self.line_cs = line;
+                self.mesh = mesh;
                 self.error = None;
                 if self.live.line != self.line_len {
                     self.line_points = line_buffer(device, self.live.line);
@@ -891,7 +941,8 @@ impl Scene for ShaderVisual {
             wave_new: ctx.points.len().min(WAVE - 1) as f32,
             auto_gain: ctx.auto_gain,
             sample_rate: ctx.sample_rate as f32,
-            _pad2: 0.0,
+            // The track id hashed to 0..1.
+            track: crate::rng::Rng::seeded(&[ctx.art_id]).next(),
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
         // The album art, once per track.
@@ -957,10 +1008,20 @@ impl Scene for ShaderVisual {
             }
             _ => None,
         };
-        let picture = self.live.shade || line.is_none();
+        let mesh = self.mesh.as_ref().filter(|_| self.live.triangles > 0);
+        // The passes in order (picture, triangles, line); the first clears.
+        let picture = self.live.shade || (line.is_none() && mesh.is_none());
         if picture {
             fullscreen_pass(encoder, &self.def.id, &self.out[write], wgpu::LoadOp::Clear(wgpu::Color::BLACK), pipeline, group);
         }
+        if let Some(mesh) = mesh {
+            let load = if picture { wgpu::LoadOp::Load } else { wgpu::LoadOp::Clear(wgpu::Color::BLACK) };
+            let mut pass = scene::begin_pass(encoder, "loaded visual triangles", &self.out[write], load);
+            pass.set_pipeline(mesh);
+            pass.set_bind_group(0, group, &[]);
+            pass.draw(0..self.live.triangles * 3, 0..1);
+        }
+        let picture = picture || mesh.is_some();
         if let Some(draw) = line {
             let u: [u32; 4] = [(ctx.width as f32).to_bits(), (ctx.height as f32).to_bits(), count, self.live.beam as u32];
             queue.write_buffer(&self.line_uniform, 0, bytemuck::cast_slice(&u));

@@ -20,8 +20,6 @@ shader_table!(
     "waves_params.wgsl",
     "crystal_params.wgsl",
     "crystal.wgsl",
-    "ripples_params.wgsl",
-    "ripples.wgsl",
     "visual_api.wgsl",
     "visual_lines.wgsl",
     "waves.wgsl",

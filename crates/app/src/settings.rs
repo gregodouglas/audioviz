@@ -1175,63 +1175,6 @@ impl Default for CrystalParams {
     }
 }
 
-/// How the Ripples plane is printed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum RipplesPrint {
-    /// Contour lines of the height, like a topographic map.
-    #[default]
-    Contours,
-    /// A grid of dots on the surface.
-    Dots,
-    /// Lines along both axes of the surface.
-    Grid,
-}
-
-impl RipplesPrint {
-    pub const ALL: [RipplesPrint; 3] = [RipplesPrint::Contours, RipplesPrint::Dots, RipplesPrint::Grid];
-    pub fn name(self) -> &'static str {
-        match self {
-            RipplesPrint::Contours => "Contours",
-            RipplesPrint::Dots => "Dots",
-            RipplesPrint::Grid => "Grid",
-        }
-    }
-}
-
-/// Ripples: a noise-displaced plane in perspective, printed with contour
-/// lines, dots or a grid, darker with distance; beats drop rings into it
-/// (`scenes/ripples.rs`).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct RipplesParams {
-    pub print: RipplesPrint,
-    /// Height of the hills.
-    pub height: f32,
-    /// Noise scale: higher is smaller hills.
-    pub scale: f32,
-    /// How fast the surface flows toward the viewer.
-    pub speed: f32,
-    /// Contour lines per unit of height, or dots / grid lines per unit of ground.
-    pub density: f32,
-    /// Line width or dot size, pixels.
-    pub width: f32,
-    /// Camera pitch: 0 low over the surface, 1 looking straight down.
-    pub tilt: f32,
-    /// How dark the far surface gets.
-    pub fade: f32,
-    /// Strength of the rings beats drop into the surface.
-    pub rings: f32,
-    /// The bass swells the hills.
-    pub react: f32,
-}
-
-impl Default for RipplesParams {
-    fn default() -> Self {
-        Self { print: RipplesPrint::Contours, height: 0.35, scale: 1.2, speed: 0.15, density: 10.0, width: 1.3, tilt: 0.35, fade: 0.7, rings: 1.0, react: 1.0 }
-    }
-}
-
 /// How a director runs: by hand, by the system, or by a saved sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]

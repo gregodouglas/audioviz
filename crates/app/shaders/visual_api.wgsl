@@ -37,7 +37,7 @@ struct VisualIn {
     wave_new: f32,      // how many of sample()'s newest samples arrived since last frame
     auto_gain: f32,     // the gain already applied to the waveform (divide to undo it)
     sample_rate: f32,   // samples per second
-    _pad2: f32,
+    track: f32,         // 0..1, a hash of the playing track (changes with the track; seeds)
 };
 
 @group(0) @binding(0) var<uniform> V: VisualIn;
@@ -122,6 +122,25 @@ struct LinePoint {
     pos: vec2<f32>,
     width: f32,
     colour: vec3<f32>,
+};
+
+// One corner of a triangle (with "triangles": N in visual.json, fn vertex(i)
+// returns corner i, three per triangle, drawn in order): where it is in
+// centred coordinates with w for perspective (pos = (x, y, 0, 1) when flat),
+// its colour as premultiplied light plus coverage (a = 0 adds light, a = 1
+// covers what is under it), and four free values handed to paint().
+struct MeshVertex {
+    pos: vec4<f32>,
+    colour: vec4<f32>,
+    data: vec4<f32>,
+};
+
+// What paint(f) gets for each pixel of a triangle: the colour and data
+// interpolated across it, and the pixel's position in pixels.
+struct MeshFragment {
+    colour: vec4<f32>,
+    data: vec4<f32>,
+    pixel: vec2<f32>,
 };
 
 // Item i as prepare() computed it (zero without a prepare step). In shade()

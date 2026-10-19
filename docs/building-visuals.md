@@ -53,6 +53,7 @@ The visuals that ship with the app live in the repo under `assets/visuals/` and 
 | `credit` | no | Who the idea or code comes from, and the licence. Shown at the foot of the Visual tab. |
 | `hint` | no | A longer explanation at the foot of the Visual tab: what the controls do, which part of the music drives what. |
 | `feedback` | no | `true` keeps your last frame so `prev(uv)` can read it (example 3). Default `false`. |
+| `triangles` | no | How many triangles `fn vertex` draws (up to 1048576); required with `fn vertex`, and only then. See "Drawing triangles" below. |
 | `items` | no | How many values your `prepare` step computes each frame (up to 4096); required when `visual.wgsl` has `fn prepare`, and only then. See "Once a frame: prepare" below. |
 | `line` | no | How many points your line has (2 to 65536); required when `visual.wgsl` has `fn point`, and only then. See "Drawing a line" below. |
 | `line_count` | no | The id of a number control that says how many of the line's points to draw (Spiral's "Points"). |
@@ -90,7 +91,7 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
 }
 ```
 
-Add any helper functions and constants you like above it. Names the API already uses (below, plus `FsIn`, `fullscreen_vertex`, `vs_main`, `fs_main`, `cs_main`, `cs_line`, `V`, `Params`, `ITEMS`, `LINE_POINTS`, `LinePoint`) cannot be reused.
+Add any helper functions and constants you like above it. Names the API already uses (below, plus `FsIn`, `fullscreen_vertex`, `vs_main`, `fs_main`, `cs_main`, `cs_line`, `V`, `Params`, `ITEMS`, `LINE_POINTS`, `LinePoint`, `MeshVertex`, `MeshFragment`, `MeshOut`, `vs_mesh`, `fs_mesh`) cannot be reused.
 
 ### Coordinates
 
@@ -145,6 +146,7 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `wave(t)` | ~-1..1 | The last 1024 samples (`t` 0 oldest, 1 newest) as (left, right), auto-gained. |
 | `wave_mono(t)` | ~-1..1 | Their average. |
 | `sample(i)` | ~-1..1 | Sample `i` of the last 4096, newest first, (left, right), auto-gained: for walking the waveform sample by sample. |
+| `V.track` | 0..1 | A hash of the playing track: a seed for anything that should be the same each time a song plays and change with the next. |
 | `V.wave_new` | count | How many of `sample()`'s newest samples arrived since last frame: a trace that draws exactly these (the scope) never repeats or skips one. |
 | `V.auto_gain`, `V.sample_rate` | | The gain already applied to the waveform (divide by it to undo), and samples per second. |
 | `prev(uv)` | colour | Your own last frame, before effects (with `"feedback": true`; black otherwise). |
@@ -365,6 +367,22 @@ The engine calls `point(i)` once for each point every frame (after `prepare`, so
 
 **Harmonograph** (`assets/visuals/harmonograph/`) is the example: a damped Lissajous figure of 6000 points whose two swings run at the interval between the music's two strongest pitch classes. Its `prepare` step finds the interval and glides toward it (state, in one item), and `point` reads that item. It costs 0.05 ms at 2560x1440. **Spiral** is another: its "Points" control is named in `"line_count"`, so only that many points are computed and drawn.
 
+## Drawing triangles
+
+For a surface, a solid or anything with a front and a back, give `"triangles": N` and a function for the corners:
+
+```wgsl
+fn vertex(i: u32) -> MeshVertex {
+    var v: MeshVertex;
+    v.pos = vec4<f32>(x, y, 0.0, 1.0);        // centred units; w > 1 for perspective
+    v.colour = vec4<f32>(colour(0.3), 0.0);    // premultiplied: a = 0 adds light, a = 1 covers
+    v.data = vec4<f32>(height, 0.0, 0.0, 0.0); // anything paint() wants per pixel
+    return v;
+}
+```
+
+Corners 3k, 3k + 1 and 3k + 2 make triangle k, and triangles are drawn in order, so draw far things first when near ones should cover them (the painter's way; there is no depth test). An optional `fn paint(f: MeshFragment) -> vec4<f32>` colours each pixel from the interpolated `f.colour` and `f.data` and its `f.pixel` position; `fwidth` and the other derivatives work there, which is how **Ripples** (`assets/visuals/ripples/`) draws contour lines one pixel wide at every distance. Triangles go over whatever `shade` returned, and the line goes over them; leave `shade` out when the triangles are the picture.
+
 ## A performance budget
 
 `shade` runs for every pixel: 3.7 million at 2560x1440, 8.3 million at 4K, every frame. A line of code is cheap; a line inside a loop is that line times the loop count, times millions.
@@ -423,7 +441,7 @@ A visual is its folder: zip it, send it, and the recipient unzips it into `%APPD
 What a loaded visual cannot do yet, each a possible extension of the format:
 
 - **State is four numbers per item**, kept by `prepare` from frame to frame, and lost when the app restarts or the visual is picked again.
-- **No meshes or particles.** A picture and one line are what a loaded visual draws; thousands of moving particles (Ribbons) or solid 3D shapes (Crystal) stay built in.
+- **No particles yet**, and no depth test: triangles are drawn in the order given.
 - **No pictures of your own**: the album art is the one picture a visual can read.
 - **Sixteen controls**, all numbers.
 - **A changed `id` needs a restart**, and a folder deleted while the app runs stays listed until then.

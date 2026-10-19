@@ -1,0 +1,22 @@
+{
+  "id": "ripples",
+  "name": "Ripples",
+  "short": "Ripples",
+  "summary": "A flowing surface seen from low over it, printed with contours, dots or a grid; beats drop rings into it.",
+  "credit": "After the Ripples in Felix Turner's Uberviz (https://uberviz.io). No code used; written fresh.",
+  "hint": "A flowing surface seen from low over it: contours draw its height like a map, dots and the grid ride on it. Beats drop rings into it; the bass swells the hills. With a palette, the colour follows the height.",
+  "items": 6,
+  "triangles": 51200,
+  "params": [
+    { "id": "height", "label": "Height", "group": "Surface", "min": 0.0, "max": 1.5, "default": 0.35 },
+    { "id": "scale", "label": "Scale", "group": "Surface", "min": 0.2, "max": 6.0, "default": 1.2 },
+    { "id": "speed", "label": "Flow", "group": "Surface", "min": 0.0, "max": 1.5, "default": 0.15 },
+    { "id": "rings", "label": "Rings on beats", "group": "Surface", "min": 0.0, "max": 3.0, "default": 1.0 },
+    { "id": "tilt", "label": "Camera tilt", "group": "Surface", "min": 0.0, "max": 1.0, "default": 0.35 },
+    { "id": "react", "label": "Reacts", "group": "Surface", "min": 0.0, "max": 3.0, "default": 1.0, "help": "How much the bass swells the hills." },
+    { "id": "print", "label": "Printed as", "type": "choice", "group": "Print", "options": ["Contours", "Dots", "Grid"], "default": "contours" },
+    { "id": "density", "label": "Density", "group": "Print", "min": 1.0, "max": 40.0, "default": 10.0 },
+    { "id": "width", "label": "Line width", "group": "Print", "min": 0.5, "max": 5.0, "default": 1.3, "unit": "px" },
+    { "id": "fade", "label": "Distance fade", "group": "Print", "min": 0.0, "max": 1.0, "default": 0.7 }
+  ]
+}

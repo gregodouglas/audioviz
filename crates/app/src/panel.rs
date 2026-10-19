@@ -15,7 +15,7 @@ use crate::scene_store::SceneDef;
 use crate::color;
 use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, VisualKind, Glow, Vignette, Colorify};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
-use crate::widgets::{self, chip, chip_width, dropdown, ghost_button, group, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
+use crate::widgets::{self, chip, chip_width, dropdown, dropdown_help, ghost_button, group, group_help, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
 const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
@@ -427,7 +427,7 @@ fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelStat
             let m = &mut l.modifiers[j];
             mini_switch(ui, m.enabled_mut());
             let label = egui::RichText::new(m.name()).color(if m.enabled() { TEXT } else { TEXT_2 });
-            if ui.add(egui::Button::new(label).frame(false)).on_hover_text("Open its controls").clicked() {
+            if ui.add(egui::Button::new(label).frame(false)).on_hover_text(format!("{} Click to open its controls.", m.summary())).clicked() {
                 state.editing_mod = j;
                 state.mod_open = true;
             }
@@ -471,8 +471,7 @@ fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelStat
     }
     if l.modifiers.len() < MAX_MODS {
         ui.add_space(6.0);
-        let names: Vec<&str> = Modifier::KINDS.iter().map(|(n, _)| *n).collect();
-        if let Some(i) = dropdown(ui, "Add", &names, None) {
+        if let Some(i) = effect_picker(ui) {
             l.modifiers.push((Modifier::KINDS[i].1)());
             state.editing_mod = l.modifiers.len() - 1;
             state.mod_open = true;
@@ -485,7 +484,7 @@ fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelStat
         ui.add_space(8.0);
         let d = &mut l.director;
         let dd = crate::settings::EffectsDirector::default();
-        group(ui, "layer.director", "Effects director", true, 5, |ui| {
+        group_help(ui, "layer.director", "Effects director", Some("Auto picks which effects are live every few beats and fades the rest; Always on effects stay out of its pool."), true, 5, |ui| {
             if let Some(i) = segmented(ui, &["Manual", "Auto"], (d.mode == DirectorMode::Auto) as usize) {
                 d.mode = if i == 1 { DirectorMode::Auto } else { DirectorMode::Manual };
             }
@@ -545,7 +544,8 @@ fn modifier_band(ui: &mut egui::Ui, band: &mut Option<AudioBand>) {
         Some(b) if !b.enabled => 1,
         Some(b) => AudioBand::PRESETS.iter().position(|(_, lo, hi)| (b.lo_hz - lo).abs() < 1.0 && (b.hi_hz - hi).abs() < 1.0).map(|p| p + 2).unwrap_or(custom),
     };
-    if let Some(i) = dropdown(ui, "Reacts to", &items, Some(sel)) {
+    let first = 2;
+    if let Some(i) = dropdown_help(ui, "Reacts to", &items, Some(sel), |i| if i >= first && i < first + AudioBand::PRESETS.len() { let (_, lo, hi) = AudioBand::PRESETS[i - first]; Some(format!("{lo:.0} to {hi:.0} Hz")) } else { None }) {
         if i == 0 {
             *band = None;
         } else if i == 1 {
@@ -566,6 +566,49 @@ fn modifier_band(ui: &mut egui::Ui, band: &mut Option<AudioBand>) {
             }
         }
     }
+}
+
+/// The Add effect picker's groups, by what an effect does.
+const FX_GROUPS: [(&str, &[&str]); 3] = [
+    ("Shape", &["Kaleidoscope", "Mirror", "Fractal", "Polar", "Warp", "Ripple", "Mask"]),
+    ("Colour", &["Palette", "Colorify", "Halftone", "Edge", "Chroma split"]),
+    ("Light and time", &["Glow", "Luminescence", "Feedback", "Scanlines", "Vignette"]),
+];
+
+/// A full-width "Add effect" button opening every effect at once, grouped
+/// and in two columns, each with its summary on hover. Returns the index
+/// into `Modifier::KINDS` of the one picked.
+fn effect_picker(ui: &mut egui::Ui) -> Option<usize> {
+    let resp = ui.add_sized(egui::vec2(ui.available_width(), 28.0), egui::Button::new(egui::RichText::new("+  Add effect").color(TEXT)));
+    // Dev: AUDIOVIZ_OPEN_MENU="Add effect" holds it open for screenshots.
+    if std::env::var("AUDIOVIZ_OPEN_MENU").is_ok_and(|v| v.eq_ignore_ascii_case("add effect")) {
+        egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&resp));
+    }
+    let mut picked = None;
+    let w = resp.rect.width();
+    egui::Popup::menu(&resp).width(w).show(|ui| {
+        ui.set_min_width(w - 12.0);
+        let col = ((w - 24.0) / 2.0).floor();
+        for (title, names) in FX_GROUPS {
+            small_caps(ui, title);
+            egui::Grid::new(("fx picker", title)).num_columns(2).spacing(egui::vec2(4.0, 2.0)).show(ui, |ui| {
+                for (n, name) in names.iter().enumerate() {
+                    if let Some(i) = Modifier::KINDS.iter().position(|(k, _)| k == name) {
+                        let summary = (Modifier::KINDS[i].1)().summary();
+                        let b = egui::Button::selectable(false, egui::RichText::new(*name).size(13.5).color(TEXT)).min_size(egui::vec2(col, 26.0));
+                        if ui.add(b).on_hover_text(summary).clicked() {
+                            picked = Some(i);
+                        }
+                    }
+                    if n % 2 == 1 {
+                        ui.end_row();
+                    }
+                }
+            });
+            ui.add_space(4.0);
+        }
+    });
+    picked
 }
 
 fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
@@ -787,12 +830,13 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
     state.editing_mod = state.editing_mod.min(n_mods.saturating_sub(1));
     let mod_open = state.mod_open && n_mods > 0;
     if mod_open {
-        let name = settings.layer(editing).modifiers[state.editing_mod].name();
-        if inspector_header(ui, hue, &[&crumb, name], Some("‹ back")) {
+        let m = &settings.layer(editing).modifiers[state.editing_mod];
+        let (name, summary) = (m.name(), m.summary());
+        if inspector_header(ui, hue, &[&crumb, name], Some(summary), Some("‹ back")) {
             state.mod_open = false;
         }
     } else {
-        inspector_header(ui, hue, &[&crumb], None);
+        inspector_header(ui, hue, &[&crumb], Some(kind.summary()), None);
         let sel = LayerTab::ALL.iter().position(|t| *t == settings.layer_tab).unwrap_or(0);
         let tabs: Vec<&str> = LayerTab::ALL.iter().map(|t| t.name()).collect();
         if let Some(i) = segmented(ui, &tabs, sel) {
@@ -902,7 +946,7 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
                 };
                 for (j, m) in l.modifiers.iter().enumerate().take(fit) {
                     let c = if m.enabled() { hue } else { TEXT_3 };
-                    if chip(ui, m.name(), c, true).on_hover_text("Open its controls").clicked() {
+                    if chip(ui, m.name(), c, true).on_hover_text(format!("{} Click to open its controls.", m.summary())).clicked() {
                         a.select_layer = Some(i);
                         state.editing_mod = j;
                         state.mod_open = true;
@@ -945,7 +989,7 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
 fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, layers: &mut [Box<dyn Scene>], editing: usize, a: &mut Actions) {
     let l = settings.layer_mut(editing);
     let names: Vec<&str> = VisualKind::ALL.iter().map(|k| k.name()).collect();
-    if let Some(i) = dropdown(ui, "Visual", &names, VisualKind::ALL.iter().position(|k| *k == l.visual)) {
+    if let Some(i) = dropdown_help(ui, "Visual", &names, VisualKind::ALL.iter().position(|k| *k == l.visual), |i| Some(VisualKind::ALL[i].summary())) {
         let k = VisualKind::ALL[i];
         l.visual = k;
         // The kaleidoscope is its picture plus the fold: add the mirrors with it.
@@ -983,7 +1027,8 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState
     items.push("Custom range");
     let custom = items.len() - 1;
     let sel = if !l.band.enabled { 0 } else { AudioBand::PRESETS.iter().position(|(_, lo, hi)| (l.band.lo_hz - lo).abs() < 1.0 && (l.band.hi_hz - hi).abs() < 1.0).map(|p| p + 1).unwrap_or(custom) };
-    if let Some(i) = dropdown(ui, "Reacts to", &items, Some(sel)) {
+    let first = 1;
+    if let Some(i) = dropdown_help(ui, "Reacts to", &items, Some(sel), |i| if i >= first && i < first + AudioBand::PRESETS.len() { let (_, lo, hi) = AudioBand::PRESETS[i - first]; Some(format!("{lo:.0} to {hi:.0} Hz")) } else { None }) {
         if i == 0 {
             l.band.enabled = false;
         } else if i == custom {
@@ -1004,7 +1049,7 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState
         hint(ui, "The scope draws only this band of the waveform; other visuals take their energy, onsets and spectrum from it.");
     }
     let blends: Vec<&str> = Blend::ALL.iter().map(|b| b.name()).collect();
-    if let Some(i) = dropdown(ui, "Blend", &blends, Blend::ALL.iter().position(|b| *b == l.blend)) {
+    if let Some(i) = dropdown_help(ui, "Blend", &blends, Blend::ALL.iter().position(|b| *b == l.blend), |i| Some(Blend::ALL[i].summary())) {
         l.blend = Blend::ALL[i];
     }
     hint(ui, match l.blend {
@@ -1413,5 +1458,20 @@ fn bars(ui: &mut egui::Ui, values: &[f32], height: f32, color: Color32, labels: 
         if let Some(l) = labels {
             painter.text(pos2(x0 + w * 0.5, bottom + 6.0), Align2::CENTER_CENTER, l[i % 12], egui::FontId::proportional(9.0), TEXT_2);
         }
+    }
+}
+
+#[cfg(test)]
+mod picker_tests {
+    use super::*;
+
+    #[test]
+    fn every_effect_is_in_exactly_one_picker_group() {
+        for (name, _) in Modifier::KINDS.iter() {
+            let n = FX_GROUPS.iter().flat_map(|(_, names)| names.iter()).filter(|k| *k == name).count();
+            assert_eq!(n, 1, "{name}");
+        }
+        let total: usize = FX_GROUPS.iter().map(|(_, n)| n.len()).sum();
+        assert_eq!(total, Modifier::KINDS.len());
     }
 }

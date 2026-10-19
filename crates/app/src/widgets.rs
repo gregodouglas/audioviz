@@ -143,28 +143,76 @@ pub fn segmented(ui: &mut Ui, labels: &[&str], selected: usize) -> Option<usize>
 /// A labelled dropdown filling the row: "Visual   [ Sigil ▾ ]". Returns the
 /// newly chosen index when it changes.
 pub fn dropdown(ui: &mut Ui, label: &str, items: &[&str], selected: Option<usize>) -> Option<usize> {
+    dropdown_help(ui, label, items, selected, |_| None::<String>)
+}
+
+/// Height of one row in an open dropdown list.
+const MENU_ROW: f32 = 26.0;
+
+/// A dropdown whose items carry a one-line summary on hover; the summary of
+/// the selected item also sits behind a "?" beside the label.
+pub fn dropdown_help<S: AsRef<str>>(ui: &mut Ui, label: &str, items: &[&str], selected: Option<usize>, help: impl Fn(usize) -> Option<S>) -> Option<usize> {
     let mut picked = None;
     ui.horizontal(|ui| {
-        ui.add_sized(vec2(104.0, 22.0), egui::Label::new(egui::RichText::new(label).color(TEXT_2)).halign(egui::Align::LEFT));
+        let (rect, _) = ui.allocate_exact_size(vec2(104.0, 22.0), Sense::hover());
+        let g = ui.painter().layout_no_wrap(label.to_string(), theme::sans(13.0), TEXT_2);
+        let gw = g.size().x;
+        ui.painter().galley(pos2(rect.min.x, rect.center().y - g.size().y * 0.5), g, TEXT_2);
+        if let Some(h) = selected.and_then(&help) {
+            help_at(ui, pos2(rect.min.x + gw + 10.0, rect.center().y), h.as_ref());
+        }
         let text = selected.and_then(|i| items.get(i)).copied().unwrap_or("—");
         let w = ui.available_width();
-        egui::ComboBox::from_id_salt(ui.scope_id().with(("dropdown", label))).selected_text(egui::RichText::new(text).color(TEXT)).width(w).show_ui(ui, |ui| {
+        // Tall enough to show the whole list (up to most of the window), with
+        // rows a finger can hit.
+        let tall = (items.len() as f32 * (MENU_ROW + 2.0) + 12.0).min(ui.ctx().content_rect().height() * 0.8);
+        let shown = egui::ComboBox::from_id_salt(ui.scope_id().with(("dropdown", label))).selected_text(egui::RichText::new(text).color(TEXT)).width(w).height(tall).show_ui(ui, |ui| {
             ui.set_min_width(w - 16.0);
+            ui.spacing_mut().item_spacing.y = 2.0;
             for (i, item) in items.iter().enumerate() {
                 let on = Some(i) == selected;
-                if ui.add(egui::Button::selectable(on, egui::RichText::new(*item).color(if on { ACCENT } else { TEXT }))).clicked() && !on {
+                let b = egui::Button::selectable(on, egui::RichText::new(*item).size(13.5).color(if on { ACCENT } else { TEXT })).min_size(vec2(ui.available_width(), MENU_ROW));
+                let mut r = ui.add(b);
+                if let Some(h) = help(i) {
+                    r = r.on_hover_text(h.as_ref());
+                }
+                if r.clicked() && !on {
                     picked = Some(i);
                 }
             }
         });
+        // Dev: AUDIOVIZ_OPEN_MENU=<label> holds that dropdown open for screenshots.
+        if std::env::var("AUDIOVIZ_OPEN_MENU").is_ok_and(|v| v.eq_ignore_ascii_case(label)) {
+            egui::Popup::open_id(ui.ctx(), shown.response.id.with("popup"));
+        }
     });
     picked
+}
+
+/// A small "?" in a ring at `centre` (drawn over the layout, taking no
+/// space); hovering shows `text`.
+pub fn help_at(ui: &mut Ui, centre: egui::Pos2, text: &str) -> Response {
+    let rect = Rect::from_center_size(centre, vec2(16.0, 16.0));
+    let id = ui.make_persistent_id(("help", text.len(), (centre.x as i32, centre.y as i32)));
+    let resp = ui.interact(rect, id, Sense::hover());
+    let c = if resp.hovered() { TEXT } else { TEXT_3 };
+    ui.painter().circle_stroke(centre, 6.5, Stroke::new(1.0, c));
+    ui.painter().text(centre + vec2(0.0, 0.5), egui::Align2::CENTER_CENTER, "?", theme::bold(10.0), c);
+    resp.on_hover_ui(|ui| {
+        ui.set_max_width(280.0);
+        ui.label(egui::RichText::new(text).color(TEXT));
+    })
 }
 
 /// Collapsible control group with a remembered open state (see
 /// `groups_load` / `groups_store`). The header shows the control count while
 /// the group is closed.
 pub fn group(ui: &mut Ui, key: &str, title: &str, default_open: bool, count: usize, body: impl FnOnce(&mut Ui)) {
+    group_help(ui, key, title, None, default_open, count, body)
+}
+
+/// `group` with a "?" beside the title that shows `help` on hover.
+pub fn group_help(ui: &mut Ui, key: &str, title: &str, help: Option<&str>, default_open: bool, count: usize, body: impl FnOnce(&mut Ui)) {
     let open = groups().get(key).copied().unwrap_or(default_open);
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
     let p = ui.painter();
@@ -173,7 +221,11 @@ pub fn group(ui: &mut Ui, key: &str, title: &str, default_open: bool, count: usi
     let cy = rect.center().y;
     let tri = if open { vec![pos2(cx - 4.0, cy - 2.0), pos2(cx + 4.0, cy - 2.0), pos2(cx, cy + 3.0)] } else { vec![pos2(cx - 2.0, cy - 4.0), pos2(cx - 2.0, cy + 4.0), pos2(cx + 3.0, cy)] };
     p.add(egui::Shape::convex_polygon(tri, c, Stroke::NONE));
-    p.text(pos2(rect.min.x + 18.0, cy), egui::Align2::LEFT_CENTER, title.to_uppercase(), theme::bold(10.5), c);
+    let tr = p.text(pos2(rect.min.x + 18.0, cy), egui::Align2::LEFT_CENTER, title.to_uppercase(), theme::bold(10.5), c);
+    if let Some(h) = help {
+        help_at(ui, pos2(tr.max.x + 12.0, cy), h);
+    }
+    let p = ui.painter();
     if !open && count > 0 {
         p.text(pos2(rect.max.x - 2.0, cy), egui::Align2::RIGHT_CENTER, count.to_string(), theme::mono(10.5), TEXT_3);
     }
@@ -241,9 +293,9 @@ pub fn chip(ui: &mut Ui, text: &str, color: Color32, clickable: bool) -> Respons
     }
 }
 
-/// The inspector header: a hue bar, a breadcrumb ("LAYER 1 · SIGIL › LUMINESCENCE")
-/// and an optional right-aligned action. Returns true when the action is clicked.
-pub fn inspector_header(ui: &mut Ui, hue: Color32, crumbs: &[&str], action: Option<&str>) -> bool {
+/// The inspector header: a hue bar, a breadcrumb ("LAYER 1 · SIGIL › LUMINESCENCE"),
+/// an optional "?" after it and an optional right-aligned action. Returns true when the action is clicked.
+pub fn inspector_header(ui: &mut Ui, hue: Color32, crumbs: &[&str], help: Option<&str>, action: Option<&str>) -> bool {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
     let p = ui.painter();
     p.rect_filled(Rect::from_min_size(rect.min, vec2(3.0, rect.height())), 1.5, hue);
@@ -258,6 +310,9 @@ pub fn inspector_header(ui: &mut Ui, hue: Color32, crumbs: &[&str], action: Opti
         let g = p.layout_no_wrap(c.to_uppercase(), theme::bold(11.0), if last { TEXT } else { TEXT_2 });
         p.galley(pos2(x, rect.center().y - g.size().y * 0.5), g.clone(), if last { TEXT } else { TEXT_2 });
         x += g.size().x + 6.0;
+    }
+    if let Some(h) = help {
+        help_at(ui, pos2(x + 6.0, rect.center().y), h);
     }
     let mut clicked = false;
     if let Some(a) = action {

@@ -47,6 +47,23 @@ impl VisualKind {
             VisualKind::Spiral => "Spiral",
         }
     }
+    /// One line for a tooltip: what the visual draws and what moves it.
+    pub fn summary(self) -> &'static str {
+        match self {
+            VisualKind::Scope => "The waveform drawn as a glowing phosphor beam (left and right channels as X and Y). Lines, cheap.",
+            VisualKind::Ribbons => "Thousands of particles riding a flow field the music stirs; slow persistence turns them into ribbons or a starfield.",
+            VisualKind::Starfield => "A ray-traced black hole: lensed stars and an infalling disk that breathes with the bass. Heavy at high resolution.",
+            VisualKind::Kaleido => "A drifting window into the album art or your photos; pair it with a Kaleidoscope effect for mirrors.",
+            VisualKind::Sigil => "A neon sacred-geometry glyph: rings per band, rays on onsets, orbs by pitch, rebuilt on every track.",
+            VisualKind::Waves => "Waveform or spectrum rows receding in perspective, the Unknown Pleasures landscape.",
+            VisualKind::Crystal => "Glass shards tumbling as a cluster, re-posed on beats, scattered over the bar.",
+            VisualKind::Wheel => "A disc of spectrum wedges with rays past the rim; jumps and walks on beats. A backdrop.",
+            VisualKind::Loop => "Waveform rings born at the centre and pushed outward, each lagging the last; quiet slices leave dark rings.",
+            VisualKind::Eclipse => "A black disc ringed by one glowing dot per band, with a corona that flares on the bass.",
+            VisualKind::Ripples => "A flowing surface seen from low over it, printed as contours, dots or a grid; beats drop rings in it.",
+            VisualKind::Spiral => "One line through points stepped by a slowly drifting angle; morphs between arms, rosettes and stars.",
+        }
+    }
     /// Short display name (bar pips, stack rows, breadcrumb).
     pub fn short(self) -> &'static str {
         match self {
@@ -507,6 +524,29 @@ impl Modifier {
             Modifier::Glow(_) => "Glow",
             Modifier::Vignette(_) => "Vignette",
             Modifier::Colorify(_) => "Colorify",
+        }
+    }
+
+    /// One line for a tooltip: what the effect does to the layer's picture.
+    pub fn summary(&self) -> &'static str {
+        match self {
+            Modifier::Fold(_) => "Mirrors the picture into radial, pinwheel or tiled segments that turn with the music.",
+            Modifier::Feedback(_) => "Last frame echoed under this one, zooming and turning: trails and tunnels.",
+            Modifier::Polar(_) => "Wraps left-to-right around the centre (a scope becomes a ring), or unwraps it.",
+            Modifier::Ripple(_) => "Water rings launched from the centre on beats, plus a standing wave.",
+            Modifier::Edge(_) => "Keeps only the outlines, coloured by the picture, the tint or the palette.",
+            Modifier::Chroma(_) => "Splits red, green and blue apart, pulsing with treble and onsets.",
+            Modifier::Mask(_) => "Cuts the layer to a circle, band or hexagon so layers can share the frame.",
+            Modifier::Fractal(_) => "Repeats the picture inside itself at every scale (folded IFS or Julia). The heaviest effect.",
+            Modifier::Lumi(_) => "Dual phosphor: a fresh glow plus a long afterglow in a shifted hue, sparkling on transients.",
+            Modifier::Grade(_) => "Recolours the picture through the layer's palette, by brightness or by hue.",
+            Modifier::Halftone(_) => "Reprints the picture as a screen of dots, lines or crosses, drifting toward one ink.",
+            Modifier::Warp(_) => "Pulls the picture through a flowing noise field: heat haze to liquid.",
+            Modifier::Lines(_) => "Fine stripes over the picture, the broadcast texture; they crawl with the music.",
+            Modifier::Mirror(_) => "One side reflected across the middle; can flip sides on beats.",
+            Modifier::Glow(_) => "The bright parts blurred wide and added back in their own colours.",
+            Modifier::Vignette(_) => "Darkens the edges of the frame, from its rectangle to a circle.",
+            Modifier::Colorify(_) => "Reprints the picture in one ink (the tint, or the palette by brightness), drifting in hue.",
         }
     }
 
@@ -1583,6 +1623,15 @@ pub enum Blend {
 
 impl Blend {
     pub const ALL: [Blend; 4] = [Blend::Add, Blend::Over, Blend::Screen, Blend::Multiply];
+    /// One line for a tooltip.
+    pub fn summary(self) -> &'static str {
+        match self {
+            Blend::Add => "Adds light to the layers below; order does not matter.",
+            Blend::Over => "Covers the layers below where this one is bright.",
+            Blend::Screen => "Lightens without blowing out: softer than add.",
+            Blend::Multiply => "Darkens: the layers below show only through this one's light.",
+        }
+    }
     pub fn name(self) -> &'static str {
         match self {
             Blend::Add => "Add",

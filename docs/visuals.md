@@ -96,6 +96,7 @@ The colour is linear HDR light (values above 1 are fine; levelling, effects and 
 | `wave(t)`, `wave_mono(t)` | the last 1024 samples (t 0 oldest .. 1 newest), auto-gained |
 | `colour(t)` | the layer's palette at t (moving with its cycle) over its tint |
 | `prev(uv)` | last frame (with `feedback`) |
+| `art(uv)`, `V.has_art` | the playing track's album art (512 x 512, linear colour, y down; black and 0 without art) |
 | `item(i)`, `ITEMS` | the prepare step's item `i` (this frame's in `shade`, last frame's in `prepare`), and how many |
 | `centred(uv)`, `uncentred(p)`, `pixel()`, `TAU` | coordinates (short side's half-extent 1, y up) and back to uv, one pixel in them |
 | `rotate(p, a)`, `noise(p)` | turn a point by `a` radians; smooth value noise 0..1 |
@@ -107,4 +108,6 @@ Factory examples, each a worked example in the guide: **Polygon** (a still shape
 
 How the prepare step runs: a compute pass (`cs_main`, generated after the visual's code, 64 per workgroup) writes one of two item buffers while reading the other through `item()`; the fragment pass then reads the one just written. Eclipse moved its dot levels, positions and colours there: 1.1 → 0.69 ms at 16 dots and 4.5 → 2.7 at 64 (2560x1440, release), under the old compiled-in Eclipse's 0.8 and 3.5.
 
-What a loaded visual cannot do yet: draw meshes, lines or particles (Loop, Spiral, Ribbons and Crystal stay built in), or read the album art. Each is a possible extension of the format.
+The album art is resampled on the CPU to 512 x 512 once per track (`image`'s triangle filter) and written into an sRGB texture each loaded visual owns; `has_art` took the uniform's old pad slot, so the layout did not move.
+
+What a loaded visual cannot do yet: draw meshes, lines or particles (Loop, Spiral, Ribbons and Crystal stay built in), or read pictures other than the album art. Each is a possible extension of the format.

@@ -28,7 +28,7 @@ struct VisualIn {
     palette_mix: f32,   // how much the layer's palette replaces the tint (0 = no palette)
     palette_shift: f32, // the palette's moving offset, 0..1
     quiet: f32,         // 1 in a quiet passage
-    _pad: f32,
+    has_art: f32,       // 1 when the playing track has album art (art() is black otherwise)
     p: array<vec4<f32>, 4>,        // parameters 0..15 (use params())
     bands: array<vec4<f32>, 8>,    // 32 bands, low to high, smoothed (30 ms attack, 200 ms release)
     raw: array<vec4<f32>, 8>,      // the same, unsmoothed
@@ -42,6 +42,7 @@ struct VisualIn {
 @group(0) @binding(3) var prev_samp: sampler;
 // Per-item values from prepare() (see item()); one placeholder without it.
 @group(0) @binding(4) var<storage, read> items_buf: array<vec4<f32>>;
+@group(0) @binding(5) var art_tex: texture_2d<f32>;
 
 const TAU: f32 = 6.2831853;
 
@@ -113,6 +114,12 @@ fn item(i: u32) -> vec4<f32> {
 // Last frame's output at uv (black unless the manifest sets "feedback": true).
 fn prev(uv: vec2<f32>) -> vec3<f32> {
     return textureSampleLevel(prev_tex, prev_samp, uv, 0.0).rgb;
+}
+
+// The playing track's album art at uv (0..1, y down, square), as linear
+// colour; black when there is none (V.has_art is 0). It changes with the track.
+fn art(uv: vec2<f32>) -> vec3<f32> {
+    return textureSampleLevel(art_tex, prev_samp, uv, 0.0).rgb;
 }
 
 // Centred coordinates: the short side's half-extent is 1, y up.

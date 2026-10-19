@@ -140,6 +140,8 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `wave(t)` | ~-1..1 | The last 1024 samples (`t` 0 oldest, 1 newest) as (left, right), auto-gained. |
 | `wave_mono(t)` | ~-1..1 | Their average. |
 | `prev(uv)` | colour | Your own last frame, before effects (with `"feedback": true`; black otherwise). |
+| `art(uv)` | colour | The playing track's album art at `uv` (0..1, y down, square, linear colour); black when there is none. It changes with the track. To map it into centred coordinates: `art(vec2<f32>(p.x, -p.y) * 0.5 + 0.5)`. |
+| `V.has_art` | 0 or 1 | 1 when the track has album art. |
 | `item(i)`, `ITEMS` | vec4 | Item `i` from your `prepare` step, and how many there are (`items` in the manifest). In `shade` this frame's value; inside `prepare` last frame's. |
 | `param(i)` | | Control `i` by position, for loops over controls. Usually `params()` is clearer. |
 
@@ -392,7 +394,7 @@ What a loaded visual cannot do yet, each a possible extension of the format:
 
 - **State is four numbers per item**, kept by `prepare` from frame to frame, and lost when the app restarts or the visual is picked again.
 - **No meshes, lines or particles.** One fragment function draws everything, so a visual that is a long polyline (Loop, Spiral) or thousands of particles (Ribbons) stays built in.
-- **No album art or other pictures**, and no textures of your own.
+- **No pictures of your own**: the album art is the one picture a visual can read.
 - **Sixteen controls**, all numbers.
 - **A changed `id` needs a restart**, and a folder deleted while the app runs stays listed until then.
 

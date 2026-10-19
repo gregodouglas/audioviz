@@ -34,6 +34,8 @@ pub const MAX_ITEMS: u32 = 4096;
 const PREPARE_GROUP: u32 = 64;
 /// Waveform samples a loaded visual sees.
 const WAVE: usize = 1024;
+/// The album art's size on the GPU (square; the art is resampled to it).
+const ART: u32 = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -438,7 +440,7 @@ struct Uniform {
     palette_mix: f32,
     palette_shift: f32,
     quiet: f32,
-    _pad: f32,
+    has_art: f32,
     p: [[f32; 4]; 4],
     bands: [[f32; 4]; 8],
     raw: [[f32; 4]; 8],
@@ -469,6 +471,11 @@ pub struct ShaderVisual {
     sampler: wgpu::Sampler,
     out: [wgpu::TextureView; 2],
     black: wgpu::TextureView,
+    /// The album art, and the track id it was last filled for.
+    art: wgpu::Texture,
+    art_view: wgpu::TextureView,
+    art_id: u64,
+    has_art: bool,
     /// Bind groups by what `prev` reads (black, `out[0]`, `out[1]`) times
     /// which item buffer `item()` reads: index `prev * 2 + items`.
     groups: Vec<wgpu::BindGroup>,
@@ -477,6 +484,28 @@ pub struct ShaderVisual {
     flow: f32,
     swell: f32,
     ring: VecDeque<[f32; 2]>,
+}
+
+fn art_texture(device: &wgpu::Device) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("loaded visual art"),
+        size: wgpu::Extent3d { width: ART, height: ART, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    })
+}
+
+/// The art resampled to ART x ART, RGBA8.
+fn art_pixels(a: &audioviz_metadata::ArtImage) -> Option<Vec<u8>> {
+    if a.width == ART && a.height == ART {
+        return Some(a.rgba.clone());
+    }
+    let img = image::RgbaImage::from_raw(a.width, a.height, a.rgba.clone())?;
+    Some(image::imageops::resize(&img, ART, ART, image::imageops::FilterType::Triangle).into_raw())
 }
 
 fn item_buffers(device: &wgpu::Device, n: u32) -> [wgpu::Buffer; 2] {
@@ -500,14 +529,20 @@ impl ShaderVisual {
                 entry(2, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
                 entry(3, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
                 entry(4, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }),
+                entry(5, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
             ],
         });
         let out_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("loaded visual items out"),
             entries: &[wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: false }, has_dynamic_offset: false, min_binding_size: None }, count: None }],
         });
+        let art = art_texture(device);
         let mut me = Self {
             def,
+            art_view: art.create_view(&wgpu::TextureViewDescriptor::default()),
+            art,
+            art_id: 0,
+            has_art: false,
             live: def.clone(),
             error: None,
             // None, so the first reload reads the files: they may have
@@ -553,6 +588,7 @@ impl ShaderVisual {
                     wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(prev) },
                     wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
                     wgpu::BindGroupEntry { binding: 4, resource: items.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(&self.art_view) },
                 ],
             })
         };
@@ -692,7 +728,7 @@ impl Scene for ShaderVisual {
             palette_mix: ctx.palette_amount,
             palette_shift: ctx.palette_shift,
             quiet: f.quiet as u32 as f32,
-            _pad: 0.0,
+            has_art: self.has_art as u32 as f32,
             p,
             bands: smooth,
             raw,
@@ -700,6 +736,21 @@ impl Scene for ShaderVisual {
             palette: ctx.palette.copied().unwrap_or([[0.0; 4]; crate::color::ENTRIES]),
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
+        // The album art, once per track.
+        if ctx.art_id != self.art_id {
+            self.art_id = ctx.art_id;
+            let px = ctx.art.and_then(art_pixels);
+            if let Some(px) = &px {
+                let size = wgpu::Extent3d { width: ART, height: ART, depth_or_array_layers: 1 };
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo { texture: &self.art, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                    px,
+                    wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * ART), rows_per_image: Some(ART) },
+                    size,
+                );
+            }
+            self.has_art = px.is_some();
+        }
         let gain = ctx.auto_gain;
         for s in ctx.points {
             self.ring.push_back([s[0] * gain, s[1] * gain]);

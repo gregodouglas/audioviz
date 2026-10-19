@@ -152,6 +152,12 @@ const MENU_ROW: f32 = 26.0;
 /// A dropdown whose items carry a one-line summary on hover; the summary of
 /// the selected item also sits behind a "?" beside the label.
 pub fn dropdown_help<S: AsRef<str>>(ui: &mut Ui, label: &str, items: &[&str], selected: Option<usize>, help: impl Fn(usize) -> Option<S>) -> Option<usize> {
+    dropdown_marked(ui, label, items, selected, help, |_| None)
+}
+
+/// `dropdown_help` where some items carry a quiet mark after their name in
+/// the open list ("Polygon  Loaded").
+pub fn dropdown_marked<S: AsRef<str>>(ui: &mut Ui, label: &str, items: &[&str], selected: Option<usize>, help: impl Fn(usize) -> Option<S>, mark: impl Fn(usize) -> Option<&'static str>) -> Option<usize> {
     let mut picked = None;
     ui.horizontal(|ui| {
         let (rect, _) = ui.allocate_exact_size(vec2(104.0, 22.0), Sense::hover());
@@ -171,7 +177,17 @@ pub fn dropdown_help<S: AsRef<str>>(ui: &mut Ui, label: &str, items: &[&str], se
             ui.spacing_mut().item_spacing.y = 2.0;
             for (i, item) in items.iter().enumerate() {
                 let on = Some(i) == selected;
-                let b = egui::Button::selectable(on, egui::RichText::new(*item).size(13.5).color(if on { ACCENT } else { TEXT })).min_size(vec2(ui.available_width(), MENU_ROW));
+                let colour = if on { ACCENT } else { TEXT };
+                let text: egui::WidgetText = match mark(i) {
+                    Some(m) => {
+                        let mut job = egui::text::LayoutJob::default();
+                        job.append(item, 0.0, egui::TextFormat { font_id: theme::sans(13.5), color: colour, ..Default::default() });
+                        job.append(m, 8.0, egui::TextFormat { font_id: theme::sans(11.0), color: TEXT_3, ..Default::default() });
+                        job.into()
+                    }
+                    None => egui::RichText::new(*item).size(13.5).color(colour).into(),
+                };
+                let b = egui::Button::selectable(on, text).min_size(vec2(ui.available_width(), MENU_ROW));
                 let mut r = ui.add(b);
                 if let Some(h) = help(i) {
                     r = r.on_hover_text(h.as_ref());

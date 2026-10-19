@@ -9,6 +9,11 @@ pub fn open_url(url: &str) -> anyhow::Result<()> {
 }
 
 /// Not supported off Windows; always returns an error.
+pub fn open_folder(dir: &std::path::Path) -> anyhow::Result<()> {
+    anyhow::bail!("opening {} is only supported on Windows", dir.display())
+}
+
+/// Not supported off Windows; always returns an error.
 pub fn open_cast_picker() -> anyhow::Result<()> {
     anyhow::bail!("casting is only supported on Windows")
 }

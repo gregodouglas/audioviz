@@ -1,0 +1,14 @@
+{
+  "id": "my-visual",
+  "name": "My visual",
+  "short": "My visual",
+  "summary": "A ring that swells with the bass, coloured round by the palette.",
+  "credit": "",
+  "hint": "A starter made by New visual. Edit visual.wgsl and visual.json in its folder; save either and it reloads. The guide is docs/building-visuals.md.",
+  "feedback": false,
+  "params": [
+    { "id": "radius", "label": "Radius", "group": "Ring", "min": 0.1, "max": 1.2, "default": 0.5 },
+    { "id": "width", "label": "Line width", "group": "Ring", "min": 1.0, "max": 20.0, "default": 3.0, "unit": "px" },
+    { "id": "swell", "label": "Swell", "group": "Music", "min": 0.0, "max": 2.0, "default": 1.0, "help": "How far the ring grows with the bass." }
+  ]
+}

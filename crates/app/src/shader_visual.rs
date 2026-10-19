@@ -252,14 +252,19 @@ fn repo_folder() -> Option<PathBuf> {
     if !cfg!(debug_assertions) {
         return None;
     }
-    let d = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/visuals");
+    let d = Path::new(env!("CARGO_MANIFEST_DIR")).parent()?.parent()?.join("assets").join("visuals");
     d.is_dir().then_some(d)
 }
 
 fn read_folder(root: &Path, watch: bool) -> Vec<ShaderDef> {
+    read_folder_except(root, watch, &[])
+}
+
+/// `read_folder`, leaving out the folders in `skip` without reading them.
+fn read_folder_except(root: &Path, watch: bool, skip: &[PathBuf]) -> Vec<ShaderDef> {
     let mut out = Vec::new();
     let Ok(rd) = std::fs::read_dir(root) else { return out };
-    let mut dirs: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    let mut dirs: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_dir() && !skip.contains(p)).collect();
     dirs.sort();
     for d in dirs {
         let (Ok(json), Ok(wgsl)) = (std::fs::read_to_string(d.join("visual.json")), std::fs::read_to_string(d.join("visual.wgsl"))) else { continue };
@@ -284,6 +289,76 @@ fn embedded() -> Vec<ShaderDef> {
         }
     }
     by_folder.into_iter().filter_map(|(f, (j, w))| parse(j?, w?, None).map_err(|e| tracing::warn!("factory visual {f}: {e}")).ok()).collect()
+}
+
+/// The folder a person adds visuals to: the user's, or on a debug dev run
+/// the repo's (none on a release dev run, which reads embedded copies).
+pub fn authoring_folder() -> Option<PathBuf> {
+    if factory::embedded_only() { repo_folder() } else { folder() }
+}
+
+/// Visuals in folders that are not in `known` yet (added while running).
+pub fn rescan(known: &[PathBuf]) -> Vec<ShaderDef> {
+    let Some(root) = authoring_folder() else { return Vec::new() };
+    read_folder_except(&root, true, known)
+}
+
+/// Write the shipped visuals back over the user's copies (and recreate any
+/// that were deleted). Running ones reload from their files.
+pub fn restore_factory() -> anyhow::Result<usize> {
+    if factory::embedded_only() {
+        anyhow::bail!("a dev run never writes into the audioviz folder");
+    }
+    factory::install("visuals/", true)
+}
+
+const TEMPLATE_JSON: &str = include_str!("../../../assets/visual-template/visual.json");
+const TEMPLATE_WGSL: &str = include_str!("../../../assets/visual-template/visual.wgsl");
+
+/// A folder name and id from a name: lowercase letters and digits joined by '-'.
+fn slug(name: &str) -> String {
+    let mut out = String::new();
+    for c in name.trim().chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+        } else if !out.ends_with('-') && !out.is_empty() {
+            out.push('-');
+        }
+    }
+    let out = out.trim_end_matches('-').to_string();
+    if out.is_empty() { "my-visual".into() } else { out }
+}
+
+/// Make a new visual from the starter template in the user's folder:
+/// `<folder>/<slug>/visual.json` and `visual.wgsl`, with an id no other
+/// visual or folder has. `taken` says whether an id is in use.
+pub fn create(name: &str, taken: impl Fn(&str) -> bool) -> anyhow::Result<ShaderDef> {
+    if factory::embedded_only() {
+        anyhow::bail!("a dev run never writes into the audioviz folder");
+    }
+    let root = folder().ok_or_else(|| anyhow::anyhow!("no config folder"))?;
+    create_in(&root, name, taken)
+}
+
+fn create_in(root: &Path, name: &str, taken: impl Fn(&str) -> bool) -> anyhow::Result<ShaderDef> {
+    let base = slug(name);
+    let (id, dir) = (1..1000)
+        .map(|n| if n == 1 { base.clone() } else { format!("{base}-{n}") })
+        .map(|id| (id.clone(), root.join(&id)))
+        .find(|(id, dir)| !taken(id) && !dir.exists())
+        .ok_or_else(|| anyhow::anyhow!("no free folder name"))?;
+    let title = name.trim();
+    let title = if title.is_empty() { "My visual" } else { title };
+    let mut manifest: Map<String, Value> = serde_json::from_str(TEMPLATE_JSON)?;
+    manifest.insert("id".into(), Value::String(id.clone()));
+    manifest.insert("name".into(), Value::String(title.to_string()));
+    manifest.insert("short".into(), Value::String(title.to_string()));
+    let json = serde_json::to_string_pretty(&manifest)? + "
+";
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(dir.join("visual.json"), &json)?;
+    std::fs::write(dir.join("visual.wgsl"), TEMPLATE_WGSL)?;
+    parse(&json, TEMPLATE_WGSL, Some(dir)).map_err(|e| anyhow::anyhow!(e))
 }
 
 /// Every loaded visual: a dev run reads the repo (debug) or the embedded
@@ -379,7 +454,9 @@ impl ShaderVisual {
             def,
             live: def.clone(),
             error: None,
-            stamp: def.dir.as_deref().and_then(stamp),
+            // None, so the first reload reads the files: they may have
+            // changed since the registry read them at start.
+            stamp: None,
             last_poll: Instant::now(),
             uniform: scene::uniform_buffer(device, &format!("{} params", def.id), std::mem::size_of::<Uniform>() as u64),
             wave_buf: device.create_buffer(&wgpu::BufferDescriptor { label: Some("loaded visual wave"), size: (WAVE * 8) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false }),
@@ -396,7 +473,10 @@ impl ShaderVisual {
             ring: VecDeque::with_capacity(WAVE * 2),
         };
         me.make_groups(device);
-        me.build(device, shaders);
+        me.reload(device, shaders);
+        if me.pipeline.is_none() && me.error.is_none() {
+            me.build(device, shaders);
+        }
         Ok(me)
     }
 
@@ -640,9 +720,18 @@ impl Scene for ShaderVisual {
             hint(ui, &format!("Loaded from {}; save either file and it reloads.", d.display()));
         }
         ui.add_space(6.0);
-        if ghost_button(ui, &format!("Reset {}", self.live.short.to_lowercase()), false).clicked() {
-            values = Map::new();
-        }
+        ui.horizontal(|ui| {
+            if ghost_button(ui, &format!("Reset {}", self.live.short.to_lowercase()), false).clicked() {
+                values = Map::new();
+            }
+            if let Some(d) = &self.def.dir {
+                if ghost_button(ui, "Open its folder", false).on_hover_text("visual.json and visual.wgsl: save either and it reloads").clicked() {
+                    if let Err(e) = crate::platform::open_folder(d) {
+                        tracing::warn!("{e}");
+                    }
+                }
+            }
+        });
         layer.params.insert(id, Value::Object(values));
     }
 }
@@ -706,13 +795,35 @@ mod tests {
         }
     }
 
-    /// Every factory visual compiles against the API as the engine composes it.
+    #[test]
+    fn new_visual_names_become_ids() {
+        assert_eq!(slug("My Tunnel #2"), "my-tunnel-2");
+        assert_eq!(slug("  "), "my-visual");
+        assert_eq!(slug("Été"), "t");
+        assert!(parse(&TEMPLATE_JSON.replace("my-visual", &slug("Neon Rings")), TEMPLATE_WGSL, None).is_ok());
+    }
+
+    #[test]
+    fn a_new_visual_gets_a_free_folder_and_id() {
+        let root = std::env::temp_dir().join(format!("audioviz-new-visual-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("neon-rings")).unwrap();
+        let d = create_in(&root, "Neon Rings", |id| id == "neon-rings-2").unwrap();
+        assert_eq!(d.id, "neon-rings-3");
+        assert_eq!(d.name, "Neon Rings");
+        assert_eq!(d.dir.as_deref(), Some(root.join("neon-rings-3").as_path()));
+        assert_eq!(read_folder(&root, false).len(), 1);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Every factory visual (and the starter template) compiles against the API as the engine composes it.
     #[test]
     fn factory_visuals_compile() {
         use wgpu::naga;
         let shaders = ShaderSet::load();
-        let all = embedded();
+        let mut all = embedded();
         assert!(all.len() >= 4);
+        all.push(parse(TEMPLATE_JSON, TEMPLATE_WGSL, None).unwrap());
         for d in all {
             let src = d.source(&shaders, &d.wgsl);
             let module = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| panic!("{}: {}", d.id, visual_lines(&e.emit_to_string(&src), d.prefix(&shaders).lines().count())));

@@ -17,7 +17,9 @@ A folder with two files:
 
 (`%APPDATA%` is `C:\Users\<you>\AppData\Roaming`; paste `%APPDATA%\audioviz\visuals` into Explorer's address bar.) The folder name is yours to choose; the `id` inside `visual.json` is what matters. Other files in the folder are ignored, so a `LICENSE` or a `README` can sit beside them.
 
-The app reads the folder when it starts and lists each visual in the Visual tab's list after the built-in ones. **A new folder appears after a restart.** From then on, saving either file reloads the visual while it runs.
+The app reads the folder when it starts and lists each visual in the Visual tab's list after the built-in ones, marked "Loaded". A folder added while it runs appears in the list within a few seconds. Saving either file reloads the visual while it runs.
+
+The quickest start is the Visual tab's **Your own visuals** group: type a name and press **New visual**. It copies a small starter (a ring that swells with the bass) into a new folder, puts it on the layer you are editing and opens the folder in Explorer; edit `visual.wgsl`, save, and watch it change. The same group has **Open visuals folder**, **Restore factory visuals** (writes the shipped visuals back over your changes to them; your own folders are untouched) and a link to this guide. A loaded visual's own controls end with **Open its folder**.
 
 `shade` is called once for every pixel of the layer, every frame. It returns the colour of that pixel as linear light. That is the whole contract: no vertex buffers, no render passes, no Rust.
 
@@ -36,7 +38,7 @@ The visuals that ship with the app live in the repo under `assets/visuals/` and 
   "feedback": false,
   "params": [
     { "id": "sides", "label": "Sides", "type": "integer", "group": "Shape", "min": 3, "max": 12, "default": 6 },
-    { "id": "spin", "label": "Spin", "group": "Shape", "min": -0.5, "max": 0.5, "default": 0.02, "unit": "turns/s" },
+    { "id": "spin", "label": "Spin", "group": "Shape", "min": -0.5, "max": 0.5, "default": 0.02, "help": "Turns per second." },
     { "id": "reach", "label": "Glow reach", "group": "Light", "min": 0.01, "max": 0.3, "default": 0.04, "log": true, "help": "How far the glow spreads." }
   ]
 }
@@ -65,7 +67,7 @@ Each entry in `params`:
 | `default` | A number; `true`/`false` for a toggle; the option's name for a choice (`"knot"`). Double-clicking a control resets it here. |
 | `options` | A choice's options, as shown ("Circle", "Eight", "Knot"). Three or fewer show as a segmented control, more as a dropdown. The shader sees the index: 0, 1, 2... |
 | `log` | A logarithmic slider, for gains and times that span decades. |
-| `unit` | Shown after the value: `"px"`, `"s"`, `"x"`, `"turns/s"`. |
+| `unit` | Shown after the value: `"px"`, `"s"`, `"x"`. Keep it to a couple of characters (the value column is narrow); say more in `help`. |
 | `help` | The control's tooltip. |
 
 Every control is an `f32` in the shader: a toggle is 0 or 1, a choice is its option's index, an integer is a whole number. Values are saved in the layer as `"polygon": { "sides": 6, "spin": 0.02, ... }`, so presets and scenes hold them like any built-in's.
@@ -186,7 +188,7 @@ What to take from it:
 - **Antialiasing.** `clamp((half - d) / pixel() + 0.5, 0, 1)` is 1 inside the line, 0 outside and ramps over exactly one pixel, at any window size.
 - **The glow ends.** The `- 0.002` makes the tail reach zero about six `reach` lengths out; without it the levelling sees the whole frame as lit (above).
 - **Palette by angle.** `t` runs once round the shape, so the palette wraps it, and it moves with the palette's cycle.
-- **Units in the manifest.** `width` is in pixels and `spin` in turns per second; the shader converts. Controls a person can reason about are worth the line of arithmetic.
+- **Units a person can reason about.** `width` is in pixels and `spin` in turns per second; the shader converts. Controls a person can reason about are worth the line of arithmetic.
 
 ### 2. Reacting to the music: Pulse
 
@@ -308,7 +310,7 @@ Two smaller traps: transcendental functions (`exp`, `pow`, `atan2`, `sin`) cost 
 
 ## Debugging
 
-- **Hot reload.** Save `visual.wgsl` or `visual.json` and the visual reloads within half a second. Manifest changes rebuild the panel too (new controls appear, with their defaults). The `id` stays the one the app started with until a restart.
+- **Hot reload.** Save `visual.wgsl` or `visual.json` and the visual reloads within half a second (a file changed while no layer used it is read when a layer next picks it). Manifest changes rebuild the panel too (new controls appear, with their defaults). The `id` stays the one the app started with until a restart.
 - **Errors.** A shader that does not compile shows its error at the top of the Visual tab, with the position in your file ("visual.wgsl line 12, col 5"), while the last good version keeps drawing. If the very first version fails, the layer is black until you fix it. A broken `visual.json` at startup means the visual is skipped and not listed; the reason goes to the log (below). The full name list is checked: a control id that is a WGSL word, a duplicate, or a choice without options is refused with a message.
 - **See the music.** Display › Developer › **Show meters** adds a Meters section with the beat, onsets, levels and spectrum live, so you can see what `V.beat` or `V.onsets.z` is doing while you tune.
 - **Isolate.** Solo your layer (the stack row's solo) and turn its effects off to see exactly what `shade` returns. Turn the Picture's Auto exposure off to see your real brightness without levelling.
@@ -319,7 +321,7 @@ For working on the app itself (in the repo, not in your own folder): a debug bui
 
 ## Sharing, credit and licence
 
-A visual is its folder: zip it, send it, and the recipient unzips it into `%APPDATA%\audioviz\visuals\` and restarts. A shader runs inside wgpu's validation and can only draw: it cannot read files, reach the network or run code, so a folder is safe to accept.
+A visual is its folder: zip it, send it, and the recipient unzips it into `%APPDATA%\audioviz\visuals\` (Your own visuals › Open visuals folder); it appears in the list within a few seconds. A shader runs inside wgpu's validation and can only draw: it cannot read files, reach the network or run code, so a folder is safe to accept.
 
 - **Pick a distinctive id** (`yourname-tunnel` rather than `tunnel`): two folders with one id cannot both load, and a built-in always wins.
 - **Credit what you used** in `credit`. If the idea follows someone's work, name them; if you copied code (a distance function, a noise), name its author and licence, and respect it: MIT and Apache-2.0 code can be used with the notice kept; code with no licence cannot be copied at all, only described and written afresh. Polygon's credit is an example. A `LICENSE` file in the folder is a good idea for your own code.
@@ -335,7 +337,7 @@ What a loaded visual cannot do yet, each a possible extension of the format:
 - **No meshes, lines or particles.** One fragment function draws everything, so a visual that is a long polyline (Loop, Spiral) or thousands of particles (Ribbons) stays built in.
 - **No album art or other pictures**, and no textures of your own.
 - **Sixteen controls**, all numbers.
-- **A new folder needs a restart** to be listed.
+- **A changed `id` needs a restart**, and a folder deleted while the app runs stays listed until then.
 
 ---
 

@@ -71,6 +71,15 @@ pub fn open_url(url: &str) -> anyhow::Result<()> {
     shell_open(url)
 }
 
+/// Open a folder in Explorer. Only an existing directory is opened, so this
+/// can never launch a file.
+pub fn open_folder(dir: &std::path::Path) -> anyhow::Result<()> {
+    if !dir.is_dir() {
+        bail!("{} is not a folder", dir.display());
+    }
+    shell_open(&dir.display().to_string())
+}
+
 /// Open the Windows "Cast" panel (the same one Win+K shows) so the user can
 /// pick a Miracast receiver such as a Roku TV. The TV then appears as a
 /// wireless display; Windows carries the audio with it.

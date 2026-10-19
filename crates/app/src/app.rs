@@ -1014,7 +1014,46 @@ impl Running {
         if panel_actions.open_scenes_folder {
             if let Some(d) = scene_store::dir() {
                 let _ = std::fs::create_dir_all(&d);
-                let _ = platform::open_url(&d.display().to_string());
+                if let Err(e) = platform::open_folder(&d) {
+                    self.calibration_result = Some((format!("Could not open the folder: {e}"), Instant::now()));
+                }
+            }
+        }
+        if panel_actions.open_visuals_folder {
+            let msg = match crate::shader_visual::authoring_folder() {
+                Some(d) => std::fs::create_dir_all(&d).map_err(anyhow::Error::from).and_then(|_| platform::open_folder(&d)).err().map(|e| format!("Could not open the visuals folder: {e}")),
+                None => Some("This run has no visuals folder (a dev run reads the copies inside the app).".into()),
+            };
+            if let Some(m) = msg {
+                self.calibration_result = Some((m, Instant::now()));
+            }
+        }
+        if let Some((i, name)) = panel_actions.new_visual {
+            match crate::shader_visual::create(&name, |id| crate::visuals::get(id).is_some()) {
+                Ok(def) => {
+                    let dir = def.dir.clone();
+                    match crate::visuals::add_loaded(def) {
+                        Some(v) => {
+                            self.settings.layer_mut(i).visual = v.id.to_string();
+                            self.panel_state.visual_name.clear();
+                            self.calibration_result = Some((format!("New visual: {}", v.name), Instant::now()));
+                            if let Some(d) = dir {
+                                let _ = platform::open_folder(&d);
+                            }
+                        }
+                        None => self.calibration_result = Some(("Could not add the new visual: its id is taken".into(), Instant::now())),
+                    }
+                }
+                Err(e) => self.calibration_result = Some((format!("Could not make a new visual: {e}"), Instant::now())),
+            }
+        }
+        if panel_actions.restore_visuals {
+            match crate::shader_visual::restore_factory() {
+                Ok(n) => {
+                    crate::visuals::refresh();
+                    self.calibration_result = Some((format!("Restored the factory visuals ({n} files)"), Instant::now()));
+                }
+                Err(e) => self.calibration_result = Some((format!("Could not restore visuals: {e}"), Instant::now())),
             }
         }
         if panel_actions.check_updates {

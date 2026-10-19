@@ -10,7 +10,9 @@
 //! The id is what layers, scene files and the presets folder use, so it
 //! never changes once shipped.
 
-use std::sync::OnceLock;
+use std::path::PathBuf;
+use std::sync::{Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -67,26 +69,62 @@ fn builtin() -> Vec<VisualDef> {
     ]
 }
 
-/// The built-ins, then every visual loaded from a folder whose id is not
-/// already taken.
-fn load() -> Vec<VisualDef> {
-    let mut v = builtin();
-    for d in shader_visual::discover() {
-        if v.iter().any(|b| b.id == d.id) {
-            tracing::warn!("visual {}: the id is taken by another visual; skipped", d.id);
-            continue;
+/// The registry: the built-ins, then every visual loaded from a folder whose
+/// id is not already taken. It only grows while the app runs (a folder added
+/// later is picked up by `refresh`); entries live for the life of the app.
+fn registry() -> &'static RwLock<Vec<&'static VisualDef>> {
+    static ALL: std::sync::OnceLock<RwLock<Vec<&'static VisualDef>>> = std::sync::OnceLock::new();
+    ALL.get_or_init(|| {
+        let mut v: Vec<&'static VisualDef> = builtin().into_iter().map(|d| &*Box::leak(Box::new(d))).collect();
+        for d in shader_visual::discover() {
+            push_loaded(&mut v, d);
         }
-        // Loaded once at start and kept for the life of the app.
-        let d: &'static ShaderDef = Box::leak(Box::new(d));
-        v.push(VisualDef { id: &d.id, name: &d.name, short: &d.short, summary: &d.summary, source: Source::Loaded(d), band_waveform: false });
+        RwLock::new(v)
+    })
+}
+
+fn push_loaded(v: &mut Vec<&'static VisualDef>, d: ShaderDef) -> Option<&'static VisualDef> {
+    if v.iter().any(|b| b.id == d.id) {
+        tracing::warn!("visual {}: the id is taken by another visual; skipped", d.id);
+        return None;
     }
-    v
+    let d: &'static ShaderDef = Box::leak(Box::new(d));
+    let def: &'static VisualDef = Box::leak(Box::new(VisualDef { id: &d.id, name: &d.name, short: &d.short, summary: &d.summary, source: Source::Loaded(d), band_waveform: false }));
+    v.push(def);
+    Some(def)
 }
 
 /// Every visual, in the order the Visual list shows them.
-pub fn all() -> &'static [VisualDef] {
-    static ALL: OnceLock<Vec<VisualDef>> = OnceLock::new();
-    ALL.get_or_init(load)
+pub fn all() -> Vec<&'static VisualDef> {
+    registry().read().map(|v| v.clone()).unwrap_or_default()
+}
+
+/// Register a visual loaded from a folder after start (a new visual from the
+/// panel). None when its id is taken.
+pub fn add_loaded(d: ShaderDef) -> Option<&'static VisualDef> {
+    registry().write().ok().and_then(|mut v| push_loaded(&mut v, d))
+}
+
+/// Pick up visual folders added since start, at most every two seconds.
+/// Returns how many were added.
+pub fn refresh() -> usize {
+    static LAST: Mutex<Option<Instant>> = Mutex::new(None);
+    {
+        let Ok(mut last) = LAST.lock() else { return 0 };
+        if last.is_some_and(|t| t.elapsed() < Duration::from_secs(2)) {
+            return 0;
+        }
+        *last = Some(Instant::now());
+    }
+    let known: Vec<PathBuf> = all().iter().filter_map(|d| match &d.source {
+        Source::Loaded(s) => s.dir.clone(),
+        Source::Native { .. } => None,
+    }).collect();
+    let added: Vec<&str> = shader_visual::rescan(&known).into_iter().filter_map(add_loaded).map(|d| d.id).collect();
+    if !added.is_empty() {
+        tracing::info!("visuals added while running: {}", added.join(", "));
+    }
+    added.len()
 }
 
 impl VisualDef {
@@ -107,7 +145,7 @@ impl VisualDef {
 }
 
 pub fn get(id: &str) -> Option<&'static VisualDef> {
-    all().iter().find(|d| d.id == id)
+    registry().read().ok().and_then(|v| v.iter().find(|d| d.id == id).copied())
 }
 
 /// The full name, or the id itself for a visual that is not installed.

@@ -115,6 +115,9 @@ pub fn style() -> egui::Style {
     s.spacing.interact_size = egui::vec2(32.0, 22.0);
     s.spacing.indent = 12.0;
     s.spacing.combo_width = 160.0;
+    // Popups (dropdown lists) start from this size; egui's 400 px height
+    // cut long lists short whatever height the list asked for.
+    s.spacing.default_area_size = egui::vec2(600.0, 2000.0);
     s.animation_time = ANIM_S;
 
     let r = CornerRadius::same(RADIUS);

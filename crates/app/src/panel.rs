@@ -15,7 +15,7 @@ use crate::scene_store::SceneDef;
 use crate::color;
 use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, ImageSource, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, Glow, Vignette, Colorify};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
-use crate::widgets::{self, chip, chip_width, dropdown, dropdown_help, ghost_button, group, group_help, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
+use crate::widgets::{self, chip, chip_width, dropdown, dropdown_help, dropdown_marked, ghost_button, group, group_help, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
 const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
@@ -130,6 +130,11 @@ pub struct Actions {
     pub calibrate_apply: bool,
     pub open_url: Option<String>,
     pub open_scenes_folder: bool,
+    /// Authoring: open the visuals folder, make a new visual from the
+    /// starter on (layer, name), write the factory visuals back.
+    pub open_visuals_folder: bool,
+    pub new_visual: Option<(usize, String)>,
+    pub restore_visuals: bool,
     pub check_updates: bool,
     pub copy_diagnostics: bool,
     pub launch_spotify: bool,
@@ -150,6 +155,7 @@ pub struct Actions {
 pub struct PanelState {
     pub scene_name: String,
     pub preset_name: String,
+    pub visual_name: String,
     /// Which modifier of the edited layer shows its controls, and whether
     /// its page is open in place of the layer tabs.
     pub editing_mod: usize,
@@ -1026,9 +1032,13 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
 
 fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, layers: &mut [Box<dyn Scene>], editing: usize, a: &mut Actions) {
     let l = settings.layer_mut(editing);
+    // Folders added while running show up without a restart.
+    crate::visuals::refresh();
     let all = crate::visuals::all();
     let names: Vec<&str> = all.iter().map(|d| d.name).collect();
-    if let Some(i) = dropdown_help(ui, "Visual", &names, all.iter().position(|d| d.id == l.visual), |i| Some(all[i].summary)) {
+    let loaded = |i: usize| matches!(all[i].source, crate::visuals::Source::Loaded(_));
+    let help = |i: usize| Some(if loaded(i) { format!("{} Loaded from its folder, so you can open and change it.", all[i].summary) } else { all[i].summary.to_string() });
+    if let Some(i) = dropdown_marked(ui, "Visual", &names, all.iter().position(|d| d.id == l.visual), help, |i| loaded(i).then_some("Loaded")) {
         l.visual = all[i].id.to_string();
         // The kaleidoscope is its picture plus the fold: add the mirrors with it.
         if all[i].id == crate::scenes::kaleido::ID && !l.has_fold() {
@@ -1130,7 +1140,33 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState
         });
         hint(ui, "JPEG and PNG, shown in a shuffled order. The folder is not read until this picture source is picked.");
     }
+    // Making visuals: a folder with visual.json and visual.wgsl.
+    ui.add_space(8.0);
+    group(ui, "visual.authoring", "Your own visuals", false, 4, |ui| {
+        ui.horizontal(|ui| {
+            ui.set_max_width(ui.available_width());
+            let w = (ui.available_width() - 92.0).max(60.0);
+            ui.add(egui::TextEdit::singleline(&mut state.visual_name).desired_width(w).hint_text("Name"));
+            if ghost_button(ui, "New visual", true).on_hover_text("Copy a starter into a new folder, put it on this layer and open the folder").clicked() {
+                a.new_visual = Some((editing, state.visual_name.trim().to_string()));
+            }
+        });
+        ui.add_space(4.0);
+        if ghost_button(ui, "Open visuals folder", false).clicked() {
+            a.open_visuals_folder = true;
+        }
+        if ghost_button(ui, "Restore factory visuals", false).on_hover_text("Write the shipped visuals back over your changes to them; your own folders are kept").clicked() {
+            a.restore_visuals = true;
+        }
+        if ghost_button(ui, "Building visuals guide", false).on_hover_text(GUIDE_URL).clicked() {
+            a.open_url = Some(GUIDE_URL.into());
+        }
+        hint(ui, "A visual can be two files in a folder: visual.json (its name and controls) and visual.wgsl (one shader function). Save either while it runs and it reloads. A folder added by hand appears here within a few seconds.");
+    });
 }
+
+/// The guide to making visuals (docs/building-visuals.md).
+const GUIDE_URL: &str = "https://github.com/gregodouglas/audioviz/blob/main/docs/building-visuals.md";
 
 fn colour_tab(ui: &mut egui::Ui, settings: &mut Settings, editing: usize) {
     let l = settings.layer_mut(editing);

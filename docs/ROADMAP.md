@@ -46,7 +46,7 @@ Visual candidates, in the order to try (reordered 2026-10-18 late on the researc
 The engine and the visuals are separate: a visual is a registry entry (`docs/visuals.md`), built in or loaded from a folder (`visual.json` + `visual.wgsl`). Eclipse was the first port. In order:
 
 1. ~~**Building visuals guide**~~ **done 2026-10-18**: `docs/building-visuals.md` (layout, manifest, API with units, conventions, three worked examples shipped as factory visuals Polygon, Pulse and Comet, a performance budget, debugging, sharing, limits). The API gained `uncentred`, `rotate` and `noise`, and loaded visuals now see only the API (not the built-ins' helper names); a test compiles every factory visual through naga.
-2. **Panel support for authoring**: Open visuals folder, New visual (from a starter template), Restore factory visuals, a quiet marker for loaded visuals in the Visual list.
+2. ~~**Panel support for authoring**~~ **done 2026-10-18**: Visual tab › Your own visuals (New visual from `assets/visual-template/`, Open visuals folder, Restore factory visuals, the guide), Open its folder per loaded visual, a "Loaded" mark in the Visual list, folders picked up without a restart. Hand tests owed (`docs/phase6-ui.md`).
 3. **A per-frame `prepare` step** (per-item values computed once a frame, read by `shade` via `item(i)`); Eclipse's dot levels move into it and are measured against its 1.1 ms. Then, in order: the album art as a texture, a line/polyline drawing mode.
 4. **A second port** (Wheel: fragment-only), compared side by side and measured before the built-in is retired; same id and parameter names.
 

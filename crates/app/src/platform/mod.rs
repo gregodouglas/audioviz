@@ -14,12 +14,12 @@
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use self::windows::{diagnostics_header, usage, latest_release, launch_spotify, on_battery, open_cast_picker, open_url, spotify_installed};
+pub use self::windows::{diagnostics_header, usage, latest_release, launch_spotify, on_battery, open_cast_picker, open_folder, open_url, spotify_installed};
 
 #[cfg(not(windows))]
 mod other;
 #[cfg(not(windows))]
-pub use self::other::{diagnostics_header, usage, latest_release, launch_spotify, on_battery, open_cast_picker, open_url, spotify_installed};
+pub use self::other::{diagnostics_header, usage, latest_release, launch_spotify, on_battery, open_cast_picker, open_folder, open_url, spotify_installed};
 
 /// Machine load, sampled once a second. GPU figures are percent as Task
 /// Manager reports them (the GPU's busiest engine), for every process

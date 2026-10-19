@@ -83,6 +83,10 @@ Modifier candidates: ~~warp~~ (built 2026-10-18), ~~halftone~~ (built 2026-10-18
 
 On the reference rig with wired output: press **C**, tap along for ten beats, read the offset the sheet shows (it is also in the Sync section after applying). Tell the session the number; if it is clearly non-zero it becomes `audio_delay_ms`'s shipped default, with a note in the Sync hint that it was measured on one rig.
 
+## Shared space: build the variants apart (2026-10-19)
+
+Since diffusion (0.4.5) a visual with `"space"` compiles its triangles twice, stacked and shared, in one job: the Jellyfish builds in 10.0 s instead of 5.6, and a shared jelly scene shows nothing until both are done. Build them as two jobs, the variant in use first (the visual would need to know its scene's space mode when it asks), and prewarm the other.
+
 ## Revisit: effects in a shared space (Greg, 2026-10-19)
 
 ADR-0002 bypasses a layer's effect chain while the layer is in a shared space (the layers share one picture, so a per-layer 2D chain has nothing of its own to work on). Greg agreed for now and asked that it be revisited. The likely answer is a **Space effects** chain: one 2D chain over the finished space, before it meets the flat layers, reusing `render_layer`'s chain code. Decide after the jellies' diffusion and refraction land.

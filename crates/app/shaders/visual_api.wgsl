@@ -168,11 +168,15 @@ fn wave_mono(t: f32) -> f32 {
 
 // One point of a visual's line (with "line": N in visual.json, fn point(i)
 // returns point i): where it is in centred coordinates, the line's width
-// there in pixels (0 breaks the line), and its colour (linear light).
+// there in pixels (0 breaks the line), and its colour (linear light). In a
+// shared space, `depth` is its distance from the eye along the view (the
+// camera's z; 0, the default, is the far plane), so the space knows where
+// its light comes from.
 struct LinePoint {
     pos: vec2<f32>,
     width: f32,
     colour: vec3<f32>,
+    depth: f32,
 };
 
 // One corner of a triangle (with "triangles": N in visual.json, fn vertex(i)
@@ -218,6 +222,32 @@ fn trail(uv: vec2<f32>) -> vec3<f32> {
 
 fn write_trail(c: vec3<f32>) {
     trail_out = c;
+}
+
+// Light that diffuses (in a shared space): what paint() adds with
+// write_glow(c) is blurred through the space, close round where it was
+// written, and added to the picture, as light spreading through the body
+// it is in. It comes on top of what paint returns, which stays sharp;
+// outside a shared space it is not drawn, so a visual that moves light into
+// the glow keeps it in its colour there (see in_space()). It adds up over
+// calls. (shade() may call it, but its glow is not kept yet.)
+var<private> glow_out: vec3<f32>;
+
+fn write_glow(c: vec3<f32>) {
+    glow_out += c;
+}
+
+// The far plane of a shared space's light depth.
+const LIGHT_FAR: f32 = 50.0;
+
+// Where shade()'s light is, as distance from the eye along the view, in a
+// shared space (the far plane unless it calls this). Triangles and the line
+// give theirs from where they are. Nothing reads light depth yet; depth of
+// field and refraction will.
+var<private> depth_out: f32 = LIGHT_FAR;
+
+fn write_depth(z: f32) {
+    depth_out = z;
 }
 
 // The playing track's album art at uv (0..1, y down, square), as linear

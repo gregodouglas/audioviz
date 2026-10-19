@@ -20,6 +20,8 @@ pub enum Part {
     Effect(u8, u8),
     /// The layer's levelling meter and its blend onto the composite.
     Blend(u8),
+    /// A shared space's diffusion (its glow blurred and added back).
+    Diffusion,
     Composite,
     Picture,
     Interface,

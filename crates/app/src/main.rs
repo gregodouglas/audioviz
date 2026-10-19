@@ -49,7 +49,7 @@ keys: Tab panel · H hide everything · 1-3 layer to edit · Space next scene ·
       Esc closes sheet / panel / fullscreen, then quits
 settings: %APPDATA%\\audioviz\\settings.json (Windows)
 env: RUST_LOG=audioviz=debug for a per-second stats line
-     AUDIOVIZ_SCENE=n AUDIOVIZ_SIZE=WxH AUDIOVIZ_DEFAULTS=1 (dev overrides)
+     AUDIOVIZ_SCENE=n AUDIOVIZ_SIZE=WxH AUDIOVIZ_DEFAULTS=1 AUDIOVIZ_SEED=n (dev overrides)
 ";
 
 struct Cli {

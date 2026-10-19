@@ -265,6 +265,8 @@ struct LayerPipelines {
     blend: wgpu::RenderPipeline,
     copy: wgpu::RenderPipeline,
     down: wgpu::RenderPipeline,
+    /// The same, added to what is there (a space's glow onto its picture's).
+    down_add: wgpu::RenderPipeline,
     meter: wgpu::RenderPipeline,
 }
 
@@ -390,20 +392,49 @@ impl Slot {
 }
 
 /// A shared space's targets (ADR-0002): the multisampled picture every
-/// member draws into, what it resolves to, and the space's one meter and
-/// compositor uniform. Made when a scene shares its space, dropped when not.
+/// member draws into and what it resolves to; the light target beside it
+/// (rgb the glow, alpha the light depth) and its resolve; the diffusion's
+/// quarter- and eighth-size pairs and the uniforms of its passes; the
+/// space's one meter and compositor uniform. Made when a scene shares its
+/// space, dropped when not.
 struct SpaceTargets {
     ms: wgpu::TextureView,
     out: wgpu::TextureView,
+    light_ms: wgpu::TextureView,
+    light: wgpu::TextureView,
+    quarter: [wgpu::TextureView; 2],
+    eighth: [wgpu::TextureView; 2],
+    /// Down, across, up at quarter size; the same at eighth size; adding back.
+    light_bufs: [wgpu::Buffer; 7],
     meter: Meter,
     buf: wgpu::Buffer,
 }
 
 impl SpaceTargets {
     fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
-        Self { ms: crate::shader_visual::msaa_target(device, width, height), out: hdr_texture(device, "space", width, height), meter: Meter::new(device, MAX_LAYERS, width, height), buf: scene::uniform_buffer(device, "space", std::mem::size_of::<LayerParams>() as u64) }
+        let (qw, qh) = ((width / 4).max(1), (height / 4).max(1));
+        let (ew, eh) = ((width / 8).max(1), (height / 8).max(1));
+        Self {
+            ms: crate::shader_visual::msaa_target(device, width, height),
+            out: hdr_texture(device, "space", width, height),
+            light_ms: crate::shader_visual::msaa_target(device, width, height),
+            light: hdr_texture(device, "space light", width, height),
+            quarter: [hdr_texture(device, "space light quarter a", qw, qh), hdr_texture(device, "space light quarter b", qw, qh)],
+            eighth: [hdr_texture(device, "space light eighth a", ew, eh), hdr_texture(device, "space light eighth b", ew, eh)],
+            light_bufs: std::array::from_fn(|k| scene::uniform_buffer(device, &format!("space light pass {k}"), std::mem::size_of::<ModParams>() as u64)),
+            meter: Meter::new(device, MAX_LAYERS, width, height),
+            buf: scene::uniform_buffer(device, "space", std::mem::size_of::<LayerParams>() as u64),
+        }
     }
 }
+
+/// Diffusion's two blurs, as a fraction of the picture's short side (the
+/// Gaussian's sigma), and how much of each is added back.
+const DIFFUSE_NARROW: f32 = 0.006;
+const DIFFUSE_WIDE: f32 = 0.028;
+const DIFFUSE_MIX: [f32; 2] = [0.65, 0.35];
+/// The far plane of the light depth (`LIGHT_FAR` in the visual API).
+const LIGHT_FAR: f64 = 50.0;
 
 /// One entry of the stack, bottom to top: a layer (outgoing or not, its
 /// slot, its level), or the shared space, drawn where its top member sits.
@@ -429,6 +460,8 @@ struct Pipes {
     blit: wgpu::RenderPipeline,
     /// Glow's prefilter and blur sub-passes, on the modifier layout.
     glow_blur: wgpu::RenderPipeline,
+    /// A shared space's diffusion added back (visual_light.wgsl).
+    light: wgpu::RenderPipeline,
     mirror_sampler: wgpu::Sampler,
     sampler: wgpu::Sampler,
     layer_layout: wgpu::BindGroupLayout,
@@ -718,6 +751,7 @@ impl Director {
         let mod_pipelines = build_mods(device, shaders, &mod_layout)?;
         let blit = build_blit(device, shaders, &mod_layout)?;
         let glow_blur = build_glow_blur(device, shaders, &mod_layout)?;
+        let light = build_light(device, shaders, &mod_layout)?;
         let mirror_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("mod mirror"),
             address_mode_u: wgpu::AddressMode::MirrorRepeat,
@@ -733,7 +767,7 @@ impl Director {
             slots,
             outgoing: (0..MAX_LAYERS).map(|_| None).collect(),
             last_layers: (0..MAX_LAYERS).map(|i| settings.layer(i)).collect(),
-            pipes: Pipes { mod_layout, mod_pipelines, blit, glow_blur, mirror_sampler, sampler, layer_layout, layer_pipelines, mix_layout, mix_pipeline, blend_layout },
+            pipes: Pipes { mod_layout, mod_pipelines, blit, glow_blur, light, mirror_sampler, sampler, layer_layout, layer_pipelines, mix_layout, mix_pipeline, blend_layout },
             one_buf,
             composite: hdr_texture(device, "composite", width, height),
             composite_b: hdr_texture(device, "composite b", width, height),
@@ -926,6 +960,10 @@ impl Director {
             Ok(p) => self.pipes.glow_blur = p,
             Err(e) => errors.push(format!("glow: {e}")),
         }
+        match build_light(device, shaders, &self.pipes.mod_layout) {
+            Ok(p) => self.pipes.light = p,
+            Err(e) => errors.push(format!("diffusion: {e}")),
+        }
         if let Err(e) = build_mix(device, shaders, &self.pipes.mix_layout).map(|p| self.pipes.mix_pipeline = p) {
             errors.push(format!("mix: {e}"));
         }
@@ -1045,8 +1083,9 @@ impl Director {
 
     /// The shared space's frame (ADR-0002): every member's update (the
     /// leading one first, which hands the space its camera), then one
-    /// multisampled pass they all draw into, bottom to top, then one meter
-    /// and one blend onto the composite. Members' effects are bypassed: the
+    /// multisampled pass they all draw into, bottom to top (the picture and
+    /// the light target), the diffusion of their glow, then one meter and
+    /// one blend onto the composite. Members' effects are bypassed: the
     /// space is one picture.
     #[allow(clippy::too_many_arguments)]
     fn render_space(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, settings: &Settings, fr: &Frame, members: &[(bool, usize, f32)], first: bool, dst_read: &wgpu::TextureView, dst_write: &wgpu::TextureView, timer: &mut GpuTimer) {
@@ -1068,12 +1107,24 @@ impl Director {
                 visual.space_camera(encoder);
             }
         }
+        let glows = members.iter().any(|&(out, i, _)| self.visual(out, i).space_glows());
+        let bright = members.iter().any(|&(out, i, _)| self.visual(out, i).level_bright());
+        // Stacked, each layer is levelled to the target and they add; the
+        // space is levelled once, so it counts as its members (by their
+        // levels) to reach the Picture as bright as they would have.
+        let weight = members.iter().map(|m| m.2.min(1.0)).sum::<f32>().max(1.0);
         let Some(sp) = self.space.as_mut() else { return };
+        queue.write_buffer(&sp.buf, 0, bytemuck::bytes_of(&LayerParams { opacity: if fr.level { weight } else { 1.0 }, dt: fr.dt, flags: fr.level as u32 | if first { 2 } else { 0 } | if bright { 4 | 8 } else { 0 }, blend: 0 }));
         let top = members.last().map_or(0, |m| m.1) as u8;
         {
+            // The light target starts with no glow, everything at the far plane.
+            let far = wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: LIGHT_FAR };
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shared space"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &sp.ms, depth_slice: None, resolve_target: Some(&sp.out), ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Discard } })],
+                color_attachments: &[
+                    Some(wgpu::RenderPassColorAttachment { view: &sp.ms, depth_slice: None, resolve_target: Some(&sp.out), ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Discard } }),
+                    Some(wgpu::RenderPassColorAttachment { view: &sp.light_ms, depth_slice: None, resolve_target: Some(&sp.light), ops: wgpu::Operations { load: wgpu::LoadOp::Clear(far), store: wgpu::StoreOp::Discard } }),
+                ],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
@@ -1084,16 +1135,41 @@ impl Director {
                 v.space_draw(&mut pass);
             }
         }
-        let bright = members.iter().any(|&(out, i, _)| self.visual(out, i).level_bright());
-        // Stacked, each layer is levelled to the target and they add; the
-        // space is levelled once, so it counts as its members (by their
-        // levels) to reach the Picture as bright as they would have.
-        let weight = members.iter().map(|m| m.2.min(1.0)).sum::<f32>().max(1.0);
-        let sp = self.space.as_mut().expect("space targets");
-        queue.write_buffer(&sp.buf, 0, bytemuck::bytes_of(&LayerParams { opacity: if fr.level { weight } else { 1.0 }, dt: fr.dt, flags: fr.level as u32 | if first { 2 } else { 0 } | if bright { 4 | 8 } else { 0 }, blend: 0 }));
+        // The meter sees the light as drawn, the glow still sharp: spreading
+        // light over more of the picture lowers the mean of its lit part,
+        // and the levelling would lift everything to make up for it.
+        if fr.level {
+            meter_down(device, encoder, &self.pipes, &sp.meter, &sp.buf, &sp.out, glows.then_some(&sp.light));
+        }
+        if glows {
+            timer.mark(encoder, Part::Diffusion);
+            diffuse(device, queue, encoder, &self.pipes, sp, fr);
+        }
         timer.mark(encoder, Part::Blend(top));
-        meter_and_blend(device, encoder, &self.pipes, fr.level, &mut sp.meter, &sp.buf, &sp.out, dst_read, dst_write);
+        meter_and_blend(device, encoder, &self.pipes, fr.level, true, &mut sp.meter, &sp.buf, &sp.out, dst_read, dst_write);
     }
+}
+
+/// The light of a shared space's members, diffused: the light target taken
+/// down to a quarter and blurred narrow, that taken down to an eighth and
+/// blurred wide (glow's own prefilter and blur, with no threshold), both
+/// added back into the space's picture.
+fn diffuse(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, pipes: &Pipes, sp: &SpaceTargets, fr: &Frame) {
+    let short = fr.width.min(fr.height) as f32;
+    let (narrow, wide) = ((DIFFUSE_NARROW * short / 4.0).max(0.5), (DIFFUSE_WIDE * short / 8.0).max(0.5));
+    let sub = |mode: f32, dir: [f32; 2], sigma: f32| ModParams { resolution: [fr.width as f32, fr.height as f32], time: fr.time, dt: fr.dt, p0: [mode, dir[0], dir[1], sigma], ..Default::default() };
+    let subs = [sub(0.0, [0.0, 0.0], narrow), sub(1.0, [1.0, 0.0], narrow), sub(1.0, [0.0, 1.0], narrow), sub(0.0, [0.0, 0.0], wide), sub(1.0, [1.0, 0.0], wide), sub(1.0, [0.0, 1.0], wide), ModParams { p0: [DIFFUSE_MIX[0], DIFFUSE_MIX[1], 0.0, 0.0], ..Default::default() }];
+    for (buf, p) in sp.light_bufs.iter().zip(subs.iter()) {
+        queue.write_buffer(buf, 0, bytemuck::bytes_of(p));
+    }
+    let (q, e) = (&sp.quarter, &sp.eighth);
+    let steps: [(&wgpu::TextureView, &wgpu::TextureView, &str); 6] = [(&sp.light, &q[0], "diffusion down"), (&q[0], &q[1], "diffusion narrow x"), (&q[1], &q[0], "diffusion narrow y"), (&q[0], &e[0], "diffusion down"), (&e[0], &e[1], "diffusion wide x"), (&e[1], &e[0], "diffusion wide y")];
+    for (k, (from, to, label)) in steps.into_iter().enumerate() {
+        let g = scene::tex_group(device, &pipes.mod_layout, &[from, from], &pipes.sampler, &sp.light_bufs[k]);
+        fullscreen_pass(encoder, label, to, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.glow_blur, &g);
+    }
+    let g = scene::tex_group(device, &pipes.mod_layout, &[&q[0], &e[0]], &pipes.sampler, &sp.light_bufs[6]);
+    fullscreen_pass(encoder, "diffusion", &sp.out, wgpu::LoadOp::Load, &pipes.light, &g);
 }
 
 /// A layer's own view of the frame: its band's features and waveform (when
@@ -1164,14 +1240,27 @@ fn layer_input(fr: &Frame, slot: &mut Slot, layer: &Layer) -> LayerInput {
     LayerInput { features, points }
 }
 
-/// Meter a picture (when levelling is on) and blend it onto the composite
-/// by the uniform already in `buf`.
+/// Take a picture down to 1/8 for its meter, with `glow` added (the box
+/// average is linear, so that is the picture with the glow in it).
 #[allow(clippy::too_many_arguments)]
-fn meter_and_blend(device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder, pipes: &Pipes, level: bool, m: &mut Meter, buf: &wgpu::Buffer, out: &wgpu::TextureView, dst_read: &wgpu::TextureView, dst_write: &wgpu::TextureView) {
+fn meter_down(device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder, pipes: &Pipes, m: &Meter, buf: &wgpu::Buffer, out: &wgpu::TextureView, glow: Option<&wgpu::TextureView>) {
+    let g = scene::tex_group(device, &pipes.layer_layout, &[out, &m.state[m.cur]], &pipes.sampler, buf);
+    fullscreen_pass(encoder, "layer down", &m.down, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.layer_pipelines.down, &g);
+    if let Some(glow) = glow {
+        let g = scene::tex_group(device, &pipes.layer_layout, &[glow, &m.state[m.cur]], &pipes.sampler, buf);
+        fullscreen_pass(encoder, "layer down glow", &m.down, wgpu::LoadOp::Load, &pipes.layer_pipelines.down_add, &g);
+    }
+}
+
+/// Meter a picture (when levelling is on; `down` when `meter_down` already
+/// ran) and blend it onto the composite by the uniform already in `buf`.
+#[allow(clippy::too_many_arguments)]
+fn meter_and_blend(device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder, pipes: &Pipes, level: bool, down: bool, m: &mut Meter, buf: &wgpu::Buffer, out: &wgpu::TextureView, dst_read: &wgpu::TextureView, dst_write: &wgpu::TextureView) {
     let (prev_s, cur_s) = (m.cur, 1 - m.cur);
     if level {
-        let g = scene::tex_group(device, &pipes.layer_layout, &[out, &m.state[prev_s]], &pipes.sampler, buf);
-        fullscreen_pass(encoder, "layer down", &m.down, wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.layer_pipelines.down, &g);
+        if !down {
+            meter_down(device, encoder, pipes, m, buf, out, None);
+        }
         let g = scene::tex_group(device, &pipes.layer_layout, &[&m.down, &m.state[prev_s]], &pipes.sampler, buf);
         fullscreen_pass(encoder, "layer meter", &m.state[cur_s], wgpu::LoadOp::Clear(wgpu::Color::BLACK), &pipes.layer_pipelines.meter, &g);
     }
@@ -1368,7 +1457,7 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
     }
     let out = src;
     timer.mark(encoder, Part::Blend(si));
-    meter_and_blend(device, encoder, pipes, fr.level, &mut slot.meter, &slot.buf, out, dst_read, dst_write);
+    meter_and_blend(device, encoder, pipes, fr.level, false, &mut slot.meter, &slot.buf, out, dst_read, dst_write);
     for j in flips {
         slot.chain.hist_cur[j] = 1 - slot.chain.hist_cur[j];
     }
@@ -1406,6 +1495,7 @@ fn build_layer(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGr
             blend: scene::pipeline(device, "layer blend", blend_layout, &b, HDR_FORMAT, None),
             copy: scene::pipeline(device, "layer copy", layout, &m, HDR_FORMAT, None),
             down: scene::pipeline(device, "layer down", layout, &d, HDR_FORMAT, None),
+            down_add: scene::pipeline(device, "layer down added", layout, &d, HDR_FORMAT, Some(scene::ADDITIVE)),
             meter: scene::pipeline(device, "layer meter", layout, &g, HDR_FORMAT, None),
         }
     })
@@ -1422,6 +1512,13 @@ fn build_glow_blur(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::Bi
     scene::guarded(device, || {
         let m = scene::shader(device, shaders, "glow_blur.wgsl");
         scene::pipeline(device, "glow blur", layout, &m, HDR_FORMAT, None)
+    })
+}
+
+fn build_light(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Result<wgpu::RenderPipeline, String> {
+    scene::guarded(device, || {
+        let m = scene::shader(device, shaders, "visual_light.wgsl");
+        scene::pipeline(device, "diffusion", layout, &m, HDR_FORMAT, Some(scene::ADDITIVE))
     })
 }
 

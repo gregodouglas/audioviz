@@ -185,14 +185,22 @@ fn jelly_step(j: u32) -> Jelly {
     }
     // Bells swim up their axis: to go down they stop swimming and sink, so
     // the axis aims up and across, leaning into a turn but staying near
-    // upright; the comb jelly simply heads there.
+    // upright; the comb jelly simply heads there. Once a bell is really
+    // sinking it tips over toward where it is going, the dome leading, so
+    // its tentacles trail behind it instead of floating up round it; it
+    // rights itself as it swims again.
     let down = toward.y < -0.2 * length(toward);
     var want = normalize(toward + vec3<f32>(0.0, 1e-4, 0.0));
+    var tip = 0.0;
     if (k != COMB) {
         let upright = sp.upright * select(1.0, 3.0, hero);
         want = normalize(vec3<f32>(toward.x, max(toward.y, 0.0), toward.z) + vec3<f32>(0.0, upright * length(toward) + 0.1, 0.0));
+        let speed = length(J.vel);
+        let falling = smoothstep(0.3, 0.8, -J.vel.y / max(speed, 1e-5)) * smoothstep(0.03, 0.1, speed * BELL_R / R);
+        tip = select(0.0, falling, down);
+        want = normalize(mix(want, J.vel / max(speed, 1e-5), tip) + vec3<f32>(1e-4, 0.0, 0.0));
     }
-    J.axis = turn_toward(J.axis, want, 1.0 - exp(-dt * (0.25 + 0.35 * P.drift)));
+    J.axis = turn_toward(J.axis, want, 1.0 - exp(-dt * (0.25 + 0.35 * P.drift + 0.3 * tip)));
     J.spin += dt * (h2 - 0.5) * 0.25;
 
     var acc = vec3<f32>(0.0, -0.03, 0.0);

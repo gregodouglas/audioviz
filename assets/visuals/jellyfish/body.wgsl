@@ -1,7 +1,8 @@
 // What hangs from a bell: tentacles and hair from the margin, oral arms
 // from the mouth, each a chain of links (chain_link: no momentum, so they
 // trail without winding into loops), rooted on the bell's moving profile so
-// they go where the bell goes. The tentacles are the line.
+// they go where the bell goes. The first link is the root itself, so a
+// strand starts on the skin. The tentacles are the line.
 
 fn strand_count() -> u32 {
     let P = params();
@@ -75,7 +76,10 @@ fn strand_step(i: u32) -> vec4<f32> {
     if (j >= jelly_count() || s >= n) {
         return vec4<f32>(anchor, 0.0);
     }
-    let len = strand_length(s) * radius(J) / f32(SEG);
+    if (k == 0u) {
+        return vec4<f32>(anchor, 0.0);
+    }
+    let len = strand_length(s) * radius(J) / f32(SEG - 1u);
     let fine = kd == LION || kd == MOON;
     let amp = 0.3 * P.sway * (0.5 + 0.5 * item(1u).y * music()) * select(1.0, 0.6, fine);
     let u = f32(k) / f32(SEG - 1u);
@@ -88,9 +92,9 @@ fn strand_step(i: u32) -> vec4<f32> {
     let h = vec3<f32>(creature_hash(f32(s), 21.0 + f32(j)), creature_hash(f32(s), 22.0 + f32(j)), creature_hash(f32(s), 23.0 + f32(j))) - 0.5;
     rest = normalize(out_dir * follow + rest * (1.0 - 0.4 * follow) + h * select(0.2, 0.45, kd == MOON));
     if (J.age < 1.5) {
-        return vec4<f32>(anchor + rest * len * f32(k + 1u), 0.0);
+        return vec4<f32>(anchor + rest * len * f32(k), 0.0);
     }
-    let parent = select(item(i - 1u).xyz, anchor, k == 0u);
+    let parent = item(i - 1u).xyz;
     var rate = mix(4.0, 1.8, u);
     if (kd == MOON) {
         rate = mix(4.5, 2.2, u);
@@ -119,8 +123,8 @@ fn arm_step(i: u32) -> vec4<f32> {
     let mouth = profile(j, 0u).y - bell_thickness(bell_of(kd), 0.0) - 0.02;
     let rr = select(0.1, 0.05, moon);
     let anchor = to_world(J, vec3<f32>(rr * cos(th * TAU), mouth, rr * sin(th * TAU)));
-    let len = species_of(kd).arm_len * P.arms * radius(J) / f32(ARM_SEG);
-    if (j >= jelly_count() || len <= 0.0) {
+    let len = species_of(kd).arm_len * P.arms * radius(J) / f32(ARM_SEG - 1u);
+    if (j >= jelly_count() || len <= 0.0 || k == 0u) {
         return vec4<f32>(anchor, 0.0);
     }
     let twist = select(0.0, f32(k) * 0.45 + V.time * 0.3, kd == NETTLE) + f32(a) * 1.5708;
@@ -132,9 +136,9 @@ fn arm_step(i: u32) -> vec4<f32> {
     let splay = select(0.3, 0.22, moon);
     let rest = normalize(-J.axis + vec3<f32>(0.0, -0.3, 0.0) - J.vel * 2.0 + (ex * cos(twist) + ez * sin(twist)) * splay + current(anchor, V.time) * 0.1 * P.current + wobble);
     if (J.age < 1.5) {
-        return vec4<f32>(anchor + rest * len * f32(k + 1u), 0.0);
+        return vec4<f32>(anchor + rest * len * f32(k), 0.0);
     }
-    let parent = select(item(i - 1u).xyz, anchor, k == 0u);
+    let parent = item(i - 1u).xyz;
     let u = f32(k) / f32(ARM_SEG - 1u);
     return vec4<f32>(chain_link(item(i).xyz, parent, rest, 1.0 - exp(-dt * mix(5.0, 1.5, u)), len), 0.0);
 }
@@ -152,10 +156,12 @@ fn point(i: u32) -> LinePoint {
     let kd = kind();
     let sp = species_of(kd);
     let cam = the_camera();
-    let p3 = item(STRAND0 + i).xyz;
+    // The root where the bell is this frame (the links follow a frame behind).
+    let p3 = select(item(STRAND0 + i).xyz, to_world(J, strand_root(j, s, strand_count()).pos), k == 0u);
     let pr = project(cam, p3);
     var q: LinePoint;
     q.pos = pr.xy;
+    q.depth = to_camera(cam, p3).z;
     let on = j < jelly_count() && s < strand_count() && J.age > 2.5 && k + 1u < SEG && pr.z > 0.0;
     let u = f32(k) / f32(SEG - 1u);
     let scale = pr.z / (cam.focal / cam.dist);

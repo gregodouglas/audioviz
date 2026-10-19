@@ -1669,7 +1669,7 @@ fn performance_section(ui: &mut egui::Ui, settings: &Settings, stats: &Stats) {
             row(ui, 14.0, "Levelling and blend", pct(v, total), Some(v / total), hue, Some("Measuring the layer's brightness and laying it onto the layers below."));
         }
     }
-    for (part, label) in [(Part::Composite, "Composite"), (Part::Picture, "Picture"), (Part::Interface, "Panel and bar")] {
+    for (part, label) in [(Part::Diffusion, "Diffusion"), (Part::Composite, "Composite"), (Part::Picture, "Picture"), (Part::Interface, "Panel and bar")] {
         if let Some(v) = g.part(part) {
             row(ui, 0.0, label, pct(v, total), Some(v / total), TEXT_3, None);
         }

@@ -1,9 +1,10 @@
 // Lines for loaded visuals (shader_visual.rs). A visual's point(i) wrote two
-// vec4 per point (centred x, centred y, width px, 0) and (colour, 0); this
+// vec4 per point (centred x, centred y, width px, depth) and (colour, 0); this
 // draws instance i as the segment from point i to i + 1: a quad around it
 // with a soft edge and round caps, added over the visual's picture. A point
 // with width 0 breaks the line there. Caps are half bright so joins do not
-// double up.
+// double up. In a shared space, fs_space also writes the line's light depth
+// (the point's view depth, 0 meaning far) into the space's light target.
 
 struct LineIn {
     resolution: vec2<f32>,
@@ -20,6 +21,7 @@ struct VsOut {
     @location(1) seg_len: f32,
     @location(2) half_w: f32,
     @location(3) colour: vec3<f32>,
+    @location(4) depth: f32,
 };
 
 fn to_px(p: vec2<f32>) -> vec2<f32> {
@@ -35,6 +37,7 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
     out.seg_len = 0.0;
     out.half_w = 0.0;
     out.colour = vec3<f32>(0.0);
+    out.depth = 0.0;
     let a = pts[2u * ii];
     let b = pts[2u * ii + 2u];
     // A zero width ends the stroke: a degenerate quad draws nothing.
@@ -68,11 +71,11 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
     out.seg_len = len;
     out.half_w = half_w;
     out.colour = select(pts[2u * ii + 3u].rgb, pts[2u * ii + 1u].rgb, along < len * 0.5);
+    out.depth = select(b.w, a.w, along < len * 0.5);
     return out;
 }
 
-@fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+fn line_light(in: VsOut) -> vec3<f32> {
     let along = clamp(in.local.x, 0.0, in.seg_len);
     let dist = length(vec2<f32>(in.local.x - along, in.local.y));
     var c: vec3<f32>;
@@ -88,5 +91,29 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         c = in.colour * cov * cap;
     }
     // A NaN from a visual's point() must not reach the levelling.
-    return vec4<f32>(select(vec3<f32>(0.0), max(c, vec3<f32>(0.0)), all(c == c)), 1.0);
+    return select(vec3<f32>(0.0), max(c, vec3<f32>(0.0)), all(c == c));
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    return vec4<f32>(line_light(in), 1.0);
+}
+
+// The far plane of the light depth (LIGHT_FAR in the visual API).
+const LIGHT_FAR: f32 = 50.0;
+
+struct SpaceOut {
+    @location(0) colour: vec4<f32>,
+    @location(1) light: vec4<f32>,
+};
+
+@fragment
+fn fs_space(in: VsOut) -> SpaceOut {
+    let c = line_light(in);
+    var o: SpaceOut;
+    o.colour = vec4<f32>(c, 1.0);
+    // A pixel the line does not light keeps the far plane.
+    let lit = dot(c, vec3<f32>(1.0)) > 0.0 && in.depth > 0.0;
+    o.light = vec4<f32>(0.0, 0.0, 0.0, select(LIGHT_FAR, in.depth, lit));
+    return o;
 }

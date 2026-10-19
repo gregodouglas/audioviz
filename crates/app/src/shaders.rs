@@ -43,6 +43,7 @@ shader_table!(
     "lines.wgsl",
     "mirror.wgsl",
     "glow_blur.wgsl",
+    "visual_light.wgsl",
     "glow.wgsl",
     "vignette.wgsl",
     "colorify.wgsl",

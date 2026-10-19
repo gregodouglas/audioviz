@@ -165,7 +165,7 @@ Estimated costs, to be replaced by measurements in increment 0 and after each st
 | Per member saved | its own meter and blend, 0.27 to 0.29 ms each (measured, below) |
 | Light target (second MRT on every draw) | +0.1 to 0.3 ms per jelly layer (the bells' 0.61 ms pass is fill-bound) |
 | Behind resolves | +0.05 to 0.1 ms |
-| Diffusion | +0.15 to 0.25 ms |
+| Diffusion | +0.15 to 0.25 ms (measured: 0.23 for the passes; see increment 2) |
 | Depth of field | +0.3 to 0.5 ms |
 
 **Baseline (increment 0, measured 2026-10-19 at d381bb5).** Stacked, 2560x1440 windowed, release, music playing; the median of the last 8 debug lines, two runs each, which agreed within 0.04 ms:
@@ -219,6 +219,19 @@ Built as designed, except where noted:
 - **Brightness**, per layer, in stops (-3 to +3, ×2 per stop), applied after levelling in both modes: stacked, in the layer's blend; shared, inside its draws. It is saved only when not 0, so files stay as they were. Under one exposure it balances layers against each other: lowering one lets the space's gain rise for the rest, as a camera's auto exposure would.
 - **The factory scenes Jellyfish, Deep sea and Giants are shared now.** Each one's plankton went from 0.35 to 0.15, because the layer that carries it is no longer held down by levelling of its own. Jellyfish's moons are at +0.5 stops. Snapshots against stacked: the same balance of species and the same faint plankton.
 - **Not done:** greying out the camera controls (Camera drift, View) on members that do not lead. It needs the manifest to say which controls are the camera's; it comes with the next format change.
+
+### Increment 2, diffusion (0.4.5, 2026-10-19)
+
+Built as designed, except where noted:
+
+- **The light target**: a second 4x RGBA16F attachment of the space's pass, resolved after it; rgb is the glow (added), alpha the light depth (Min). Every space pipeline writes location 1 from generated shared-space entries (`fs_space`, `vs_mesh_space` and `fs_mesh_space`; the line's `fs_space` in `visual_lines.wgsl`), so the stacked entries and pipelines are untouched (stacked Jellyfish measured the same, 2.88 to 2.91 ms against 2.94 to 2.95). Triangles carry their view depth (`clip.w`), the line `LinePoint.depth` (the points buffer's fourth component), `shade` `write_depth(z)`; a fragment that lights nothing writes `LIGHT_FAR` (50).
+- **Changed: what is written to the light target is masked.** With the depth kept (the alpha's Min blend) the bells' pass cost about 0.3 ms more; with `shade` and the line also writing every pixel of the 4x target, once per member, another 0.3 to 0.5. Nothing reads light depth until refraction and depth of field, so the triangles write the glow only (`LIGHT_GLOW`) and `shade` and the line write nothing there (`LIGHT_NONE`). The outputs stay in the shaders. When refraction lands, light depth comes back in a target of its own (the R16Float fallback). Meanwhile `write_glow` takes effect from `paint` only.
+- **`write_glow(c)`** adds to a private variable the generated wrapper writes out, scaled by the layer's opacity; the visual decides how much of its light stays sharp. A visual that calls it anywhere (`ShaderDef::glow`, `Scene::space_glows`) turns diffusion on for its space.
+- **The passes**: glow's own prefilter and blur (`glow_blur.wgsl`, threshold 0, so everything passes) take the light target to a quarter and blur it narrow (sigma 0.6% of the short side), then to an eighth and wide (2.8%); `visual_light.wgsl` adds both back into the space's picture, 65/35. 0.23 ms at 2560x1440.
+- **Changed: the meter sees the glow sharp.** Its mean over the lit part fell as light spread over more blocks, and the levelling lifted the whole space (the marine snow brightened, the glow turned to fog). The meter's 1/8 box is linear, so the space now takes its picture down before diffusion and adds the resolved glow on top (`meter_down`, `down_add`): it measures the light as drawn, the glow still sharp (about 0.08 ms).
+- **The jellies**: `diffuse(c, part, scale)` in `looks.wgsl` moves `part` of a light into the glow in a space (outside one it all stays sharp, so stacked scenes look as before). The stroke's light 0.5 for every species; organs (gonads, stomachs, the lion's heart) 0.5; small bright points (rhopalia, photophores, crystal rim lights, the atolla's dots and pinwheel) 0.6; broad patterns (nettle stripes, lion folds) 0.3; comb rows 0.25. Hair and tentacles are the line, which does not glow yet.
+- **Measured** (2560x1440, release, median of 8 debug lines, two runs), shared, against 0.4.4 the same way: Jellyfish 3.21 to 3.24 ms (2.78 to 2.82), Deep sea 3.31 to 3.37 (2.80 to 2.88), Giants 3.33 to 3.40 (2.56 to 2.79); the meter's added glow pass is about 0.08 of that. Stacked Deep sea is about 3.5, so the shared jelly scenes are still cheaper than they were stacked.
+- **Not done:** the build. The space's triangles were the stacked pipeline before; now they are a pipeline of their own, a second compile of `paint`, and the Jellyfish takes 10.0 s to build instead of 5.6 (FXC). A shared jelly scene shows nothing until both are built. On the roadmap: build the shared and stacked variants as separate jobs, the one in use first.
 
 Later, when asked for: surface depth and `"covers"`, weighted blended OIT, a Space effects chain, a depth slider for backdrops, collisions.
 

@@ -74,6 +74,10 @@ pub trait Scene {
     /// layer's `opacity`, which it applies inside its draws), prepare step,
     /// line points.
     fn space_update(&mut self, _queue: &wgpu::Queue, _encoder: &mut wgpu::CommandEncoder, _ctx: &FrameCtx, _layer: &Layer, _opacity: f32) {}
+    /// Whether it writes light that diffuses through the space (`write_glow`).
+    fn space_glows(&self) -> bool {
+        false
+    }
     /// Hand its camera to the space (the leading layer, after its update).
     fn space_camera(&self, _encoder: &mut wgpu::CommandEncoder) {}
     /// Draw into the space's pass.

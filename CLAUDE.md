@@ -27,6 +27,7 @@ Spotify-fed, Windows-first music visualizer (Rust, wgpu, WGSL). Start with `docs
   - `AUDIOVIZ_SCENE=n` starts on factory scene n; it is applied after `AUDIOVIZ_SETTINGS`, so it overrides it.
   - `AUDIOVIZ_SIZE=WxH` sets the window size.
   - `AUDIOVIZ_PANEL=<section>` opens the panel there and skips the welcome sheet.
+  - `AUDIOVIZ_SEED=n` gives each layer the same `V.instance` every run, for snapshots of two builds (motion still drifts with build time and music).
 - **UI:**
   - Labels are in proper case.
   - One object is in focus at a time.

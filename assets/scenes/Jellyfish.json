@@ -14,6 +14,7 @@
     "look": "neon",
     "saturation": 1.0
   },
+  "space": "shared",
   "layers": [
     {
       "visual": "jellyfish",
@@ -91,7 +92,7 @@
         "light": 1.0,
         "body": 1.0,
         "water": 0.0,
-        "plankton": 0.35,
+        "plankton": 0.15,
         "camera": 0.35
       }
     },
@@ -99,6 +100,7 @@
       "visual": "jellyfish",
       "enabled": true,
       "opacity": 1.0,
+      "brightness": 0.5,
       "blend": "add",
       "band": {
         "enabled": false,

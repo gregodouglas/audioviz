@@ -11,11 +11,14 @@ scenes/Crystal.json 5a598fbbd8cebbbe
 scenes/Crystal.json 8772c78b51b38be8
 scenes/Deep field.json 2ac1b63faf77d969
 scenes/Deep field.json 654b5fabf89e6fed
+scenes/Deep sea.json 73387f84016fdf87
 scenes/Deep sea.json ba043e924a162e3c
 scenes/Eclipse.json 5d27bd8aff9e5f85
 scenes/Eclipse.json b88e1fe1ea1400b6
 scenes/Giants.json 7af8d9a15f4e77d1
+scenes/Giants.json dccbd49a91cec7a0
 scenes/Harmonograph.json fefa1b43690af818
+scenes/Jellyfish.json 2b12d0c4bed87def
 scenes/Jellyfish.json 699e2ac77c171828
 scenes/Jellyfish.json db3d0632fa91a0c5
 scenes/Kaleidoscope.json 579a60634c495148

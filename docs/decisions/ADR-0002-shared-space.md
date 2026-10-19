@@ -213,6 +213,13 @@ Built as designed, except where noted:
   - What still differs: a layer brighter than the others when levelled alone (Deep sea's atollas) now gets the space's gain, so its faint parts (the plankton) come up. Opacity balances layers against each other under one gain. Greg asked for a per-layer **Brightness** offset as the knob for it (next).
 - **Measured** (2560x1440, release, median of 8 debug lines), shared against stacked with the welcome sheet's 0.11 ms taken off the baseline: Deep sea 2.67 against 3.41 ms, Giants 2.50 against 2.72, Jellyfish 2.65 against 2.84.
 
+### Increment 1, finished (0.4.2, 2026-10-19)
+
+- **Panel:** a **Shared space** toggle in the Layers section under the stack. In a space, a layer's Visual tab shows a note in place of Blend, and its Effects tab says its effects are kept but not drawn.
+- **Brightness**, per layer, in stops (-3 to +3, ×2 per stop), applied after levelling in both modes: stacked, in the layer's blend; shared, inside its draws. It is saved only when not 0, so files stay as they were. Under one exposure it balances layers against each other: lowering one lets the space's gain rise for the rest, as a camera's auto exposure would.
+- **The factory scenes Jellyfish, Deep sea and Giants are shared now.** Each one's plankton went from 0.35 to 0.15, because the layer that carries it is no longer held down by levelling of its own. Jellyfish's moons are at +0.5 stops. Snapshots against stacked: the same balance of species and the same faint plankton.
+- **Not done:** greying out the camera controls (Camera drift, View) on members that do not lead. It needs the manifest to say which controls are the camera's; it comes with the next format change.
+
 Later, when asked for: surface depth and `"covers"`, weighted blended OIT, a Space effects chain, a depth slider for backdrops, collisions.
 
 ## Risks

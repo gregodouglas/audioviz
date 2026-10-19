@@ -629,6 +629,11 @@ fn read_folder_except(root: &Path, watch: bool, skip: &[PathBuf]) -> Vec<ShaderD
 }
 
 /// Whether `id` is one of the visuals that ship with the app.
+/// Whether visual `id` can join a shared space ("space": true).
+pub fn can_join_space(id: &str) -> bool {
+    matches!(crate::visuals::get(id).map(|v| &v.source), Some(crate::visuals::Source::Loaded(d)) if d.space)
+}
+
 pub fn is_factory(id: &str) -> bool {
     static IDS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     IDS.get_or_init(|| embedded().into_iter().map(|d| d.id).collect()).iter().any(|f| f == id)

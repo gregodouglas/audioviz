@@ -1124,6 +1124,10 @@ pub struct Layer {
     pub enabled: bool,
     /// 0 = off, 1 = as rendered, up to 2 = boosted.
     pub opacity: f32,
+    /// Light after levelling, in stops (0 = as levelled, +1 doubles). In a
+    /// shared space, which has one exposure, it balances the layers.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub brightness: f32,
     /// How this layer meets the ones below it (layer 1 is on top).
     pub blend: Blend,
     pub band: AudioBand,
@@ -1145,9 +1149,13 @@ pub struct Layer {
     pub params: serde_json::Map<String, serde_json::Value>,
 }
 
+fn is_zero(v: &f32) -> bool {
+    *v == 0.0
+}
+
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: "scope".into(), enabled: false, opacity: 1.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), director: EffectsDirector::default(), fold: LegacyFold::default(), params: serde_json::Map::new() }
+        Self { visual: "scope".into(), enabled: false, opacity: 1.0, brightness: 0.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), director: EffectsDirector::default(), fold: LegacyFold::default(), params: serde_json::Map::new() }
     }
 }
 

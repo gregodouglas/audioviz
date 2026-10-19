@@ -13,7 +13,7 @@ use crate::scene::Scene;
 use crate::preset_store::PresetDef;
 use crate::scene_store::SceneDef;
 use crate::color;
-use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, TintMode, Glow, Vignette, Colorify};
+use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, Space, TintMode, Glow, Vignette, Colorify};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
 use crate::widgets::{self, chip, chip_width, dropdown, dropdown_help, dropdown_marked, ghost_button, group, group_help, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
@@ -607,6 +607,10 @@ fn palette_section(ui: &mut egui::Ui, settings: &mut Settings, editing: usize) {
 }
 
 fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, editing: usize, a: &mut Actions) {
+    if settings.space == Space::Shared && crate::shader_visual::can_join_space(&settings.layer(editing).visual) {
+        hint(ui, "This layer is in the shared space, which is one picture: its effects are kept but not drawn. Effects work on flat layers.");
+        ui.add_space(4.0);
+    }
     let l = settings.layer_mut(editing);
     let n = l.modifiers.len();
     if n == 0 {
@@ -1020,7 +1024,12 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
         state.mod_open = false;
     }
     stack(ui, settings, state, a, editing);
-    ui.add_space(8.0);
+    ui.add_space(4.0);
+    let mut shared = settings.space == Space::Shared;
+    if toggle_row(ui, "Shared space", &mut shared).on_hover_text("Layers whose visual can (the Jellyfish) live in one space: one camera, one exposure, their light together. The others stay flat pictures in slot order, below or above it.").changed() {
+        settings.space = if shared { Space::Shared } else { Space::Stacked };
+    }
+    ui.add_space(6.0);
 
     let hue = theme::layer_hue(editing);
     let kind = settings.layer(editing).visual.clone();
@@ -1186,6 +1195,7 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
 }
 
 fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, layers: &mut [Box<dyn Scene>], editing: usize, a: &mut Actions) {
+    let shared = settings.space == Space::Shared;
     let l = settings.layer_mut(editing);
     // Folders added while running show up without a restart.
     crate::visuals::refresh();
@@ -1255,16 +1265,21 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState
     if l.band.enabled {
         hint(ui, "The scope draws only this band of the waveform; other visuals take their energy, onsets and spectrum from it.");
     }
-    let blends: Vec<&str> = Blend::ALL.iter().map(|b| b.name()).collect();
-    if let Some(i) = dropdown_help(ui, "Blend", &blends, Blend::ALL.iter().position(|b| *b == l.blend), |i| Some(Blend::ALL[i].summary())) {
-        l.blend = Blend::ALL[i];
+    if shared && crate::shader_visual::can_join_space(&l.visual) {
+        hint(ui, "In the shared space: its light joins the others' and the space is levelled as one picture, so blend does not apply. Brightness balances it against them.");
+    } else {
+        let blends: Vec<&str> = Blend::ALL.iter().map(|b| b.name()).collect();
+        if let Some(i) = dropdown_help(ui, "Blend", &blends, Blend::ALL.iter().position(|b| *b == l.blend), |i| Some(Blend::ALL[i].summary())) {
+            l.blend = Blend::ALL[i];
+        }
+        hint(ui, match l.blend {
+            Blend::Add => "Add: light sums with the layers below; order does not matter.",
+            Blend::Over => "Over: this layer's bright parts cover the layers below it (1 is on top).",
+            Blend::Screen => "Screen: lightens the layers below without blowing out.",
+            Blend::Multiply => "Multiply: masks the layers below; its dark parts darken them.",
+        });
     }
-    hint(ui, match l.blend {
-        Blend::Add => "Add: light sums with the layers below; order does not matter.",
-        Blend::Over => "Over: this layer's bright parts cover the layers below it (1 is on top).",
-        Blend::Screen => "Screen: lightens the layers below without blowing out.",
-        Blend::Multiply => "Multiply: masks the layers below; its dark parts darken them.",
-    });
+    slider_def(ui, "Brightness", &mut l.brightness, Some(0.0), -3.0..=3.0, |v| if v.abs() < 0.05 { "as levelled".into() } else { format!("{v:+.1} stops") }, false).on_hover_text("Light after levelling: +1 doubles it, -1 halves it. Opacity is the layer's share of the mix; this moves it brighter or darker than the levelling put it.");
     ui.add_space(8.0);
     let kind = l.visual.clone();
     if crate::visuals::get(&kind).is_none() {

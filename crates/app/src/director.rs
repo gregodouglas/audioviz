@@ -1063,7 +1063,7 @@ impl Director {
             };
             let input = layer_input(fr, slot, &layer);
             let ctx = input.ctx(fr, slot, &layer);
-            visual.space_update(queue, encoder, &ctx, &layer, level);
+            visual.space_update(queue, encoder, &ctx, &layer, level * layer.brightness.exp2());
             if Some(k) == lead {
                 visual.space_camera(encoder);
             }
@@ -1194,7 +1194,7 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
     visual.render(queue, encoder, &input.ctx(fr, slot, layer), layer);
     let feats: &FeatureFrame = input.features.as_ref().unwrap_or(fr.features);
     let (pal_table, pal_shift) = (&slot.palette.table, slot.palette.shift);
-    queue.write_buffer(&slot.buf, 0, bytemuck::bytes_of(&LayerParams { opacity: level, dt, flags: fr.level as u32 | if first { 2 } else { 0 } | if visual.level_bright() { 4 } else { 0 }, blend: layer.blend as u32 }));
+    queue.write_buffer(&slot.buf, 0, bytemuck::bytes_of(&LayerParams { opacity: level * layer.brightness.exp2(), dt, flags: fr.level as u32 | if first { 2 } else { 0 } | if visual.level_bright() { 4 } else { 0 }, blend: layer.blend as u32 }));
 
     // Effects director: which pool effects are live, and a gate per slot
     // that slews toward live or resting; pinned effects stay at 1.

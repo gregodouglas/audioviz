@@ -148,6 +148,9 @@ struct Manifest {
     /// next frame with `trail(uv)`.
     #[serde(default)]
     trail: bool,
+    /// Shared libraries put in front of the code ("creatures").
+    #[serde(default)]
+    uses: Vec<String>,
 }
 
 /// Where a visual's pictures come from: a choice control whose second
@@ -190,10 +193,15 @@ pub struct ShaderDef {
     pub band_waveform: bool,
     /// `shade` keeps a trail (`write_trail`, read back with `trail`).
     pub trail: bool,
+    /// Shared libraries in front of the code.
+    pub uses: Vec<String>,
     pub wgsl: String,
     /// The folder it came from, watched for changes (none for embedded copies).
     pub dir: Option<PathBuf>,
 }
+
+/// Libraries a visual may put in front of its code with "uses": (name, file).
+const LIBRARIES: &[(&str, &str)] = &[("creatures", "creatures.wgsl")];
 
 /// WGSL keywords and type names: never a control id.
 const RESERVED: &[&str] = &["array", "bool", "break", "case", "const", "continue", "default", "discard", "else", "enable", "f32", "fn", "for", "i32", "if", "let", "loop", "mat2x2", "override", "ptr", "return", "struct", "switch", "true", "false", "type", "u32", "var", "vec2", "vec3", "vec4", "while", "texture", "sampler", "uniform", "storage", "private", "function", "workgroup"];
@@ -263,6 +271,9 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
     if !matches!(m.line_style.as_str(), "" | "line" | "beam") {
         return Err(format!("visual.json: line_style \"{}\" is not \"line\" or \"beam\"", m.line_style));
     }
+    if let Some(u) = m.uses.iter().find(|u| !LIBRARIES.iter().any(|(name, _)| name == u)) {
+        return Err(format!("visual.json: uses \"{u}\" is not a library (there is: creatures)"));
+    }
     if m.trail && !defines(wgsl, "shade") {
         return Err("visual.json sets \"trail\": fn shade writes it, and visual.wgsl has none".into());
     }
@@ -289,7 +300,7 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
         return Err(format!("visual.json: line_count \"{}\" is not a number param", m.line_count));
     }
     let short = if m.short.is_empty() { m.name.clone() } else { m.short };
-    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, wgsl: wgsl.to_string(), dir })
+    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, uses: m.uses, wgsl: wgsl.to_string(), dir })
 }
 
 // ------------------------------------------------------------ values
@@ -360,7 +371,8 @@ impl ShaderDef {
     /// The text in front of the visual's own code (its first line is the
     /// next one), so errors can point into visual.wgsl.
     fn prefix(&self, shaders: &ShaderSet) -> String {
-        format!("{}\n{}\n// ---- visual.wgsl ----\n", shaders.source_base("visual_api.wgsl"), self.generated())
+        let libs: String = self.uses.iter().filter_map(|u| LIBRARIES.iter().find(|(name, _)| name == u)).map(|(_, file)| format!("{}\n", shaders.raw(file))).collect();
+        format!("{}\n{libs}{}\n// ---- visual.wgsl ----\n", shaders.source_base("visual_api.wgsl"), self.generated())
     }
 
     fn source(&self, shaders: &ShaderSet, wgsl: &str) -> String {

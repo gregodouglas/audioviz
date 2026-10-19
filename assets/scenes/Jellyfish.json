@@ -9,7 +9,7 @@
   "picture": {
     "exposure": 1.0,
     "auto_exposure": true,
-    "bloom": 0.25,
+    "bloom": 0.28,
     "grain": 0.15,
     "look": "neon",
     "saturation": 1.0
@@ -34,7 +34,7 @@
         ]
       },
       "palette": {
-        "name": "neon",
+        "name": "none",
         "custom": [
           {
             "t": 0.0,
@@ -75,26 +75,30 @@
         "fade_s": 0.6
       },
       "jellyfish": {
-        "count": 7,
+        "species": "nettle",
+        "count": 3,
         "size": 1.0,
-        "depth": 0.6,
-        "swim_on": "beat",
+        "colours": "natural",
+        "music": "reactive",
         "swim": 1.0,
         "drift": 1.0,
-        "sink": 0.5,
-        "tentacles": 6,
+        "current": 0.6,
+        "tentacles": 1.0,
         "reach": 1.0,
         "sway": 1.0,
+        "arms": 1.0,
         "glow": 1.0,
-        "rim": 1.0,
-        "plankton": 0.4,
-        "react": 1.0
+        "light": 1.0,
+        "body": 1.0,
+        "water": 0.0,
+        "plankton": 0.35,
+        "camera": 0.35
       }
     },
     {
-      "visual": "ribbons",
-      "enabled": false,
-      "opacity": 0.4,
+      "visual": "jellyfish",
+      "enabled": true,
+      "opacity": 1.0,
       "blend": "add",
       "band": {
         "enabled": false,
@@ -150,87 +154,25 @@
         "rest": 0.5,
         "fade_s": 0.6
       },
-      "ribbons": {
-        "speed": 0.3,
-        "scale": 1.5,
-        "curl": 1.0,
-        "vortex": 1.0,
-        "width": 1.0,
-        "intensity": 1.0,
-        "persistence": 0.3,
-        "saturation": 0.45,
-        "count": 12000,
-        "spread": 0.3
-      }
-    },
-    {
-      "visual": "scope",
-      "enabled": false,
-      "opacity": 0.5,
-      "blend": "add",
-      "band": {
-        "enabled": false,
-        "lo_hz": 20.0,
-        "hi_hz": 400.0
-      },
-      "tint": {
-        "mode": "scene",
-        "color": [
-          0.4,
-          1.0,
-          0.55
-        ]
-      },
-      "palette": {
-        "name": "none",
-        "custom": [
-          {
-            "t": 0.0,
-            "rgb": [
-              0.101960786,
-              0.043137256,
-              0.23921569
-            ]
-          },
-          {
-            "t": 0.5,
-            "rgb": [
-              0.4,
-              1.0,
-              0.54901963
-            ]
-          },
-          {
-            "t": 1.0,
-            "rgb": [
-              1.0,
-              1.0,
-              1.0
-            ]
-          }
-        ],
-        "amount": 1.0,
-        "cycle": 0.0,
-        "cyclic": true,
-        "react": 1.0
-      },
-      "modifiers": [],
-      "director": {
-        "mode": "manual",
-        "every": 4,
-        "live": 1,
-        "rest": 0.5,
-        "fade_s": 0.6
-      },
-      "scope": {
-        "colour": "key",
-        "gain": 0.85,
-        "auto_gain": true,
-        "rotation_deg": 45.0,
-        "beam_width": 1.2,
-        "beam_intensity": 1.0,
-        "persistence": 0.05,
-        "beat_pulse": 0.3
+      "jellyfish": {
+        "species": "moon",
+        "count": 7,
+        "size": 0.8,
+        "colours": "natural",
+        "music": "reactive",
+        "swim": 1.0,
+        "drift": 1.0,
+        "current": 0.6,
+        "tentacles": 1.0,
+        "reach": 1.0,
+        "sway": 1.0,
+        "arms": 1.0,
+        "glow": 1.0,
+        "light": 1.0,
+        "body": 1.0,
+        "water": 0.0,
+        "plankton": 0.0,
+        "camera": 0.35
       }
     }
   ]

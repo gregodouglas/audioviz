@@ -11,9 +11,12 @@ scenes/Crystal.json 5a598fbbd8cebbbe
 scenes/Crystal.json 8772c78b51b38be8
 scenes/Deep field.json 2ac1b63faf77d969
 scenes/Deep field.json 654b5fabf89e6fed
+scenes/Deep sea.json ba043e924a162e3c
 scenes/Eclipse.json 5d27bd8aff9e5f85
 scenes/Eclipse.json b88e1fe1ea1400b6
+scenes/Giants.json 7af8d9a15f4e77d1
 scenes/Harmonograph.json fefa1b43690af818
+scenes/Jellyfish.json 699e2ac77c171828
 scenes/Jellyfish.json db3d0632fa91a0c5
 scenes/Kaleidoscope.json 579a60634c495148
 scenes/Kaleidoscope.json 5d870f2232b99e9b
@@ -56,6 +59,8 @@ visuals/harmonograph/visual.json 548d04f846e1fcb4
 visuals/harmonograph/visual.wgsl 3ea8bf81525e9a66
 visuals/harmonograph/visual.wgsl cdfe8fe68fcd9536
 visuals/jellyfish/visual.json 837f24cda13524c0
+visuals/jellyfish/visual.json c015f5b23cf4d721
+visuals/jellyfish/visual.wgsl 2c5ccee4c4862f6e
 visuals/jellyfish/visual.wgsl 73bc208e278951de
 visuals/kaleido/visual.json 61603cabff3e5530
 visuals/kaleido/visual.wgsl 069d6bcf431d8c05

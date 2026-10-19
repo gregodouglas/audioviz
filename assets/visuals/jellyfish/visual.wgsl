@@ -1,361 +1,743 @@
-// Jellyfish: a small swarm of glowing jellies. Each one squeezes its bell to
-// swim (on the beat, on bass hits, or by its own rhythm), glides and sinks,
-// wanders while keeping upright, and turns back from the edges; a drop sets
-// them all off at once. Tentacles are chains that follow the bell, each
-// segment trailing its parent by a frame, so waves run down them and they
-// drag when the jelly swims. Bells are drawn per pixel on a quad each
-// (outline glow, translucent fill, radial canals, a ring of gonads, rim
-// lights); tentacles are the line; plankton drifts in the background.
+// Jellyfish: a swarm of one species in a deep tank, in 3D. Six species,
+// each with its own body and its own light, and each light answering a
+// different part of the sound:
+//   moon jelly     flat saucer, four horseshoe gonads that breathe with the
+//                  bass, a fringe of short tentacles, four short frilly arms
+//   sea nettle     deep striped bell (stripes pulse with the mids), long
+//                  trailing tentacles, long spiralling oral arms
+//   crystal jelly  clear flat bell with ~100 hair-thin canals and a ring of
+//                  green rim lights that flash on onsets
+//   atolla         deep red crown bell with a coronal groove; on a drop it
+//                  spins its blue alarm pinwheel round the rim
+//   comb jelly     a glassy oval that glides (no pulse) while rainbows race
+//                  along its eight comb rows with the hi-hats
+//   lion's mane    a big lobed bell and hundreds of fine hairs down which
+//                  waves of light run with the sustained low end
+// They live without the music (swim strokes on their own rhythm, a slow
+// current, each heading for its own wandering spot and keeping apart); the
+// Music control decides how much the music sways them.
+//
+// Uses the creatures library (camera, current, stroke, chain_link...).
 //
 // Prepare items:
-//   0                       (1 once started, 0, 0, 0)
-//   1 + 3j, +1, +2          jelly j: (x, y, vx, vy), (heading, seconds since
-//                           its last squeeze, squeeze 0..1, last beat count),
-//                           (depth 0..1, size, palette position, frames alive)
-//   TENT0 + (j * MAX_T + t) * SEGS + s
-//                           tentacle t of jelly j, segment s: (x, y, last x, last y)
-// Line point i is tentacle segment TENT0 + i; triangles 2j, 2j + 1 are jelly j's quad.
+//   0                   (1 once started)
+//   1                   smoothed sound: (lows, mids, highs, sustained energy)
+//   2                   (last any onset hit, last low hit, drop envelope, 0)
+//   JELLY0 + 5j + f     jelly j: (position, seconds into its stroke),
+//                       (velocity, 0), (axis, spin), (size, hue, frames
+//                       alive, last beat), (glow, flash, phase a, phase b)
+//   STRAND0 + (j * STRANDS + s) * SEG + k
+//                       strand s (tentacle or hair) of jelly j, link k: (x, y, z, 0)
+//   ARM0 + (j * ARMS + a) * ARM_SEG + k
+//                       oral arm a of jelly j, link k: (x, y, z, 0)
+// Line point i is strand link STRAND0 + i. Triangles per jelly: the bell
+// (RINGS x SECTORS quads), then the arms (ARM_SEG - 1 links, two half-quads
+// across each).
 
 const MAX_J: u32 = 12u;
-const MAX_T: u32 = 8u;
-const SEGS: u32 = 20u;
-const JELLY0: u32 = 1u;
-const TENT0: u32 = 37u;     // 1 + 3 * MAX_J
-// A bell's half-width at size 1 and depth 1, in centred units.
-const BELL: f32 = 0.11;
+const STRANDS: u32 = 160u;
+const SEG: u32 = 16u;
+const ARMS: u32 = 4u;
+const ARM_SEG: u32 = 12u;
+const JELLY0: u32 = 4u;
+const STRAND0: u32 = 64u;           // JELLY0 + 5 * MAX_J
+const ARM0: u32 = 30784u;           // STRAND0 + MAX_J * STRANDS * SEG
+const RINGS: u32 = 14u;
+const SECTORS: u32 = 40u;
+const BELL_CORNERS: u32 = 3360u;    // RINGS * SECTORS * 2 * 3
+const CORNERS_J: u32 = 3888u;       // BELL_CORNERS + ARMS * (ARM_SEG - 1) * 4 * 3
+// The tank's half size (world units), and a bell's radius at size 1.
+const TANK: vec3<f32> = vec3<f32>(2.4, 1.1, 1.3);
+const BELL_R: f32 = 0.2;
+
+const MOON: u32 = 0u;
+const NETTLE: u32 = 1u;
+const CRYSTAL: u32 = 2u;
+const ATOLLA: u32 = 3u;
+const COMB: u32 = 4u;
+const LION: u32 = 5u;
+
+// ---------------------------------------------------------------- species
+
+struct Species {
+    scale: f32,        // bell size
+    strands: f32,      // tentacles or hairs
+    strand_len: f32,   // their length, in bell radii
+    strand_px: f32,    // their width, in pixels near the middle of the tank
+    arm_len: f32,      // oral arms' length, in bell radii (0: none)
+    arm_w: f32,        // and width
+    period: f32,       // seconds between strokes on its own (0: no strokes)
+    swim: f32,         // push per stroke
+};
+
+fn species_of(kind: u32) -> Species {
+    var s: Species;
+    switch (kind) {
+        case 1u: { s = Species(0.9, 24.0, 5.0, 1.6, 3.5, 0.22, 1.1, 1.0); }
+        case 2u: { s = Species(0.95, 28.0, 3.0, 0.3, 0.25, 0.1, 2.0, 0.7); }
+        case 3u: { s = Species(0.7, 22.0, 0.8, 1.2, 0.0, 0.0, 0.9, 1.1); }
+        case 4u: { s = Species(0.85, 2.0, 3.5, 0.9, 0.0, 0.0, 0.0, 0.6); }
+        case 5u: { s = Species(1.9, 120.0, 5.0, 0.55, 2.0, 0.4, 2.2, 0.6); }
+        default: { s = Species(1.0, 96.0, 0.5, 0.9, 0.9, 0.16, 1.5, 0.8); }
+    }
+    return s;
+}
+
+fn kind() -> u32 {
+    return min(u32(params().species), 5u);
+}
+
+// Colour of a part: 0 bell, 1 its light, 2 tentacles, 3 arms. Natural is
+// the species' own; Palette takes the layer's palette by hue and part.
+fn tone(part: u32, hue: f32) -> vec3<f32> {
+    if (params().colours < 0.5) {
+        return colour(hue + f32(part) * 0.17);
+    }
+    var c = array<vec3<f32>, 4>(vec3<f32>(0.55, 0.7, 1.0), vec3<f32>(0.75, 0.45, 1.0), vec3<f32>(0.6, 0.75, 1.0), vec3<f32>(0.7, 0.8, 1.0));
+    switch (kind()) {
+        case 1u: { c = array<vec3<f32>, 4>(vec3<f32>(1.0, 0.5, 0.12), vec3<f32>(1.0, 0.3, 0.05), vec3<f32>(1.0, 0.4, 0.1), vec3<f32>(1.0, 0.82, 0.62)); }
+        case 2u: { c = array<vec3<f32>, 4>(vec3<f32>(0.7, 0.85, 1.0), vec3<f32>(0.2, 1.0, 0.35), vec3<f32>(0.75, 0.9, 1.0), vec3<f32>(0.6, 1.0, 0.7)); }
+        case 3u: { c = array<vec3<f32>, 4>(vec3<f32>(0.75, 0.03, 0.06), vec3<f32>(0.15, 0.45, 1.0), vec3<f32>(0.8, 0.1, 0.12), vec3<f32>(0.8, 0.1, 0.1)); }
+        case 4u: { c = array<vec3<f32>, 4>(vec3<f32>(0.6, 0.75, 1.0), vec3<f32>(1.0, 1.0, 1.0), vec3<f32>(0.85, 0.85, 1.0), vec3<f32>(1.0, 1.0, 1.0)); }
+        case 5u: { c = array<vec3<f32>, 4>(vec3<f32>(1.0, 0.22, 0.06), vec3<f32>(1.0, 0.6, 0.2), vec3<f32>(1.0, 0.42, 0.12), vec3<f32>(1.0, 0.62, 0.3)); }
+        default: {}
+    }
+    return c[part];
+}
+
+// How strongly the music sways them: Natural, Reactive, Performance.
+fn music() -> f32 {
+    let m = params().music;
+    return select(select(1.8, 1.0, m < 1.5), 0.15, m < 0.5);
+}
+
+fn the_camera() -> Camera {
+    // A little from below, as in an aquarium: bells show what glows inside.
+    var c = drifting_camera(params().camera * 0.8, 4.6, 2.3);
+    c.pitch -= 0.28;
+    return c;
+}
+
+// ---------------------------------------------------------------- a jelly
+
+struct Jelly {
+    pos: vec3<f32>,
+    since: f32,
+    vel: vec3<f32>,
+    axis: vec3<f32>,
+    spin: f32,
+    size: f32,
+    hue: f32,
+    age: f32,
+    last_beat: f32,
+    glow: f32,
+    flash: f32,
+    pa: f32,
+    pb: f32,
+};
+
+fn jelly_at(j: u32) -> Jelly {
+    let b = JELLY0 + 5u * j;
+    let a0 = item(b);
+    let a1 = item(b + 1u);
+    let a2 = item(b + 2u);
+    let a3 = item(b + 3u);
+    let a4 = item(b + 4u);
+    var J: Jelly;
+    J.pos = a0.xyz;
+    J.since = a0.w;
+    J.vel = a1.xyz;
+    J.axis = a2.xyz;
+    J.spin = a2.w;
+    J.size = a3.x;
+    J.hue = a3.y;
+    J.age = a3.z;
+    J.last_beat = a3.w;
+    J.glow = a4.x;
+    J.flash = a4.y;
+    J.pa = a4.z;
+    J.pb = a4.w;
+    return J;
+}
 
 fn jelly_count() -> u32 {
     return clamp(u32(params().count), 1u, MAX_J);
 }
 
-fn tentacle_count() -> u32 {
-    return clamp(u32(params().tentacles), 1u, MAX_T);
+// The bell's radius in world units.
+fn radius(J: Jelly) -> f32 {
+    return BELL_R * species_of(kind()).scale * params().size * J.size;
 }
 
-// The bell's "up" for a heading (radians, counter-clockwise from straight up).
-fn up_of(a: f32) -> vec2<f32> {
-    return vec2<f32>(-sin(a), cos(a));
-}
-
-fn wrap_angle(a: f32) -> f32 {
-    return a - TAU * round(a / TAU);
-}
-
-// Far jellies are smaller.
-fn depth_scale(z: f32) -> f32 {
-    return mix(0.55, 1.15, z);
-}
-
-// The squeeze: quick (0.18 s), then a slow release.
-fn squeeze(since: f32) -> f32 {
-    if (since < 0.18) {
-        return smoothstep(0.0, 0.18, since);
+// A point of the bell in its own units (margin radius 1, y along the axis):
+// t runs from the crown (0) to the margin (1) (the comb jelly: pole to
+// pole), th round it (0..1); c is the stroke there.
+fn bell_local(k: u32, t: f32, th: f32, c: f32) -> vec3<f32> {
+    let ang = th * TAU;
+    var r = 0.0;
+    var y = 0.0;
+    if (k == COMB) {
+        // Comb jelly: an oval, a slow waist wobble instead of strokes.
+        let a = t * 3.14159;
+        r = sin(a) * 0.55 * (1.0 + 0.04 * sin(V.time * 1.3 + t * 6.0));
+        y = cos(a);
+    } else {
+        var amax = 1.35;
+        var hk = 0.35;
+        switch (k) {
+            case 1u: { amax = 1.75; hk = 0.8; }
+            case 2u: { amax = 1.25; hk = 0.28; }
+            case 3u: { amax = 1.6; hk = 0.55; }
+            case 5u: { amax = 1.5; hk = 0.5; }
+            default: {}
+        }
+        let a = t * amax;
+        r = sin(a) / sin(min(amax, 1.5708));
+        y = (cos(a) - cos(amax)) * hk;
+        if (k == ATOLLA) {
+            // The coronal groove.
+            r *= 1.0 - 0.07 * exp(-pow((t - 0.55) / 0.07, 2.0));
+        }
+        if (k == LION) {
+            // Eight lobes at the margin.
+            r *= 1.0 + 0.1 * cos(ang * 8.0) * t * t * t;
+        }
+        if (k == NETTLE || k == ATOLLA) {
+            // A scalloped margin.
+            r *= 1.0 + 0.025 * cos(ang * select(32.0, 20.0, k == ATOLLA)) * smoothstep(0.85, 1.0, t);
+        }
+        // The stroke: the margin pulls in most, the bell grows taller.
+        r *= 1.0 - 0.3 * c * pow(t, 0.7);
+        y -= 0.18 * c * t * t;
     }
-    return exp(-(since - 0.18) / 0.45);
+    return vec3<f32>(r * cos(ang), y, r * sin(ang));
 }
 
-struct Jelly {
-    pos: vec2<f32>,
-    vel: vec2<f32>,
-    heading: f32,
-    since: f32,
-    c: f32,
-    last_beat: f32,
-    z: f32,
-    size: f32,
-    hue: f32,
-    age: f32,
-};
-
-// Jelly j as the items hold it (last frame's inside prepare, this frame's elsewhere).
-fn jelly_at(j: u32) -> Jelly {
-    let a = item(JELLY0 + 3u * j);
-    let b = item(JELLY0 + 3u * j + 1u);
-    let c = item(JELLY0 + 3u * j + 2u);
-    var J: Jelly;
-    J.pos = a.xy;
-    J.vel = a.zw;
-    J.heading = b.x;
-    J.since = b.y;
-    J.c = b.z;
-    J.last_beat = b.w;
-    J.z = c.x;
-    J.size = c.y;
-    J.hue = c.z;
-    J.age = c.w;
-    return J;
+// The stroke at t: it starts at the margin and travels up to the crown.
+fn local_stroke(J: Jelly, t: f32) -> f32 {
+    if (species_of(kind()).period <= 0.0) {
+        return 0.0;
+    }
+    return stroke(J.since - 0.12 * (1.0 - t), 0.22, 0.55);
 }
 
-// How big jelly J is drawn, as a multiple of BELL.
-fn jelly_scale(J: Jelly) -> f32 {
-    return depth_scale(J.z) * J.size * params().size;
+// The jelly's own frame: its axis, and two directions round it turned by its spin.
+fn frame_x(J: Jelly) -> vec3<f32> {
+    let e = perpendicular(J.axis);
+    return e * cos(J.spin) + cross(J.axis, e) * sin(J.spin);
 }
 
-// Half the visible area in centred units, a little inside the edges.
-fn arena() -> vec2<f32> {
-    let short = min(V.resolution.x, V.resolution.y);
-    return V.resolution / short * 0.85;
+fn to_world(J: Jelly, l: vec3<f32>) -> vec3<f32> {
+    let ex = frame_x(J);
+    let ez = cross(J.axis, ex);
+    return J.pos + (ex * l.x + J.axis * l.y + ez * l.z) * radius(J);
 }
 
-// One frame of jelly j: spawn, squeeze, swim, steer.
+fn dir_to_world(J: Jelly, l: vec3<f32>) -> vec3<f32> {
+    let ex = frame_x(J);
+    let ez = cross(J.axis, ex);
+    return ex * l.x + J.axis * l.y + ez * l.z;
+}
+
+// One frame of jelly j: spawn, strokes, swimming, steering, its light.
 fn jelly_step(j: u32) -> Jelly {
     let P = params();
     let dt = clamp(V.dt, 0.0, 0.1);
     var J = jelly_at(j);
-    if (j >= jelly_count()) {
+    let n = jelly_count();
+    if (j >= n) {
         var none: Jelly;
         return none;
     }
-    let h = hash22(vec2<f32>(f32(j) * 7.31 + 1.7, V.instance * 113.0));
-    let h2 = hash22(vec2<f32>(f32(j) * 3.17 + 0.3, V.instance * 57.0 + 9.0));
-    let ext = arena();
+    let k = kind();
+    let sp = species_of(k);
+    let id = f32(j);
+    let h1 = creature_hash(id, 1.0);
+    let h2 = creature_hash(id, 2.0);
+    let h3 = creature_hash(id, 3.0);
     if (J.age < 0.5) {
-        J.pos = (h * 2.0 - 1.0) * ext * 0.8;
-        J.vel = vec2<f32>(0.0);
-        J.heading = (h2.x - 0.5) * 0.6;
-        J.since = 0.5 + 2.0 * h2.y;
-        J.c = 0.0;
-        J.last_beat = V.beat_count;
-        J.z = clamp(0.5 + (hash21(vec2<f32>(f32(j), V.instance * 31.0)) - 0.5) * P.depth, 0.0, 1.0);
-        J.size = 0.8 + 0.4 * h2.y;
-        J.hue = f32(j) / f32(jelly_count());
+        J.pos = (vec3<f32>(h1, h2, h3) * 2.0 - 1.0) * TANK * 0.8;
+        J.vel = vec3<f32>(0.0);
+        J.axis = normalize(vec3<f32>(h2 - 0.5, 1.2, h3 - 0.5));
+        J.spin = h1 * TAU;
+        J.size = 0.8 + 0.4 * h3;
+        J.hue = id / f32(n);
+        J.since = h2 * max(sp.period, 1.0);
         J.age = 1.0;
+        J.last_beat = V.beat_count;
         return J;
     }
     J.age = min(J.age + 1.0, 10.0);
+    let env = item(1u);
+    let ev = item(2u);
+    let mk = music();
+    let mode = P.music;
+    let hit = V.hits.w > 0.5 && ev.x < 0.5;
+    let low_hit = V.hits.x > 0.5 && ev.y < 0.5;
+    let drop = mode > 0.5 && V.onsets.x > 0.85 && V.swell > 1.0 && ev.z < 0.3;
+    let R = radius(J);
 
-    // When to squeeze: half of them every beat, half every other beat; on
-    // bass hits most of them; by their own rhythm without a beat.
-    let period = mix(1.3, 2.4, h.x) / (0.6 + 0.4 * V.energy);
-    var go = false;
-    if (P.swim_on < 0.5 && V.confidence > 0.3) {
-        if (V.beat_count != J.last_beat) {
-            let every = select(1.0, 2.0, h.y > 0.55);
-            go = ((V.beat_count + f32(j)) % every) < 0.5;
+    // Strokes: on its own rhythm; with the music, on a beat once it is
+    // ready, in Performance also on bass hits; everyone on a drop.
+    if (sp.period > 0.0) {
+        let period = sp.period * mix(0.85, 1.25, h1);
+        var go = J.since > period;
+        let beat = V.beat_count != J.last_beat && V.confidence > 0.3;
+        if (mode > 0.5 && beat && J.since > period * select(0.6, 0.35, mode > 1.5)) {
+            go = true;
         }
-    } else if (P.swim_on < 1.5 && P.swim_on > 0.5) {
-        go = V.hits.x > 0.5 && hash21(vec2<f32>(floor(V.time * 30.0), f32(j))) < 0.7;
-    } else {
-        go = J.since > period;
-    }
-    // A drop: everyone.
-    if (V.onsets.x > 0.85 && V.swell > 1.0) {
-        go = true;
-    }
-    if (go && J.since > 0.35) {
-        J.since = 0.0;
+        if (mode > 1.5 && low_hit) {
+            go = true;
+        }
+        if (drop) {
+            go = true;
+        }
+        if (go && J.since > 0.3) {
+            J.since = 0.0;
+        }
     }
     J.last_beat = V.beat_count;
-    J.since += dt;
-    J.c = squeeze(J.since);
+    J.since = min(J.since + dt, 60.0);
 
-    // Swim along the bell's axis while squeezing; water slows it; it sinks.
-    let up = up_of(J.heading);
-    let k = jelly_scale(J);
-    var acc = vec2<f32>(0.0, -0.05 * P.sink);
-    if (J.since < 0.25) {
-        acc += up * P.swim * 0.5 * (0.7 + 0.4 * min(V.bass, 2.0) * P.react) * k;
-    }
-    J.vel = J.vel * exp(-dt * 1.6) + acc * dt;
-    J.pos += J.vel * dt;
-
-    // Steer: each jelly heads for its own spot in the tank, which wanders
-    // slowly, keeps clear of its neighbours, and rides upright (with a
-    // little wobble) once it is near.
-    let tw = V.time * 0.035 * max(P.drift, 0.05);
-    let spot = clamp((vec2<f32>(noise(vec2<f32>(tw + h.x * 50.0, f32(j) * 3.0)), noise(vec2<f32>(tw + h.y * 50.0, f32(j) * 3.0 + 7.0))) * 2.0 - 1.0) * ext * 1.6, -ext * 0.8, ext * 0.8);
-    var toward = spot - J.pos;
-    for (var o = 0u; o < jelly_count(); o++) {
+    // Where to go: its own wandering spot, apart from the others, back from the walls.
+    let home = wander_point(id, TANK * 0.8, 0.02 + 0.03 * P.drift);
+    // The pull toward the spot is at most 1, so keeping apart always wins up close.
+    let to_home = home - J.pos;
+    var toward = to_home / max(length(to_home), 1.0);
+    for (var o = 0u; o < n; o++) {
         if (o != j) {
-            let q = J.pos - item(JELLY0 + 3u * o).xy;
-            toward += q / max(dot(q, q), 1e-3) * 0.015 * k;
+            toward += keep_apart(J.pos, item(JELLY0 + 5u * o).xyz, R * 6.0) * 3.0;
         }
     }
-    let wobble = (noise(vec2<f32>(V.time * 0.3 + h.x * 20.0, f32(j))) - 0.5) * 0.6 * P.drift;
-    var want = select(atan2(-toward.x, toward.y), wobble, length(toward) < 0.12);
-    let edge = abs(J.pos) / ext;
-    if (max(edge.x, edge.y) > 0.9) {
-        want = atan2(J.pos.x, -J.pos.y);
+    let outside = max(max(abs(J.pos.x) / TANK.x, abs(J.pos.y) / TANK.y), abs(J.pos.z) / TANK.z) > 0.92;
+    if (outside) {
+        toward = -J.pos;
     }
-    J.heading = wrap_angle(J.heading + wrap_angle(want - J.heading) * (1.0 - exp(-dt * 0.8)));
-    J.pos = clamp(J.pos, -ext * 1.1, ext * 1.1);
+    // Bells swim up their axis: to go down they stop swimming and sink, so
+    // the axis aims up and across; the comb jelly simply heads there.
+    let down = toward.y < -0.2 * length(toward);
+    var want = normalize(toward + vec3<f32>(0.0, 1e-4, 0.0));
+    if (k != COMB) {
+        want = normalize(vec3<f32>(toward.x, max(toward.y, 0.0), toward.z) + vec3<f32>(0.0, 0.6 * length(toward) + 0.1, 0.0));
+    }
+    J.axis = turn_toward(J.axis, want, 1.0 - exp(-dt * (0.25 + 0.35 * P.drift)));
+    J.spin += dt * (h2 - 0.5) * 0.25;
+
+    var acc = vec3<f32>(0.0, -0.03, 0.0);
+    if (k == COMB) {
+        acc += J.axis * sp.swim * P.swim * 0.25;
+    } else if (J.since < 0.3) {
+        acc += J.axis * sp.swim * P.swim * 1.1 * (1.0 + 0.6 * env.x * mk) * select(1.0, 0.25, down);
+    }
+    if (down) {
+        acc.y -= 0.05;
+    }
+    J.vel = J.vel * exp(-dt * 1.3) + acc * dt * (R / BELL_R);
+    let flow = current(J.pos, V.time) * 0.05 * P.current * (0.6 + 0.4 * env.w * mk);
+    J.pos = clamp(J.pos + (J.vel + flow) * dt, -TANK * 1.1, TANK * 1.1);
+
+    // Its light.
+    let window = fract(V.time * 1.3) < dt * 1.3;
+    switch (k) {
+        case 1u: {
+            J.glow = 0.35 + env.y * mk;
+            J.flash = max(J.flash * exp(-dt / 0.35), V.onsets.y * mk * 0.8);
+        }
+        case 2u: {
+            J.glow = 0.3 + env.z * mk;
+            J.flash *= exp(-dt / 0.6);
+            let by_music = hit && hash21(vec2<f32>(V.beat_count + V.time, id)) < 0.55;
+            let by_itself = window && hash21(vec2<f32>(floor(V.time * 1.3), id)) < 0.12;
+            if (select(by_music, by_itself, mode < 0.5)) {
+                J.flash = 1.0;
+            }
+        }
+        case 3u: {
+            J.flash *= exp(-dt / 2.5);
+            let strong = V.onsets.x > 0.9 && V.energy > 1.2 && low_hit && h3 < 0.5;
+            let rare = window && hash21(vec2<f32>(floor(V.time * 1.3), id + 50.0)) < 0.015;
+            if (drop || (mode > 0.5 && strong) || rare) {
+                J.flash = 1.0;
+            }
+            J.pa = (J.pa + dt * (0.12 + 1.6 * J.flash)) % 64.0;
+            J.glow = 0.25 + 0.6 * J.flash;
+        }
+        case 4u: {
+            J.pa = (J.pa + dt * (0.7 + 2.2 * env.z * mk)) % 64.0;
+            J.glow = 0.45 + env.z * mk * 0.8;
+        }
+        case 5u: {
+            J.pa = (J.pa + dt * (0.25 + 1.2 * env.w * mk)) % 64.0;
+            J.glow = 0.4 + env.w * mk * 0.7;
+        }
+        default: {
+            J.glow = 0.35 + 0.25 * sin(V.time * 0.5 + h1 * TAU) + env.x * mk * 0.9;
+        }
+    }
     return J;
 }
 
-// Where tentacle t (of n) leaves jelly J's rim, and whether it is an oral arm.
-fn anchor(J: Jelly, t: u32, n: u32) -> vec3<f32> {
-    let oral = n >= 4u && (t == n / 2u - 1u || t == n / 2u);
-    var x = 0.0;
-    if (oral) {
-        x = select(-0.12, 0.12, t == n / 2u);
-    } else if (n > 1u) {
-        x = mix(-0.85, 0.85, f32(t) / f32(n - 1u));
+// ---------------------------------------------------------------- strands and arms
+
+fn strand_count() -> u32 {
+    let P = params();
+    if (P.tentacles < 0.01) {
+        return 0u;
     }
-    x *= 1.0 - 0.22 * J.c;
-    let y = -0.1 * (1.0 - x * x) * select(1.0, 0.3, oral);
-    let p = J.pos + rotate(vec2<f32>(x, y) * BELL * jelly_scale(J), J.heading);
-    return vec3<f32>(p, select(0.0, 1.0, oral));
+    return clamp(u32(round(species_of(kind()).strands * P.tentacles)), 1u, STRANDS);
 }
 
-fn segment_length(J: Jelly, oral: bool) -> f32 {
-    return 0.5 * params().reach * BELL / 0.11 * jelly_scale(J) / f32(SEGS) * select(1.0, 0.45, oral);
+// Where strand s (of n) leaves the bell, in the bell's own units.
+fn strand_root(J: Jelly, s: u32, n: u32) -> vec3<f32> {
+    let k = kind();
+    if (k == COMB) {
+        // Two tentacles from the sides, halfway down.
+        return bell_local(k, 0.55, select(0.0, 0.5, s == 1u), 0.0) * 0.9;
+    }
+    var th = (f32(s) + 0.5) / f32(max(n, 1u));
+    var t = 1.0;
+    if (k == LION) {
+        // Hair in eight clusters under the lobes.
+        let cluster = s % 8u;
+        let within = f32(s / 8u) / f32(max(n / 8u, 1u));
+        th = (f32(cluster) + 0.5 + (within - 0.5) * 0.7) / 8.0;
+        t = 0.88 + 0.12 * fract(f32(s) * 0.618);
+    }
+    return bell_local(k, t, th, local_stroke(J, t));
 }
 
-// One frame of a tentacle segment. It stays where it was (the water holds
-// it, so it trails when the jelly moves) while easing toward hanging below
-// its parent (the rim, or the segment above as it was last frame), bent by a
-// sway wave that runs down the tentacle, and is kept at its length. No
-// momentum: a chain with momentum overshoots and winds itself into loops.
-fn segment_step(i: u32) -> vec4<f32> {
+fn strand_length(s: u32) -> f32 {
+    let sp = species_of(kind());
+    // The atolla trails one long tentacle.
+    let long = kind() == ATOLLA && s == 0u;
+    // Each strand its own length, so the ends are ragged, not a cut edge.
+    let ragged = select(mix(0.55, 1.0, fract(f32(s) * 0.618 + 0.3)), 1.0, kind() == COMB);
+    return sp.strand_len * select(1.0, 7.0, long) * ragged * params().reach;
+}
+
+// The direction strands hang: away from the bell, a little down, behind
+// its motion, with the current, bent by a sway wave running down them.
+fn hang_dir(J: Jelly, at: vec3<f32>, k: u32, s: u32, j: u32, amp: f32) -> vec3<f32> {
+    let P = params();
+    let hang = normalize(-J.axis * 0.75 + vec3<f32>(0.0, -0.45, 0.0) - J.vel * 2.0 + current(at, V.time) * 0.15 * P.current);
+    let e1 = perpendicular(hang);
+    let e2 = cross(hang, e1);
+    let w = V.time * 1.6 - f32(k) * 0.38 + f32(s) * 0.9 + f32(j) * 2.3;
+    return normalize(hang + (e1 * sin(w) + e2 * cos(w * 1.3 + f32(s))) * amp);
+}
+
+fn strand_step(i: u32) -> vec4<f32> {
     let P = params();
     let dt = clamp(V.dt, 0.0, 0.1);
-    let idx = i - TENT0;
-    let s = idx % SEGS;
-    let tt = idx / SEGS;
-    let j = tt / MAX_T;
-    let t = tt % MAX_T;
-    let n = tentacle_count();
+    let idx = i - STRAND0;
+    let k = idx % SEG;
+    let s = (idx / SEG) % STRANDS;
+    let j = idx / (SEG * STRANDS);
     let J = jelly_at(j);
-    let a = anchor(J, t, n);
-    let oral = a.z > 0.5;
-    let L = segment_length(J, oral);
-    let down = -up_of(J.heading);
-    // Not swimming yet (or just spawned): hang straight down from the rim.
-    if (j >= jelly_count() || t >= n || J.age < 1.5) {
-        let p = a.xy + down * L * f32(s + 1u);
-        return vec4<f32>(p, p);
+    let n = strand_count();
+    let anchor = to_world(J, strand_root(J, s, n));
+    if (j >= jelly_count() || s >= n) {
+        return vec4<f32>(anchor, 0.0);
     }
-    let parent = select(item(i - 1u).xy, a.xy, s == 0u);
-    let cur = item(i).xy;
-    // Hanging: below the bell, a little towards the world's down.
-    let hang = normalize(down + vec2<f32>(0.0, -0.5));
-    let wave = sin(V.time * 2.2 - f32(s) * 0.4 + f32(t) * 1.3 + f32(j) * 2.1);
-    let bend = wave * 0.35 * P.sway * (0.4 + 0.6 * min(V.mid, 2.0) * P.react) * select(1.0, 1.5, oral);
-    let rest = rotate(hang, bend);
-    let held = normalize(cur - parent + vec2<f32>(1e-6, 0.0));
-    let dir = normalize(mix(held, rest, 1.0 - exp(-dt * select(3.0, 5.0, oral))) + vec2<f32>(1e-6, 0.0));
-    let p = parent + dir * L;
-    return vec4<f32>(p, cur);
+    let len = strand_length(s) * radius(J) / f32(SEG);
+    let hair = kind() == LION;
+    let amp = 0.3 * P.sway * (0.5 + 0.5 * item(1u).y * music()) * select(1.0, 0.6, hair);
+    let rest = hang_dir(J, anchor, k, s, j, amp);
+    if (J.age < 1.5) {
+        return vec4<f32>(anchor + rest * len * f32(k + 1u), 0.0);
+    }
+    let parent = select(item(i - 1u).xyz, anchor, k == 0u);
+    let p = chain_link(item(i).xyz, parent, rest, 1.0 - exp(-dt * select(3.0, 1.6, hair)), len);
+    return vec4<f32>(p, 0.0);
+}
+
+fn arm_step(i: u32) -> vec4<f32> {
+    let P = params();
+    let dt = clamp(V.dt, 0.0, 0.1);
+    let idx = i - ARM0;
+    let k = idx % ARM_SEG;
+    let a = (idx / ARM_SEG) % ARMS;
+    let j = idx / (ARM_SEG * ARMS);
+    let J = jelly_at(j);
+    let th = (f32(a) + 0.5) / f32(ARMS);
+    let root = vec3<f32>(0.12 * cos(th * TAU), 0.05, 0.12 * sin(th * TAU));
+    let anchor = to_world(J, root);
+    let len = species_of(kind()).arm_len * P.arms * radius(J) / f32(ARM_SEG);
+    if (j >= jelly_count() || len <= 0.0) {
+        return vec4<f32>(anchor, 0.0);
+    }
+    // Arms hang under the bell; a sea nettle's spiral slowly round each other.
+    let twist = select(0.0, f32(k) * 0.45 + V.time * 0.3, kind() == NETTLE) + f32(a) * 1.5708;
+    let ex = frame_x(J);
+    let ez = cross(J.axis, ex);
+    let amp = 0.2 * P.sway * (0.5 + 0.5 * item(1u).y * music());
+    let wobble = vec3<f32>(sin(V.time * 0.9 + f32(k) * 0.5 + f32(a)), 0.0, cos(V.time * 0.7 + f32(k) * 0.4)) * amp;
+    let rest = normalize(-J.axis + vec3<f32>(0.0, -0.3, 0.0) - J.vel * 2.0 + (ex * cos(twist) + ez * sin(twist)) * 0.3 + current(anchor, V.time) * 0.1 * P.current + wobble);
+    if (J.age < 1.5) {
+        return vec4<f32>(anchor + rest * len * f32(k + 1u), 0.0);
+    }
+    let parent = select(item(i - 1u).xyz, anchor, k == 0u);
+    return vec4<f32>(chain_link(item(i).xyz, parent, rest, 1.0 - exp(-dt * 2.0), len), 0.0);
+}
+
+// The sound, smoothed and bounded: what sways them, never jolts them.
+fn sound_step() -> vec4<f32> {
+    let dt = clamp(V.dt, 0.0, 0.1);
+    let last = item(1u);
+    let want = vec4<f32>(
+        clamp((V.bass - 0.8) * 1.2 + V.onsets.x * 0.5, 0.0, 2.0),
+        clamp((V.mid - 0.8) * 1.2 + V.onsets.y * 0.4, 0.0, 2.0),
+        clamp((V.treble - 0.8) * 1.2 + V.onsets.z * 0.6, 0.0, 2.0),
+        clamp(V.energy - 0.6, 0.0, 2.0)
+    );
+    let up = vec4<f32>(vec3<f32>(1.0 - exp(-dt / 0.08)), 1.0 - exp(-dt / 1.2));
+    let down = vec4<f32>(vec3<f32>(1.0 - exp(-dt / 0.35)), 1.0 - exp(-dt / 1.2));
+    return last + (want - last) * select(down, up, want > last);
 }
 
 fn prepare(i: u32) -> vec4<f32> {
-    if (i == 0u) {
-        return vec4<f32>(1.0, 0.0, 0.0, 0.0);
+    if (i >= ARM0) {
+        return arm_step(i);
     }
-    if (i < TENT0) {
-        let j = (i - JELLY0) / 3u;
-        let J = jelly_step(j);
-        switch ((i - JELLY0) % 3u) {
-            case 0u: { return vec4<f32>(J.pos, J.vel); }
-            case 1u: { return vec4<f32>(J.heading, J.since, J.c, J.last_beat); }
-            default: { return vec4<f32>(J.z, J.size, J.hue, J.age); }
+    if (i >= STRAND0) {
+        return strand_step(i);
+    }
+    if (i >= JELLY0) {
+        let J = jelly_step((i - JELLY0) / 5u);
+        switch ((i - JELLY0) % 5u) {
+            case 0u: { return vec4<f32>(J.pos, J.since); }
+            case 1u: { return vec4<f32>(J.vel, 0.0); }
+            case 2u: { return vec4<f32>(J.axis, J.spin); }
+            case 3u: { return vec4<f32>(J.size, J.hue, J.age, J.last_beat); }
+            default: { return vec4<f32>(J.glow, J.flash, J.pa, J.pb); }
         }
     }
-    return segment_step(i);
+    switch (i) {
+        case 1u: { return sound_step(); }
+        case 2u: {
+            let ev = item(2u);
+            let drop = V.onsets.x > 0.85 && V.swell > 1.0 && ev.z < 0.3;
+            let env = select(ev.z * exp(-clamp(V.dt, 0.0, 0.1) / 2.0), 1.0, drop);
+            return vec4<f32>(select(0.0, 1.0, V.hits.w > 0.5), select(0.0, 1.0, V.hits.x > 0.5), env, 0.0);
+        }
+        default: { return vec4<f32>(1.0, 0.0, 0.0, 0.0); }
+    }
 }
 
-// How bright jelly J is: far ones dimmer, brighter as it squeezes.
-fn brightness(J: Jelly) -> f32 {
-    let P = params();
-    return mix(0.35, 1.0, J.z) * (0.55 + 1.2 * J.c * P.react) * P.glow;
-}
-
-// ---------------------------------------------------------------- tentacles
+// ---------------------------------------------------------------- tentacles and hair
 
 fn point(i: u32) -> LinePoint {
-    let s = i % SEGS;
-    let tt = i / SEGS;
-    let j = tt / MAX_T;
-    let t = tt % MAX_T;
-    let n = tentacle_count();
+    let P = params();
+    let k = i % SEG;
+    let s = (i / SEG) % STRANDS;
+    let j = i / (SEG * STRANDS);
     let J = jelly_at(j);
+    let sp = species_of(kind());
+    let cam = the_camera();
+    let p3 = item(STRAND0 + i).xyz;
+    let pr = project(cam, p3);
     var q: LinePoint;
-    q.pos = item(TENT0 + i).xy;
-    // A tentacle's last point ends its stroke; unused ones draw nothing.
-    let on = j < jelly_count() && t < n && J.age > 2.5 && s + 1u < SEGS;
-    let oral = anchor(J, t, n).z > 0.5;
-    let u = f32(s) / f32(SEGS - 1u);
-    let k = sqrt(jelly_scale(J));
-    q.width = select(0.0, mix(2.4, 0.5, u) * k * select(1.0, 2.2, oral), on);
-    q.colour = colour(J.hue + 0.08 + 0.15 * u) * pow(1.0 - u, 1.2) * brightness(J) * select(0.9, 1.3, oral);
+    q.pos = pr.xy;
+    let on = j < jelly_count() && s < strand_count() && J.age > 2.5 && k + 1u < SEG && pr.z > 0.0;
+    let u = f32(k) / f32(SEG - 1u);
+    let scale = pr.z / (cam.focal / cam.dist);
+    q.width = select(0.0, sp.strand_px * scale * sqrt(P.size * J.size) * mix(1.0, 0.35, u), on);
+    var light = (0.35 + 0.5 * J.glow) * (1.0 - 0.7 * u) * select(1.0, 0.35, kind() == LION);
+    switch (kind()) {
+        case 5u: {
+            // Waves of light running down the hair.
+            light *= 0.2 + 4.0 * pow(0.5 + 0.5 * sin(u * 12.0 - J.pa * 6.0 + f32(s / 8u) * 0.4), 4.0) * J.glow;
+        }
+        case 3u: {
+            light *= select(0.7, 1.0, s == 0u);
+        }
+        case 2u: {
+            light *= 0.1 + J.flash * 0.5;
+        }
+        case 4u: {
+            light *= 0.4;
+        }
+        default: {}
+    }
+    q.colour = tone(2u, J.hue + 0.1 * u) * light * depth_fade(cam, p3, cam.dist - 1.0, 0.35) * P.glow;
     return q;
 }
 
-// ---------------------------------------------------------------- bells
+// ---------------------------------------------------------------- bells and arms
 
-// Each jelly is a quad round its bell, in bell units (half-width 1, height
-// 1): x -1.45..1.45, y -0.55..1.45, turned by its heading.
-fn vertex(i: u32) -> MeshVertex {
-    let j = i / 6u;
+fn vertex(vi: u32) -> MeshVertex {
+    let P = params();
+    let j = vi / CORNERS_J;
+    let l = vi % CORNERS_J;
     let J = jelly_at(j);
     var v: MeshVertex;
-    v.colour = vec4<f32>(0.0);
+    v.pos = vec4<f32>(0.0, 0.0, 0.0, 1.0);
     if (j >= jelly_count() || J.age < 1.5) {
-        v.pos = vec4<f32>(0.0, 0.0, 0.0, 1.0);
         return v;
     }
-    var cx = array<f32, 6>(0.0, 1.0, 1.0, 0.0, 1.0, 0.0);
-    var cy = array<f32, 6>(0.0, 0.0, 1.0, 0.0, 1.0, 1.0);
-    let local = vec2<f32>(mix(-1.45, 1.45, cx[i % 6u]), mix(-0.55, 1.45, cy[i % 6u]));
-    let p = J.pos + rotate(local * BELL * jelly_scale(J), J.heading);
-    v.pos = vec4<f32>(p, 0.0, 1.0);
-    v.data = vec4<f32>(local, J.c, f32(j) + 0.5);
+    let cam = the_camera();
+    let k = kind();
+    let tri = l / 3u;
+    let corner = l % 3u;
+    // Corner offsets of a quad's two triangles.
+    var da = array<u32, 6>(0u, 1u, 1u, 0u, 1u, 0u);
+    var db = array<u32, 6>(0u, 0u, 1u, 0u, 1u, 1u);
+    let c6 = (tri % 2u) * 3u + corner;
+    if (l < BELL_CORNERS) {
+        let quad = tri / 2u;
+        let t = f32(quad / SECTORS + da[c6]) / f32(RINGS);
+        let th = f32(quad % SECTORS + db[c6]) / f32(SECTORS);
+        let c = local_stroke(J, t);
+        let lp = bell_local(k, t, th, c);
+        let tt = clamp(t, 0.03, 0.97);
+        let along = bell_local(k, tt + 0.02, th, local_stroke(J, tt + 0.02)) - bell_local(k, tt - 0.02, th, local_stroke(J, tt - 0.02));
+        let round = bell_local(k, tt, th + 0.01, c) - bell_local(k, tt, th - 0.01, c);
+        let wp = to_world(J, lp);
+        let wn = dir_to_world(J, cross(along, round));
+        v.pos = clip_pos(cam, wp);
+        v.data = vec4<f32>(t, th, facing(cam, wp, wn), f32(j) + 0.5);
+        v.colour = vec4<f32>(depth_fade(cam, wp, cam.dist - 1.0, 0.35), c, 0.0, 0.0);
+        return v;
+    }
+    // An oral arm: a ribbon along its links, two half-quads across, turned to the camera.
+    let sp = species_of(k);
+    if (sp.arm_len <= 0.0 || P.arms < 0.01) {
+        return v;
+    }
+    let quad = (l - BELL_CORNERS) / 6u;
+    let a = quad / ((ARM_SEG - 1u) * 2u);
+    let link = (quad % ((ARM_SEG - 1u) * 2u)) / 2u;
+    let side = select(-1.0, 1.0, quad % 2u == 1u);
+    let kk = link + da[c6];
+    let base = ARM0 + (j * ARMS + a) * ARM_SEG;
+    let at = item(base + kk).xyz;
+    let dir = normalize(item(base + min(kk + 1u, ARM_SEG - 1u)).xyz - item(base + max(kk, 1u) - 1u).xyz + vec3<f32>(1e-6, 0.0, 0.0));
+    let across = normalize(cross(dir, camera_position(cam) - at) + vec3<f32>(0.0, 1e-6, 0.0));
+    let out = cross(dir, across);
+    let u = f32(kk) / f32(ARM_SEG - 1u);
+    let width = sp.arm_w * radius(J) * P.arms * mix(1.0, 0.45, u);
+    let x = f32(db[c6]) * side;
+    let frill = sin(u * 18.0 + V.time * 1.5 + f32(a) * 2.0) * 0.45 * width * abs(x);
+    let wp = at + across * x * width + out * frill;
+    v.pos = clip_pos(cam, wp);
+    v.data = vec4<f32>(u, x, 0.5, f32(j) + 16.5);
+    v.colour = vec4<f32>(depth_fade(cam, wp, cam.dist - 1.0, 0.35), 0.0, 0.0, 0.0);
     return v;
+}
+
+// The species' own light on its bell at (t, th).
+fn bell_light(J: Jelly, t: f32, th: f32) -> vec3<f32> {
+    let ang = th * TAU;
+    switch (kind()) {
+        case 1u: {
+            let stripes = pow(0.5 + 0.5 * cos(ang * 16.0), 6.0) * smoothstep(0.1, 0.3, t);
+            return tone(1u, J.hue) * stripes * (0.5 + J.glow * 1.8 + J.flash * 1.2);
+        }
+        case 2u: {
+            let canals = pow(0.5 + 0.5 * cos(ang * 96.0), 80.0) * smoothstep(0.2, 0.95, t) * 0.12;
+            let dots = pow(0.5 + 0.5 * cos(ang * 48.0), 4.0) * smoothstep(0.8, 0.99, t);
+            return tone(0u, J.hue) * canals * (0.3 + J.glow) + tone(1u, J.hue) * dots * (1.5 + 2.0 * J.glow + J.flash * 10.0);
+        }
+        case 3u: {
+            let rim = smoothstep(0.9, 0.99, t);
+            let dots = pow(0.5 + 0.5 * cos(ang * 20.0), 8.0) * rim * 0.5;
+            let d = fract(th - J.pa);
+            let wheel = exp(-d * 8.0) * rim * J.flash * 8.0;
+            return tone(1u, J.hue) * (dots + wheel);
+        }
+        case 4u: {
+            let m = abs(fract(th * 8.0 + 0.5) - 0.5);
+            let row = exp(-m / 0.05) * smoothstep(0.1, 0.2, t) * smoothstep(0.9, 0.8, t);
+            let plates = pow(0.5 + 0.5 * cos(t * TAU * 22.0 - J.pa * TAU * 1.5), 3.0);
+            let irid = select(colour(t - J.pa * 0.2), spectrum(t * 2.0 - J.pa * 0.5 + th), params().colours > 0.5);
+            return irid * row * plates * (0.8 + J.glow * 2.5);
+        }
+        case 5u: {
+            let folds = pow(0.5 + 0.5 * cos(ang * 32.0), 8.0) * 0.5 * t;
+            let heart = exp(-t * 3.0) * 0.6;
+            return tone(1u, J.hue) * (folds + heart) * (0.5 + J.glow * 1.5);
+        }
+        default: {
+            // Four horseshoe gonads seen through the bell, and faint canals.
+            let q = t * vec2<f32>(cos(ang), sin(ang));
+            var g = 0.0;
+            for (var n = 0u; n < 4u; n++) {
+                let a = (f32(n) + 0.5) * 1.5708;
+                let c = 0.36 * vec2<f32>(cos(a), sin(a));
+                let off = q - c;
+                let d = abs(length(off) - 0.13);
+                let open = smoothstep(0.5, -0.1, dot(normalize(off + vec2<f32>(1e-5, 0.0)), normalize(c)));
+                g += max(exp(-d / 0.04) - 0.01, 0.0) * open;
+            }
+            let canals = pow(0.5 + 0.5 * cos(ang * 16.0), 40.0) * 0.2 * t;
+            return tone(1u, J.hue) * (g * (0.8 + J.glow * 2.2) + canals);
+        }
+    }
 }
 
 fn paint(f: MeshFragment) -> vec4<f32> {
     let P = params();
-    let J = jelly_at(u32(f.data.w));
-    let q = f.data.xy;
-    let c = f.data.z;
-    // The bell squeezes narrower and taller.
-    let w = 1.0 - 0.22 * c;
-    let h = 1.0 + 0.15 * c;
-    let e = length(vec2<f32>(q.x / w, max(q.y, 0.0) / h));
-    let rim_y = -0.12 * (1.0 - min(q.x * q.x / (w * w), 1.0)) * (1.0 - 0.6 * c);
-    let d = max((e - 1.0) * min(w, h), rim_y - q.y);
-    let inside = smoothstep(0.02, -0.02, d);
-    // Outline glow, a faint translucent fill brighter towards the top.
-    let outline = max(exp(-abs(d) / 0.06) - 0.004, 0.0);
-    let fill = inside * 0.12 * (0.5 + 0.5 * clamp(q.y / h, 0.0, 1.0));
-    // Radial canals from the crown and a ring of gonads.
-    let a = atan2(q.x, -(q.y - 0.95 * h));
-    let canals = pow(max(cos(a * 8.0), 0.0), 12.0) * inside * 0.3;
-    let g = length(vec2<f32>(q.x * 1.15, q.y - 0.42 * h));
-    let gonads = max(exp(-abs(g - 0.3) / 0.05) - 0.01, 0.0) * inside * 0.45 * (0.6 + 0.4 * sin(atan2(q.x, q.y - 0.42 * h) * 4.0));
-    // Rim lights: dots along the margin, sparkling with the treble.
-    let margin = max(exp(-abs(q.y - rim_y) / 0.05) - 0.01, 0.0) * step(abs(q.x), w);
-    let dots = pow(max(sin(q.x * 24.0 + V.time * 3.0 + f.data.w * 5.0), 0.0), 6.0) * margin * P.rim * (0.5 + 1.5 * min(V.treble, 2.0) * P.react);
-    let b = brightness(J);
-    let light = colour(J.hue) * (outline * 0.9 + fill + canals + gonads) + colour(J.hue + 0.2) * dots * 1.5;
-    // Fade to nothing at the quad's edges so no seam shows.
-    let mask = smoothstep(1.45, 1.15, abs(q.x)) * smoothstep(-0.55, -0.3, q.y) * smoothstep(1.45, 1.2, q.y);
-    return vec4<f32>(light * b * mask, 0.0);
+    let arm = f.data.w > 16.0;
+    let J = jelly_at(u32(f.data.w - select(0.0, 16.0, arm)));
+    let fade = f.colour.x * P.glow;
+    if (arm) {
+        let u = f.data.x;
+        let x = f.data.y;
+        let edge = pow(abs(x), 2.5);
+        let ruffle = 0.5 + 0.5 * sin(u * 45.0 + V.time * 2.0 + x * 6.0);
+        let light = (0.12 + 0.6 * edge + 0.3 * ruffle * edge) * (1.0 - 0.7 * u) * (0.5 + 0.6 * J.glow);
+        return vec4<f32>(tone(3u, J.hue + 0.05) * light * 0.6 * fade, 0.0);
+    }
+    let t = f.data.x;
+    let th = f.data.y;
+    // Glass: the edges seen side on glow, the faces stay clear.
+    let rim = fresnel(f.data.z, 2.2);
+    let glass = (0.03 + 0.35 * rim) * P.body * select(1.0, 0.6, kind() == COMB);
+    var c = tone(0u, J.hue) * glass;
+    // A glowing margin (not on the comb jelly, whose "margin" is a pole).
+    if (kind() != COMB) {
+        c += tone(0u, J.hue) * max(exp(-(1.0 - t) / 0.03) - 0.01, 0.0) * 0.25 * P.body;
+    }
+    c += bell_light(J, t, th) * P.light;
+    return vec4<f32>(c * fade, 0.0);
 }
 
-// ---------------------------------------------------------------- water
+// ---------------------------------------------------------------- the tank
 
-// Plankton: two layers of faint specks drifting slowly upward, twinkling.
+// Deep water with light shafts from above, and plankton at three depths
+// that shifts with the camera.
 fn shade(uv: vec2<f32>) -> vec3<f32> {
     let P = params();
-    var c = vec3<f32>(0.0);
-    if (P.plankton < 0.001) {
-        return c;
-    }
+    let cam = the_camera();
     let p = centred(uv);
-    for (var l = 0u; l < 2u; l++) {
-        let scale = select(9.0, 17.0, l == 1u);
-        let q = (p - vec2<f32>(0.0, V.flow * 0.012 * f32(l + 1u))) * scale;
-        let cell = floor(q);
-        let hh = hash22(cell + f32(l) * 31.0);
-        if (hh.x > 0.35) {
-            continue;
+    var c = vec3<f32>(0.0);
+    if (P.water > 0.001) {
+        let deep = select(colour(0.55) * 0.02, vec3<f32>(0.0, 0.012, 0.03), P.colours > 0.5);
+        let near = select(colour(0.55) * 0.045, vec3<f32>(0.0, 0.035, 0.065), P.colours > 0.5);
+        // Kept faint: the layer's levelling evens out its mean brightness, and
+        // water filling the frame would otherwise be lifted to full brightness.
+        c += mix(deep, near, smoothstep(-1.0, 1.0, p.y)) * P.water * 0.12;
+        let sx = p.x + p.y * 0.35 + cam.yaw * 0.8;
+        let shafts = pow(noise(vec2<f32>(sx * 2.5, V.time * 0.04)), 5.0) * smoothstep(-0.3, 1.0, p.y);
+        c += near * shafts * 0.3 * P.water;
+    }
+    if (P.plankton > 0.001) {
+        for (var l = 0u; l < 3u; l++) {
+            let depth = f32(l) + 1.0;
+            let scale = 5.0 + 6.0 * depth;
+            let q = (p + vec2<f32>(cam.yaw * (1.2 - 0.3 * depth), -V.time * 0.01 / depth)) * scale;
+            let cell = floor(q);
+            let hh = hash22(cell + f32(l) * 31.0);
+            if (hh.x > 0.35) {
+                continue;
+            }
+            let at = cell + 0.2 + 0.6 * hash22(cell + 7.0 + f32(l) * 13.0);
+            let d = length(q - at);
+            let r = 0.05 + 0.05 * hh.y;
+            let twinkle = 0.5 + 0.5 * sin(V.time * (1.0 + 2.0 * hh.y) + hh.x * 40.0);
+            let tint = select(colour(hh.y), vec3<f32>(0.6, 0.8, 1.0), P.colours > 0.5);
+            c += tint * max(exp(-d * d / (r * r)) - 0.01, 0.0) * P.plankton * 0.02 * twinkle / depth;
         }
-        let at = cell + 0.2 + 0.6 * hash22(cell + 7.0 + f32(l) * 13.0);
-        let d = length(q - at);
-        let r = 0.05 + 0.05 * hh.y;
-        let twinkle = 0.5 + 0.5 * sin(V.time * (1.0 + 2.0 * hh.y) + hh.x * 40.0);
-        c += colour(hh.y) * max(exp(-d * d / (r * r)) - 0.01, 0.0) * P.plankton * 0.15 * twinkle * select(1.0, 0.6, l == 1u);
     }
     return c;
 }

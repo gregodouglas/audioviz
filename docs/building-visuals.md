@@ -407,6 +407,17 @@ return steady + kept;
 
 The **Sigil** works this way: its rings, orbs and star are drawn fresh each frame, while its rays, the pen on the trace, the drips and the drop flare go into the trail and fade by the Afterimage control. A pixel that does not call `write_trail` leaves black in the trail. It costs a second full-size texture and a second target in the full-screen pass.
 
+## Creatures
+
+For living things moving in 3D, add `"uses": ["creatures"]` to `visual.json`: the creature library then sits in front of your code (the list is in `docs/visuals.md`). **Jellyfish** (`assets/visuals/jellyfish/`) is built on it and is worth reading whole. What it learned:
+
+- **Keep the state in prepare items and decide the frame's events in every item the same way** (a stroke starting, a drop), from last frame's items.
+- **Chains without momentum.** `chain_link` keeps a link where it was (so it trails), eases it toward a rest direction from its parent and holds its length. Chains with momentum overshoot and wind into loops.
+- **Steering: a pull of at most 1 toward a wandering spot, plus a push apart.** Without the cap a far spot outweighs the push and creatures pile into each other; a creature that always swims "up" piles against the top, so give each its own `wander_point`.
+- **Mind the levelling.** A layer is levelled to the mean brightness of its lit part. A background that fills the frame (water, fog) is then lifted to full brightness and the creatures are dimmed under it; keep backgrounds off by default and faint when on. Likewise many faint strands add up: hundreds of hairs at the brightness of one tentacle drown their bell.
+- **Additive light needs no sorting.** Glowing creatures drawn with alpha 0 look right in any order; only covering (alpha 1) needs far-to-near.
+- **Look from slightly below.** A camera level with the tank shows bells edge on and hides what glows inside them.
+
 ## A performance budget
 
 `shade` runs for every pixel: 3.7 million at 2560x1440, 8.3 million at 4K, every frame. A line of code is cheap; a line inside a loop is that line times the loop count, times millions.
@@ -428,6 +439,7 @@ What a frame costs (release build, RTX 2070 Super, 2560x1440):
 | Eclipse at 64 dots | 2.7 |
 | Eclipse at 16 and 64 dots before it had a `prepare` step | 1.1 and 4.5 |
 | Sigil (rings, rays, orbs, star, triangles, trace and drips per pixel; 81 prepare items; a trail) | ~2.8 |
+| Jellyfish (12 lion's manes: 1440 hairs, 12 bells, 48 arms, in 3D) | 0.48 |
 | Black hole (a ray march per pixel) | ~4 |
 
 The frame you have: 4.2 ms at 240 Hz, 6.9 at 144, 16.7 at 60, for everything: three layers, their effects, the Picture and the panel. The app's own goal is that a full scene runs on one ordinary PC. So **aim for 1 ms or less for a visual at 2560x1440**, treat 2 ms as heavy, and leave 3.5 ms to the two built-ins that earn it. Costs scale with pixels: double them for 4K.

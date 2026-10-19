@@ -46,6 +46,7 @@ shader_table!(
     "glow.wgsl",
     "vignette.wgsl",
     "colorify.wgsl",
+    "creatures.wgsl",
 );
 
 fn is_prelude(name: &str) -> bool {
@@ -84,6 +85,12 @@ impl ShaderSet {
         }
         out.push_str(&self.sources[i]);
         out
+    }
+
+    /// One file as it is, nothing in front (a library a loaded visual opts in to).
+    pub fn raw(&self, name: &str) -> &str {
+        let i = NAMES.iter().position(|n| *n == name).unwrap_or_else(|| panic!("unknown shader {name}"));
+        &self.sources[i]
     }
 
     /// The shared `params.wgsl` plus the file, without the visuals' own

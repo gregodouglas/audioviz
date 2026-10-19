@@ -24,8 +24,6 @@ shader_table!(
     "loop.wgsl",
     "ripples_params.wgsl",
     "ripples.wgsl",
-    "spiral_params.wgsl",
-    "spiral.wgsl",
     "visual_api.wgsl",
     "visual_lines.wgsl",
     "waves.wgsl",

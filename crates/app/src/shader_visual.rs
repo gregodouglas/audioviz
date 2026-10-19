@@ -110,6 +110,9 @@ struct Manifest {
     /// How many points `point(i)` gives a line drawn over the picture (0 = no line).
     #[serde(default)]
     line: u32,
+    /// A param whose value is how many of the line's points are drawn.
+    #[serde(default)]
+    line_count: String,
 }
 
 /// A loaded visual, as the registry holds it.
@@ -127,6 +130,10 @@ pub struct ShaderDef {
     pub items: u32,
     /// Points of the line `point` draws (0 = none).
     pub line: u32,
+    /// The param that sets how many of them are drawn (empty = all).
+    pub line_count: String,
+    /// The code has `fn shade` (a line visual may leave it out).
+    pub shade: bool,
     pub wgsl: String,
     /// The folder it came from, watched for changes (none for embedded copies).
     pub dir: Option<PathBuf>,
@@ -184,8 +191,14 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
         (true, true) if m.line < 2 => return Err("visual.json: a line needs at least 2 points".into()),
         _ => {}
     }
+    if !defines(wgsl, "shade") && m.line == 0 {
+        return Err("visual.wgsl needs fn shade(uv: vec2<f32>) -> vec3<f32> (only a visual with a line may leave it out)".into());
+    }
+    if !m.line_count.is_empty() && !m.params.iter().any(|p| p.id == m.line_count && matches!(p.kind, ParamKind::Integer | ParamKind::Slider)) {
+        return Err(format!("visual.json: line_count \"{}\" is not a number param", m.line_count));
+    }
     let short = if m.short.is_empty() { m.name.clone() } else { m.short };
-    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, wgsl: wgsl.to_string(), dir })
+    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), wgsl: wgsl.to_string(), dir })
 }
 
 // ------------------------------------------------------------ values
@@ -259,6 +272,10 @@ impl ShaderDef {
         }
         if self.line > 0 {
             prepare.push_str(&format!("\n@compute @workgroup_size({PREPARE_GROUP})\nfn cs_line(@builtin(global_invocation_id) id: vec3<u32>) {{\n    if (id.x < LINE_POINTS) {{\n        let q = point(id.x);\n        items_out[2u * id.x] = vec4<f32>(q.pos, q.width, 0.0);\n        items_out[2u * id.x + 1u] = vec4<f32>(q.colour, 0.0);\n    }}\n}}\n"));
+        }
+        // A line visual may leave out shade(): the line pass clears instead.
+        if !self.shade {
+            prepare.push_str("\nfn shade(uv: vec2<f32>) -> vec3<f32> {\n    return vec3<f32>(0.0);\n}\n");
         }
         prepare_after(&prepare, format!(
             "{}{}\n\n@fragment\nfn fs_main(in: FsIn) -> @location(0) vec4<f32> {{\n    let c = shade(in.uv);\n    // One NaN pixel would black out the layer's levelling: drop it.\n    let ok = all(c == c);\n    return vec4<f32>(select(vec3<f32>(0.0), max(c, vec3<f32>(0.0)), ok), 1.0);\n}}\n",
@@ -877,25 +894,34 @@ impl Scene for ShaderVisual {
         }
         let group = &self.groups[prev * 2 + self.icur];
         // The line's points, after prepare so point() can read this frame's items.
+        // How many points to draw: all, or what the line_count param says.
+        let count = match self.live.params.iter().position(|d| d.id == self.live.line_count) {
+            Some(k) => (p[k / 4][k % 4].round().max(2.0) as u32).min(self.line_len),
+            None => self.line_len,
+        };
         let line = match (&self.line_cs, &self.line_draw) {
-            (Some(cs), Some(draw)) if self.line_len >= 2 => {
+            (Some(cs), Some(draw)) if count >= 2 => {
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("loaded visual line points"), timestamp_writes: None });
                 pass.set_pipeline(cs);
                 pass.set_bind_group(0, group, &[]);
                 pass.set_bind_group(1, &self.line_out_group, &[]);
-                pass.dispatch_workgroups(self.line_len.div_ceil(PREPARE_GROUP), 1, 1);
+                pass.dispatch_workgroups(count.div_ceil(PREPARE_GROUP), 1, 1);
                 Some(draw)
             }
             _ => None,
         };
-        fullscreen_pass(encoder, &self.def.id, &self.out[write], wgpu::LoadOp::Clear(wgpu::Color::BLACK), pipeline, group);
+        let picture = self.live.shade || line.is_none();
+        if picture {
+            fullscreen_pass(encoder, &self.def.id, &self.out[write], wgpu::LoadOp::Clear(wgpu::Color::BLACK), pipeline, group);
+        }
         if let Some(draw) = line {
-            let u: [u32; 4] = [(ctx.width as f32).to_bits(), (ctx.height as f32).to_bits(), self.line_len, 0];
+            let u: [u32; 4] = [(ctx.width as f32).to_bits(), (ctx.height as f32).to_bits(), count, 0];
             queue.write_buffer(&self.line_uniform, 0, bytemuck::cast_slice(&u));
-            let mut pass = scene::begin_pass(encoder, "loaded visual line", &self.out[write], wgpu::LoadOp::Load);
+            let load = if picture { wgpu::LoadOp::Load } else { wgpu::LoadOp::Clear(wgpu::Color::BLACK) };
+            let mut pass = scene::begin_pass(encoder, "loaded visual line", &self.out[write], load);
             pass.set_pipeline(draw);
             pass.set_bind_group(0, &self.line_group, &[]);
-            pass.draw(0..6, 0..self.line_len - 1);
+            pass.draw(0..6, 0..count - 1);
         }
         self.cur = write;
     }

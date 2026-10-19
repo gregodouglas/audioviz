@@ -55,6 +55,7 @@ The visuals that ship with the app live in the repo under `assets/visuals/` and 
 | `feedback` | no | `true` keeps your last frame so `prev(uv)` can read it (example 3). Default `false`. |
 | `items` | no | How many values your `prepare` step computes each frame (up to 4096); required when `visual.wgsl` has `fn prepare`, and only then. See "Once a frame: prepare" below. |
 | `line` | no | How many points your line has (2 to 65536); required when `visual.wgsl` has `fn point`, and only then. See "Drawing a line" below. |
+| `line_count` | no | The id of a number control that says how many of the line's points to draw (Spiral's "Points"). |
 | `params` | no | Up to 16 controls (below). |
 
 Each entry in `params`:
@@ -354,9 +355,9 @@ fn point(i: u32) -> LinePoint {
 }
 ```
 
-The engine calls `point(i)` once for each point every frame (after `prepare`, so it can read this frame's items), then draws the segments between consecutive points as soft, round-capped strokes, added over whatever `shade` returned (return `vec3<f32>(0.0)` from `shade` if the line is all there is). Width and colour blend along each segment. A point with width 0 ends one stroke and the next point starts another, so one line can be many strokes. With `feedback`, the line is part of what `prev()` reads next frame, so trails work.
+The engine calls `point(i)` once for each point every frame (after `prepare`, so it can read this frame's items), then draws the segments between consecutive points as soft, round-capped strokes, added over whatever `shade` returned. If the line is all there is, leave `shade` out altogether: the engine then skips the full-screen pass, which at 2560x1440 is most of the cost of a line visual. Width and colour blend along each segment. A point with width 0 ends one stroke and the next point starts another, so one line can be many strokes. With `feedback`, the line is part of what `prev()` reads next frame, so trails work.
 
-**Harmonograph** (`assets/visuals/harmonograph/`) is the example: a damped Lissajous figure of 6000 points whose two swings run at the interval between the music's two strongest pitch classes. Its `prepare` step finds the interval and glides toward it (state, in one item), and `point` reads that item. It costs 0.19 ms at 2560x1440.
+**Harmonograph** (`assets/visuals/harmonograph/`) is the example: a damped Lissajous figure of 6000 points whose two swings run at the interval between the music's two strongest pitch classes. Its `prepare` step finds the interval and glides toward it (state, in one item), and `point` reads that item. It costs 0.05 ms at 2560x1440. **Spiral** is another: its "Points" control is named in `"line_count"`, so only that many points are computed and drawn.
 
 ## A performance budget
 
@@ -373,7 +374,8 @@ What a frame costs (release build, RTX 2070 Super, 2560x1440):
 | Comet (three heads, feedback) | 0.24 |
 | Pulse (five rings) | 0.44 |
 | Spectrum wheel (64 wedges, state and colours in `prepare`) | 0.16 (compiled in, it was 0.18) |
-| Harmonograph (a 6000-point line) | 0.19 |
+| Harmonograph (a 6000-point line, no `shade`) | 0.05 |
+| Spiral (1500 points, no `shade`) | 0.20 (compiled in, it was 0.26) |
 | Eclipse (16 dots, a loop with a halo per dot, levels in `prepare`) | 0.69 |
 | Eclipse at 64 dots | 2.7 |
 | Eclipse at 16 and 64 dots before it had a `prepare` step | 1.1 and 4.5 |

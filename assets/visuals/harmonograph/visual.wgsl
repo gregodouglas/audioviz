@@ -5,7 +5,7 @@
 //
 // prepare() keeps the state: the ratio gliding toward the current interval,
 // and the precession phase advancing on the music clock. point(i) gives the
-// line; shade() draws nothing of its own.
+// line; there is no shade(), so the line is the whole picture.
 
 // Item 0: (ratio, phase, 0, 0), last frame's inside prepare().
 fn prepare(i: u32) -> vec4<f32> {
@@ -52,8 +52,4 @@ fn point(i: u32) -> LinePoint {
     q.width = P.width * (0.5 + 0.7 * damp);
     q.colour = colour(u * P.span + 0.1 * state.y) * (0.25 + 1.2 * damp) * (0.6 + 0.6 * V.energy);
     return q;
-}
-
-fn shade(uv: vec2<f32>) -> vec3<f32> {
-    return vec3<f32>(0.0);
 }

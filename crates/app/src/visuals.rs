@@ -64,7 +64,6 @@ fn builtin() -> Vec<VisualDef> {
         scenes::crystal::def(),
         scenes::loops::def(),
         scenes::ripples::def(),
-        scenes::spiral::def(),
     ]
 }
 

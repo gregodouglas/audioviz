@@ -1341,61 +1341,6 @@ impl Default for RipplesParams {
     }
 }
 
-/// The curve a Spiral's points are placed on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum SpiralShape {
-    /// Radius grows with the point's index (an even-density Vogel spiral).
-    #[default]
-    Spiral,
-    /// Points on a rose curve, joined in step order (a Maurer rose).
-    Rose,
-}
-
-impl SpiralShape {
-    pub const ALL: [SpiralShape; 2] = [SpiralShape::Spiral, SpiralShape::Rose];
-    pub fn name(self) -> &'static str {
-        match self {
-            SpiralShape::Spiral => "Spiral",
-            SpiralShape::Rose => "Rose",
-        }
-    }
-}
-
-/// Spiral: one long polyline through points stepped round by an angle that
-/// drifts slowly, so the figure morphs between arms and star patterns; the
-/// waveform pushes each point in and out (`scenes/spiral.rs`).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct SpiralParams {
-    pub shape: SpiralShape,
-    pub points: u32,
-    /// Angle between consecutive points, degrees.
-    pub step: f32,
-    /// How fast the step drifts, degrees per second.
-    pub drift: f32,
-    /// Rose petals.
-    pub petals: u32,
-    /// Size, fraction of the short half-side.
-    pub radius: f32,
-    /// Waveform displacement.
-    pub amp: f32,
-    pub gain: f32,
-    /// Line width, pixels.
-    pub width: f32,
-    pub intensity: f32,
-    /// Turn speed.
-    pub spin: f32,
-    /// Beats kick the displacement; energy speeds the drift.
-    pub react: f32,
-}
-
-impl Default for SpiralParams {
-    fn default() -> Self {
-        Self { shape: SpiralShape::Spiral, points: 1500, step: 137.5, drift: 0.1, petals: 5, radius: 0.9, amp: 0.08, gain: 1.0, width: 1.0, intensity: 0.5, spin: 0.05, react: 0.5 }
-    }
-}
-
 /// How a director runs: by hand, by the system, or by a saved sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]

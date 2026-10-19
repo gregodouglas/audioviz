@@ -53,6 +53,7 @@ The visuals that ship with the app live in the repo under `assets/visuals/` and 
 | `credit` | no | Who the idea or code comes from, and the licence. Shown at the foot of the Visual tab. |
 | `hint` | no | A longer explanation at the foot of the Visual tab: what the controls do, which part of the music drives what. |
 | `feedback` | no | `true` keeps your last frame so `prev(uv)` can read it (example 3). Default `false`. |
+| `items` | no | How many values your `prepare` step computes each frame (up to 4096); required when `visual.wgsl` has `fn prepare`, and only then. See "Once a frame: prepare" below. |
 | `params` | no | Up to 16 controls (below). |
 
 Each entry in `params`:
@@ -84,7 +85,7 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
 }
 ```
 
-Add any helper functions and constants you like above it. Names the API already uses (below, plus `FsIn`, `fullscreen_vertex`, `vs_main`, `V`, `Params`) cannot be reused.
+Add any helper functions and constants you like above it. Names the API already uses (below, plus `FsIn`, `fullscreen_vertex`, `vs_main`, `fs_main`, `cs_main`, `V`, `Params`, `ITEMS`) cannot be reused.
 
 ### Coordinates
 
@@ -139,6 +140,7 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `wave(t)` | ~-1..1 | The last 1024 samples (`t` 0 oldest, 1 newest) as (left, right), auto-gained. |
 | `wave_mono(t)` | ~-1..1 | Their average. |
 | `prev(uv)` | colour | Your own last frame, before effects (with `"feedback": true`; black otherwise). |
+| `item(i)`, `ITEMS` | vec4 | Item `i` from your `prepare` step, and how many there are (`items` in the manifest). In `shade` this frame's value; inside `prepare` last frame's. |
 | `param(i)` | | Control `i` by position, for loops over controls. Usually `params()` is clearer. |
 
 Also available: `TAU` (2π), `hash21(p)` and `hash22(p)` (a pseudo-random 0..1 number or pair from a position), `noise(p)` (smooth value noise 0..1, one feature per unit), and `ign(p)` (interleaved gradient noise from a pixel position, for dithering).
@@ -279,6 +281,61 @@ What to take from it:
 
 `prev` is your visual's own output before the layer's effects. For echoes of the *finished* layer (after Kaleidoscope, say), use the Feedback effect instead; it works on any visual.
 
+## Once a frame: prepare
+
+Anything in `shade` that does not depend on the pixel (a dot's band level, its position, a `pow` of a level) is worked out again for every one of the 3.7 million pixels. A **prepare step** works such values out once a frame instead. Add a function to `visual.wgsl`:
+
+```wgsl
+fn prepare(i: u32) -> vec4<f32> { ... }
+```
+
+and say in `visual.json` how many items it makes: `"items": 128`. The engine calls `prepare(i)` once for each `i` below that number at the start of every frame (on the GPU, all at once), stores the four numbers each returns, and `shade` reads them with `item(i)`. `prepare` sees everything `shade` does: `V`, `params()`, `band_at`, `colour`. What it cannot do is depend on a pixel: it has no `uv`.
+
+Eclipse uses it for its dots. Each dot needs a position, a size, a level and a colour: five or more numbers, so each dot takes two items:
+
+```wgsl
+// Dot d is items 2d (centre x, centre y, size, level) and 2d + 1 (colour).
+fn prepare(i: u32) -> vec4<f32> {
+    let P = params();
+    let n = dot_count();
+    let d = i / 2u;
+    if (d >= n) {
+        return vec4<f32>(0.0);
+    }
+    let mirror = P.mirror > 0.5;
+    if (i % 2u == 1u) {
+        return vec4<f32>(ring_colour((f32(d) + 0.5) / f32(n), mirror, P.range), 0.0);
+    }
+    // ... the band level, pow, angle and size, as shade() used to do per pixel ...
+    return vec4<f32>(cos(a) * rr, sin(a) * rr, s, lvl);
+}
+
+fn shade(uv: vec2<f32>) -> vec3<f32> {
+    // ...
+    for (var d = 0u; d < n; d++) {
+        let dot_at = item(2u * d);
+        let dist = length(p - dot_at.xy);
+        // ... the dot's core and halo from dist, dot_at.z (size) and dot_at.w (level) ...
+        col += item(2u * d + 1u).rgb * (core * bright + halo * bright * 0.6);
+    }
+    // ...
+}
+```
+
+The loop in `shade` is still there, but each turn is now a subtraction, a length and a division instead of a spectrum lookup, a `pow`, a `sin` and a `cos`: 1.1 ms became 0.69 at 16 dots, and 4.5 became 2.7 at 64, faster than when Eclipse was compiled into the app.
+
+**Memory.** Inside `prepare`, `item(i)` returns *last frame's* value of item `i` (zero on the first frame). So a prepare step can keep state from frame to frame: smooth a level, hold a peak, integrate a position, count beats. A peak that falls slowly:
+
+```wgsl
+fn prepare(i: u32) -> vec4<f32> {
+    let level = band_at(f32(i) / f32(ITEMS));
+    let peak = max(level, item(i).y - 0.5 * V.dt);   // last frame's peak, falling 0.5 per second
+    return vec4<f32>(level, peak, 0.0, 0.0);
+}
+```
+
+Use `V.dt` for anything that accumulates, so it runs at the same speed at every frame rate. Items are not saved: they start from zero when the app starts or the visual is picked again.
+
 ## A performance budget
 
 `shade` runs for every pixel: 3.7 million at 2560x1440, 8.3 million at 4K, every frame. A line of code is cheap; a line inside a loop is that line times the loop count, times millions.
@@ -293,18 +350,19 @@ What a frame costs (release build, RTX 2070 Super, 2560x1440):
 | Polygon | 0.12 |
 | Comet (three heads, feedback) | 0.24 |
 | Pulse (five rings) | 0.44 |
-| Eclipse (16 dots, a loop with a halo per dot) | 1.1 |
-| Eclipse at 64 dots | 4.5 |
+| Eclipse (16 dots, a loop with a halo per dot, levels in `prepare`) | 0.69 |
+| Eclipse at 64 dots | 2.7 |
+| Eclipse at 16 and 64 dots before it had a `prepare` step | 1.1 and 4.5 |
 | The heaviest built-ins (Black hole, Sigil) | ~3.6 |
 
 The frame you have: 4.2 ms at 240 Hz, 6.9 at 144, 16.7 at 60, for everything: three layers, their effects, the Picture and the panel. The app's own goal is that a full scene runs on one ordinary PC. So **aim for 1 ms or less for a visual at 2560x1440**, treat 2 ms as heavy, and leave 3.5 ms to the two built-ins that earn it. Costs scale with pixels: double them for 4K.
 
-**The loop-per-pixel trap.** Eclipse loops over its dots in every pixel: at 16 dots it costs 1.1 ms, at 64 it costs 4.5. A loop's cost is pixels × iterations × the work inside, and the work inside usually includes an `exp` or a `pow`. Ways out, from cheapest:
+**The loop-per-pixel trap.** Eclipse loops over its dots in every pixel: at 16 dots it costs 0.69 ms, at 64 it costs 2.7. A loop's cost is pixels × iterations × the work inside, and the work inside usually includes an `exp` or a `pow`. Ways out, from cheapest:
 
 - **Cap the count in the manifest.** A slider that goes to 64 will be set to 64. Choose `max` for what you can afford.
 - **Find the one that matters.** For things laid out on a grid or round a circle, compute which one this pixel is nearest (`round(angle / step)`) and evaluate it and its two neighbours, not all of them.
 - **Skip early.** Test a cheap bound first (`if (d > reach) { continue; }`) before the expensive falloff.
-- **Hoist.** Anything that does not depend on the pixel (a band level, a radius, a `sin` of the time) is the same for all 3.7 million pixels. Today it is still computed per pixel; keep it outside loops at least. (A per-frame `prepare` step that computes such values once is the next extension of the format; see Limits.)
+- **Hoist.** Anything that does not depend on the pixel (a band level, a radius, a `sin` of the time) is the same for all 3.7 million pixels. Keep it outside loops, and when it is per item, move it into `prepare` (above): that took Eclipse from 1.1 to 0.69 ms.
 
 Two smaller traps: transcendental functions (`exp`, `pow`, `atan2`, `sin`) cost several times a multiply-add, so keep them out of inner loops; and derivatives (`dpdx`, `fwidth`) are not allowed inside branches that depend on the pixel, so compute them first or use `pixel()` instead.
 
@@ -332,8 +390,7 @@ A visual is its folder: zip it, send it, and the recipient unzips it into `%APPD
 
 What a loaded visual cannot do yet, each a possible extension of the format:
 
-- **No per-frame step.** Everything is computed per pixel; values that are the same for every pixel (dot levels, positions) are recomputed millions of times. A `prepare` step, run once per frame and read back per item, is the next extension.
-- **No state of its own** beyond `prev()`: no memory of the last beat's position, no counters (the `V.beat_count` and `V.flow` clocks cover many uses).
+- **State is four numbers per item**, kept by `prepare` from frame to frame, and lost when the app restarts or the visual is picked again.
 - **No meshes, lines or particles.** One fragment function draws everything, so a visual that is a long polyline (Loop, Spiral) or thousands of particles (Ribbons) stays built in.
 - **No album art or other pictures**, and no textures of your own.
 - **Sixteen controls**, all numbers.

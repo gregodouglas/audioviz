@@ -40,6 +40,8 @@ struct VisualIn {
 @group(0) @binding(1) var<storage, read> wave_buf: array<vec2<f32>>;
 @group(0) @binding(2) var prev_tex: texture_2d<f32>;
 @group(0) @binding(3) var prev_samp: sampler;
+// Per-item values from prepare() (see item()); one placeholder without it.
+@group(0) @binding(4) var<storage, read> items_buf: array<vec4<f32>>;
 
 const TAU: f32 = 6.2831853;
 
@@ -99,6 +101,13 @@ fn wave(t: f32) -> vec2<f32> {
 fn wave_mono(t: f32) -> f32 {
     let w = wave(t);
     return 0.5 * (w.x + w.y);
+}
+
+// Item i as prepare() computed it (zero without a prepare step). In shade()
+// it is this frame's value; inside prepare() it is last frame's, so a
+// prepare step can keep state: smooth, integrate, remember.
+fn item(i: u32) -> vec4<f32> {
+    return items_buf[min(i, arrayLength(&items_buf) - 1u)];
 }
 
 // Last frame's output at uv (black unless the manifest sets "feedback": true).

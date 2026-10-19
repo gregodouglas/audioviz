@@ -29,6 +29,9 @@ use crate::settings::Layer;
 use crate::shaders::ShaderSet;
 
 pub const MAX_PARAMS: usize = 16;
+/// Most items a prepare step may compute.
+pub const MAX_ITEMS: u32 = 4096;
+const PREPARE_GROUP: u32 = 64;
 /// Waveform samples a loaded visual sees.
 const WAVE: usize = 1024;
 
@@ -97,6 +100,9 @@ struct Manifest {
     /// Keep last frame's picture for `prev(uv)`.
     #[serde(default)]
     feedback: bool,
+    /// How many items `prepare(i)` computes each frame (0 = no prepare step).
+    #[serde(default)]
+    items: u32,
 }
 
 /// A loaded visual, as the registry holds it.
@@ -110,12 +116,22 @@ pub struct ShaderDef {
     pub hint: String,
     pub params: Vec<ParamDef>,
     pub feedback: bool,
+    /// Items computed by `prepare` once a frame (0 = none).
+    pub items: u32,
     pub wgsl: String,
     /// The folder it came from, watched for changes (none for embedded copies).
     pub dir: Option<PathBuf>,
 }
 
 const RESERVED: &[&str] = &["array", "bool", "break", "case", "const", "continue", "default", "discard", "else", "enable", "f32", "fn", "for", "i32", "if", "let", "loop", "mat2x2", "override", "ptr", "return", "struct", "switch", "true", "false", "type", "u32", "var", "vec2", "vec3", "vec4", "while", "target", "patch", "self", "super", "static", "move", "mod", "macro", "texture", "sampler", "uniform", "storage", "private", "function", "workgroup"];
+
+/// Whether the code defines `fn prepare(`, ignoring line comments.
+fn has_prepare(wgsl: &str) -> bool {
+    wgsl.lines().map(|l| l.split("//").next().unwrap_or("")).any(|l| {
+        let t = l.trim_start();
+        t.strip_prefix("fn").is_some_and(|r| r.starts_with(char::is_whitespace) && r.trim_start().strip_prefix("prepare").is_some_and(|r| r.trim_start().starts_with('(')))
+    })
+}
 
 fn is_ident(s: &str) -> bool {
     let mut c = s.chars();
@@ -142,8 +158,16 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
             return Err(format!("visual.json: choice \"{}\" has no options", p.id));
         }
     }
+    if m.items > MAX_ITEMS {
+        return Err(format!("visual.json: at most {MAX_ITEMS} items"));
+    }
+    match (has_prepare(wgsl), m.items > 0) {
+        (true, false) => return Err("visual.wgsl has fn prepare: set \"items\" in visual.json to how many it computes".into()),
+        (false, true) => return Err("visual.json sets \"items\" but visual.wgsl has no fn prepare(i: u32) -> vec4<f32>".into()),
+        _ => {}
+    }
     let short = if m.short.is_empty() { m.name.clone() } else { m.short };
-    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, wgsl: wgsl.to_string(), dir })
+    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, wgsl: wgsl.to_string(), dir })
 }
 
 // ------------------------------------------------------------ values
@@ -183,7 +207,7 @@ impl ShaderDef {
 
     /// The WGSL the engine adds between the API and the visual's code.
     fn generated(&self) -> String {
-        let mut s = String::from("// Generated from visual.json.\nstruct Params {\n");
+        let mut s = format!("// Generated from visual.json.\nconst ITEMS: u32 = {}u;\n\nstruct Params {{\n", self.items);
         for p in &self.params {
             s.push_str(&format!("    {}: f32,\n", p.id));
         }
@@ -204,12 +228,24 @@ impl ShaderDef {
     }
 
     fn source(&self, shaders: &ShaderSet, wgsl: &str) -> String {
-        format!(
+        // The prepare step's entry point goes after the visual's code, so
+        // error lines in visual.wgsl keep their offset.
+        let prepare = if self.items > 0 {
+            format!("\n@group(1) @binding(0) var<storage, read_write> items_out: array<vec4<f32>>;\n\n@compute @workgroup_size({PREPARE_GROUP})\nfn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {{\n    if (id.x < ITEMS) {{\n        items_out[id.x] = prepare(id.x);\n    }}\n}}\n")
+        } else {
+            String::new()
+        };
+        prepare_after(&prepare, format!(
             "{}{}\n\n@fragment\nfn fs_main(in: FsIn) -> @location(0) vec4<f32> {{\n    let c = shade(in.uv);\n    // One NaN pixel would black out the layer's levelling: drop it.\n    let ok = all(c == c);\n    return vec4<f32>(select(vec3<f32>(0.0), max(c, vec3<f32>(0.0)), ok), 1.0);\n}}\n",
             self.prefix(shaders),
             wgsl
-        )
+        ))
     }
+}
+
+fn prepare_after(prepare: &str, mut s: String) -> String {
+    s.push_str(prepare);
+    s
 }
 
 /// Rewrite the compiler's `wgsl:LINE:COL` positions, which count the whole
@@ -419,18 +455,33 @@ pub struct ShaderVisual {
     last_poll: Instant,
     layout: wgpu::BindGroupLayout,
     pipeline: Option<wgpu::RenderPipeline>,
+    /// The prepare step: its output layout, pipeline, the two item buffers
+    /// (this frame's and last frame's) and a bind group writing each.
+    out_layout: wgpu::BindGroupLayout,
+    prepare: Option<wgpu::ComputePipeline>,
+    items: [wgpu::Buffer; 2],
+    items_len: u32,
+    item_groups: Vec<wgpu::BindGroup>,
+    /// Which item buffer holds the latest values.
+    icur: usize,
     uniform: wgpu::Buffer,
     wave_buf: wgpu::Buffer,
     sampler: wgpu::Sampler,
     out: [wgpu::TextureView; 2],
     black: wgpu::TextureView,
-    /// Bind groups by what `prev` reads: black, `out[0]`, `out[1]`.
+    /// Bind groups by what `prev` reads (black, `out[0]`, `out[1]`) times
+    /// which item buffer `item()` reads: index `prev * 2 + items`.
     groups: Vec<wgpu::BindGroup>,
     cur: usize,
     bands: [f32; 32],
     flow: f32,
     swell: f32,
     ring: VecDeque<[f32; 2]>,
+}
+
+fn item_buffers(device: &wgpu::Device, n: u32) -> [wgpu::Buffer; 2] {
+    let make = |label| device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: n.max(1) as u64 * 16, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false });
+    [make("loaded visual items a"), make("loaded visual items b")]
 }
 
 fn stamp(dir: &Path) -> Option<(SystemTime, SystemTime)> {
@@ -440,7 +491,7 @@ fn stamp(dir: &Path) -> Option<(SystemTime, SystemTime)> {
 
 impl ShaderVisual {
     pub fn new(device: &wgpu::Device, width: u32, height: u32, shaders: &ShaderSet, def: &'static ShaderDef) -> Result<Self, String> {
-        let entry = |binding: u32, ty: wgpu::BindingType| wgpu::BindGroupLayoutEntry { binding, visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX, ty, count: None };
+        let entry = |binding: u32, ty: wgpu::BindingType| wgpu::BindGroupLayoutEntry { binding, visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::COMPUTE, ty, count: None };
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("loaded visual"),
             entries: &[
@@ -448,7 +499,12 @@ impl ShaderVisual {
                 entry(1, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }),
                 entry(2, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
                 entry(3, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
+                entry(4, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }),
             ],
+        });
+        let out_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("loaded visual items out"),
+            entries: &[wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: false }, has_dynamic_offset: false, min_binding_size: None }, count: None }],
         });
         let mut me = Self {
             def,
@@ -466,6 +522,12 @@ impl ShaderVisual {
             groups: Vec::new(),
             layout,
             pipeline: None,
+            out_layout,
+            prepare: None,
+            items: item_buffers(device, def.items),
+            items_len: def.items,
+            item_groups: Vec::new(),
+            icur: 0,
             cur: 0,
             bands: [0.0; 32],
             flow: 0.0,
@@ -481,7 +543,7 @@ impl ShaderVisual {
     }
 
     fn make_groups(&mut self, device: &wgpu::Device) {
-        let group = |prev: &wgpu::TextureView| {
+        let group = |prev: &wgpu::TextureView, items: &wgpu::Buffer| {
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("loaded visual"),
                 layout: &self.layout,
@@ -490,25 +552,43 @@ impl ShaderVisual {
                     wgpu::BindGroupEntry { binding: 1, resource: self.wave_buf.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(prev) },
                     wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                    wgpu::BindGroupEntry { binding: 4, resource: items.as_entire_binding() },
                 ],
             })
         };
-        self.groups = vec![group(&self.black), group(&self.out[0]), group(&self.out[1])];
+        self.groups = [&self.black, &self.out[0], &self.out[1]].into_iter().flat_map(|prev| [group(prev, &self.items[0]), group(prev, &self.items[1])]).collect();
+        self.item_groups = self
+            .items
+            .iter()
+            .map(|b| device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("loaded visual items out"), layout: &self.out_layout, entries: &[wgpu::BindGroupEntry { binding: 0, resource: b.as_entire_binding() }] }))
+            .collect();
     }
 
     /// Compile the live code; on failure keep the old pipeline and the error.
     fn build(&mut self, device: &wgpu::Device, shaders: &ShaderSet) {
         let src = self.live.source(shaders, &self.live.wgsl);
-        let layout = &self.layout;
+        let (layout, out_layout) = (&self.layout, &self.out_layout);
         let id = self.live.id.clone();
+        let with_prepare = self.live.items > 0;
         let built = scene::guarded(device, || {
             let m = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(&id), source: wgpu::ShaderSource::Wgsl(src.into()) });
-            scene::pipeline(device, &id, layout, &m, HDR_FORMAT, None)
+            let prepare = with_prepare.then(|| {
+                let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("loaded visual prepare"), bind_group_layouts: &[Some(layout), Some(out_layout)], immediate_size: 0 });
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("loaded visual prepare"), layout: Some(&pl), module: &m, entry_point: Some("cs_main"), compilation_options: Default::default(), cache: None })
+            });
+            (scene::pipeline(device, &id, layout, &m, HDR_FORMAT, None), prepare)
         });
         match built {
-            Ok(p) => {
+            Ok((p, prepare)) => {
                 self.pipeline = Some(p);
+                self.prepare = prepare;
                 self.error = None;
+                // A reload may have changed how many items there are.
+                if self.live.items != self.items_len {
+                    self.items = item_buffers(device, self.live.items);
+                    self.items_len = self.live.items;
+                    self.make_groups(device);
+                }
             }
             Err(e) => {
                 let e = self::visual_lines(&e, self.live.prefix(shaders).lines().count());
@@ -638,8 +718,19 @@ impl Scene for ShaderVisual {
             return;
         };
         // With feedback the two outputs ping-pong and `prev` reads the other.
-        let (write, group) = if self.live.feedback { (1 - self.cur, &self.groups[1 + self.cur]) } else { (self.cur, &self.groups[0]) };
-        fullscreen_pass(encoder, &self.def.id, &self.out[write], wgpu::LoadOp::Clear(wgpu::Color::BLACK), pipeline, group);
+        let (write, prev) = if self.live.feedback { (1 - self.cur, 1 + self.cur) } else { (self.cur, 0) };
+        // The prepare step reads last frame's items and writes this frame's.
+        if let Some(prepare) = &self.prepare {
+            let next = 1 - self.icur;
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("loaded visual prepare"), timestamp_writes: None });
+            pass.set_pipeline(prepare);
+            pass.set_bind_group(0, &self.groups[prev * 2 + self.icur], &[]);
+            pass.set_bind_group(1, &self.item_groups[next], &[]);
+            pass.dispatch_workgroups(self.items_len.div_ceil(PREPARE_GROUP), 1, 1);
+            drop(pass);
+            self.icur = next;
+        }
+        fullscreen_pass(encoder, &self.def.id, &self.out[write], wgpu::LoadOp::Clear(wgpu::Color::BLACK), pipeline, &self.groups[prev * 2 + self.icur]);
         self.cur = write;
     }
 
@@ -793,6 +884,21 @@ mod tests {
         for d in embedded() {
             assert!(!d.wgsl.is_empty(), "{}", d.id);
         }
+    }
+
+    #[test]
+    fn a_prepare_step_needs_items_and_items_need_a_prepare_step() {
+        let prep = "fn prepare(i: u32) -> vec4<f32> { return vec4<f32>(0.0); }
+fn shade(uv: vec2<f32>) -> vec3<f32> { return item(0u).rgb; }";
+        assert!(has_prepare(prep));
+        assert!(has_prepare("fn  prepare (i: u32)"));
+        assert!(!has_prepare("// fn prepare(i: u32)
+fn prepared(x: f32)"));
+        assert!(parse(r#"{"id": "x", "name": "x"}"#, prep, None).is_err());
+        assert!(parse(r#"{"id": "x", "name": "x", "items": 8}"#, "fn shade(uv: vec2<f32>) -> vec3<f32> { return vec3<f32>(0.0); }", None).is_err());
+        assert!(parse(r#"{"id": "x", "name": "x", "items": 99999}"#, prep, None).is_err());
+        let d = parse(r#"{"id": "x", "name": "x", "items": 8}"#, prep, None).unwrap();
+        assert!(d.generated().contains("const ITEMS: u32 = 8u;"));
     }
 
     #[test]

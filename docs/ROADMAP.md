@@ -41,6 +41,10 @@ Visual candidates, in the order to try (reordered 2026-10-18 late on the researc
 - ~~Harmonograph~~ **built 2026-10-18** as a loaded visual (the proof of the line mode): damped Lissajous at the interval of the two strongest pitch classes, gliding between intervals; factory scene Harmonograph. Awaiting Greg's look.
 - **Interference**: a few sinusoid line fields driven by bands, moiré where they cross.
 
+### Scenes section (Greg, 2026-10-18 night)
+
+~~Rework~~ **done 2026-10-18**: Now showing card (changed mark, Save / Save as / Revert), one list with Auto-rotation ticks, the visuals per scene, and a per-row menu (Duplicate, Rename, Delete, Restore). Hand test owed. Considered and not built: thumbnails per scene (Greg chose the list).
+
 ### Pluggable visuals (Greg, 2026-10-18 night)
 
 The engine and the visuals are separate: a visual is a registry entry (`docs/visuals.md`), built in or loaded from a folder (`visual.json` + `visual.wgsl`). Eclipse was the first port. In order:

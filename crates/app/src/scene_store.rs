@@ -173,6 +173,35 @@ pub fn save(name: &str, settings: &Settings) -> anyhow::Result<String> {
     Ok(name)
 }
 
+/// Give a saved scene a new name (a new file; the old one is removed).
+pub fn rename(old: &str, new: &str, settings: &Settings) -> anyhow::Result<String> {
+    anyhow::ensure!(safe_name(old) != safe_name(new), "same name");
+    anyhow::ensure!(dir().is_some_and(|d| !d.join(format!("{}.json", safe_name(new))).exists()), "a scene called '{}' already exists", safe_name(new));
+    let n = save(new, settings)?;
+    delete(old)?;
+    Ok(n)
+}
+
+/// A free name for a copy of `name`: "Lantern 2", "Lantern 3"...
+pub fn copy_name(name: &str, taken: &[&str]) -> String {
+    let base = safe_name(name);
+    let base = base.trim_end_matches(|c: char| c.is_ascii_digit()).trim_end().to_string();
+    (2..1000).map(|n| format!("{base} {n}")).find(|c| !taken.iter().any(|t| t.eq_ignore_ascii_case(c))).unwrap_or_else(|| format!("{base} copy"))
+}
+
+/// Write one factory scene back over its file.
+pub fn restore_one(name: &str) -> anyhow::Result<usize> {
+    factory::install(&format!("scenes/{}.json", safe_name(name)), true)
+}
+
+/// Whether the current settings differ from the saved scene they came from.
+pub fn changed(settings: &Settings, saved: &Settings) -> bool {
+    match (to_text(settings), to_text(saved)) {
+        (Ok(a), Ok(b)) => a != b,
+        _ => false,
+    }
+}
+
 pub fn delete(name: &str) -> anyhow::Result<()> {
     let n = safe_name(name);
     for d in [dir(), legacy_dir()].into_iter().flatten() {
@@ -216,6 +245,23 @@ mod tests {
             s.scene_name = p.file_stem().unwrap().to_string_lossy().into_owned();
             std::fs::write(&p, to_text(&s).unwrap()).unwrap();
         }
+    }
+
+    #[test]
+    fn copies_get_free_names() {
+        assert_eq!(copy_name("Lantern", &["Lantern"]), "Lantern 2");
+        assert_eq!(copy_name("Lantern 2", &["Lantern", "Lantern 2"]), "Lantern 3");
+        assert_eq!(copy_name("Night", &["night 2"]), "Night 3");
+    }
+
+    #[test]
+    fn an_applied_scene_is_unchanged_until_edited() {
+        let def = &builtin()[0];
+        let mut s = Settings::default();
+        s.apply_scene(&def.settings);
+        assert!(!changed(&s, &def.settings));
+        s.layers[0].opacity *= 0.5;
+        assert!(changed(&s, &def.settings));
     }
 
     #[test]

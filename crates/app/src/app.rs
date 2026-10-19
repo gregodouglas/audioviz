@@ -510,13 +510,18 @@ impl Running {
         self.calibration_result = Some((format!("Scene: {}", def.name), Instant::now()));
     }
 
-    /// Space / the director: the next scene in the list after the current one.
-    fn next_scene(&mut self, fade: (f32, f32)) {
+    /// Space / the director: the next scene in the list after the current
+    /// one. The Auto director skips the scenes left out of its rotation
+    /// (unless that is all of them).
+    fn next_scene(&mut self, fade: (f32, f32), auto: bool) {
         if self.scenes.is_empty() {
             return;
         }
-        let i = self.scenes.iter().position(|d| d.name == self.settings.scene_name).map(|i| (i + 1) % self.scenes.len()).unwrap_or(0);
-        let name = self.scenes[i].name.clone();
+        let n = self.scenes.len();
+        let skip = |name: &str| auto && self.settings.auto_skip.iter().any(|s| s == name);
+        let from = self.scenes.iter().position(|d| d.name == self.settings.scene_name).unwrap_or(n - 1);
+        let pick = (1..=n).map(|k| (from + k) % n).find(|&i| !skip(&self.scenes[i].name)).unwrap_or((from + 1) % n);
+        let name = self.scenes[pick].name.clone();
         self.apply_scene_named(&name, fade);
     }
 
@@ -613,7 +618,7 @@ impl Running {
         let target = if features.peak > 0.0005 { (0.9 / features.peak).clamp(0.3, 200.0) } else { self.auto_gain_value };
         self.auto_gain_value += (target - self.auto_gain_value) * (1.0 - (-dt / 1.5).exp());
         if self.director.consider(&features, now_playing.as_ref().map(|n| n.track_id), dt, self.settings.auto_scenes).is_some() {
-            self.next_scene(FADE_AUTO);
+            self.next_scene(FADE_AUTO, true);
         }
 
         // Track change: toast and art tint.
@@ -745,7 +750,6 @@ impl Running {
             settings_path: config::path().map(|p| p.display().to_string()).unwrap_or_default(),
             fading: self.director.is_fading(),
             last_cue: self.director.last_cue,
-            now_playing: now_playing.as_ref().map(|n| format!("{} — {}{}", n.artist, n.title, if n.playing { "" } else { " (paused)" })),
             calibration: self.calibration.as_ref().map(|c| c.view()),
             scenes: self.scenes.clone(),
             presets: self.presets.clone(),
@@ -993,7 +997,47 @@ impl Running {
             if let Err(e) = scene_store::delete(&name) {
                 tracing::warn!("delete scene: {e}");
             }
+            self.settings.auto_skip.retain(|s| *s != name);
             self.scenes = scene_store::all();
+        }
+        if let Some((old, new)) = panel_actions.rename_scene {
+            let def = self.scenes.iter().find(|d| d.name == old).cloned();
+            match def.map_or_else(|| Err(anyhow::anyhow!("no scene called '{old}'")), |d| scene_store::rename(&old, &new, &d.settings)) {
+                Ok(n) => {
+                    if self.settings.scene_name == old {
+                        self.settings.scene_name = n.clone();
+                    }
+                    for s in &mut self.settings.auto_skip {
+                        if *s == old {
+                            *s = n.clone();
+                        }
+                    }
+                    self.scenes = scene_store::all();
+                }
+                Err(e) => self.calibration_result = Some((format!("Could not rename: {e}"), Instant::now())),
+            }
+        }
+        if let Some(name) = panel_actions.duplicate_scene {
+            if let Some(def) = self.scenes.iter().find(|d| d.name == name).cloned() {
+                let taken: Vec<&str> = self.scenes.iter().map(|d| d.name.as_str()).collect();
+                let copy = scene_store::copy_name(&name, &taken);
+                match scene_store::save(&copy, &def.settings) {
+                    Ok(n) => {
+                        self.scenes = scene_store::all();
+                        self.calibration_result = Some((format!("Saved a copy: {n}"), Instant::now()));
+                    }
+                    Err(e) => self.calibration_result = Some((format!("Could not copy the scene: {e}"), Instant::now())),
+                }
+            }
+        }
+        if let Some(name) = panel_actions.restore_scene {
+            match scene_store::restore_one(&name) {
+                Ok(_) => {
+                    self.scenes = scene_store::all();
+                    self.calibration_result = Some((format!("Restored the shipped {name}"), Instant::now()));
+                }
+                Err(e) => self.calibration_result = Some((format!("Could not restore: {e}"), Instant::now())),
+            }
         }
         if panel_actions.cast {
             self.start_cast();
@@ -1203,7 +1247,7 @@ impl Running {
             }
             KeyCode::Space => match &mut self.calibration {
                 Some(c) => c.tap(),
-                None => self.next_scene(FADE_MANUAL),
+                None => self.next_scene(FADE_MANUAL, false),
             },
             KeyCode::Enter | KeyCode::NumpadEnter => self.apply_calibration(),
             KeyCode::KeyC => self.toggle_calibration(),

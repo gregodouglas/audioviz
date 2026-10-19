@@ -1693,6 +1693,8 @@ pub struct Settings {
     pub photos_folder: String,
     // ---- director ----
     pub auto_scenes: bool,
+    /// Scenes the Auto director leaves out (Space still reaches them).
+    pub auto_skip: Vec<String>,
     // ---- accessibility ----
     pub reduce_flashing: bool,
     pub flash_rise: f32,
@@ -1806,6 +1808,7 @@ impl Default for Settings {
             show_now_playing: false,
             photos_folder: String::new(),
             auto_scenes: false,
+            auto_skip: Vec::new(),
             reduce_flashing: true,
             flash_rise: 2.0,
             audio_delay_ms: 0.0,

@@ -98,7 +98,6 @@ pub struct Stats {
     pub settings_path: String,
     pub fading: bool,
     pub last_cue: &'static str,
-    pub now_playing: Option<String>,
     pub calibration: Option<CalibrationView>,
     pub scenes: Vec<SceneDef>,
     pub presets: Vec<PresetDef>,
@@ -126,6 +125,12 @@ pub struct Actions {
     pub restore_presets: Option<String>,
     pub restore_scenes: bool,
     pub delete_scene: Option<String>,
+    /// (old, new) name of a saved scene.
+    pub rename_scene: Option<(String, String)>,
+    /// Save a copy of this scene under a free name.
+    pub duplicate_scene: Option<String>,
+    /// Write this one factory scene back.
+    pub restore_scene: Option<String>,
     pub calibrate_toggle: bool,
     pub calibrate_apply: bool,
     pub open_url: Option<String>,
@@ -154,6 +159,11 @@ pub struct Actions {
 #[derive(Default)]
 pub struct PanelState {
     pub scene_name: String,
+    /// Scenes section: the Save as field is open; a scene whose row is
+    /// being renamed (and the new name); a delete waiting for its confirm.
+    pub save_as: bool,
+    pub renaming: Option<(String, String)>,
+    pub confirm_delete: Option<String>,
     pub preset_name: String,
     pub visual_name: String,
     /// Which modifier of the edited layer shows its controls, and whether
@@ -245,80 +255,225 @@ pub fn draw(ctx: &egui::Context, settings: &mut Settings, state: &mut PanelState
 }
 
 /// A scene row: marker dot, name, full width; the current scene is accented.
-fn scene_row(ui: &mut egui::Ui, label: &str, active: bool, width: f32) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(vec2(width, 26.0), Sense::click());
-    let hovered = resp.hovered();
-    if active || hovered {
-        ui.painter().rect_filled(rect, 4.0, theme::with_alpha(ACCENT, if active { 26 } else { 12 }));
-    }
-    ui.painter().circle_filled(pos2(rect.min.x + 10.0, rect.center().y), 2.5, if active { ACCENT } else { TEXT_3 });
-    ui.painter().text(pos2(rect.min.x + 20.0, rect.center().y), Align2::LEFT_CENTER, label, if active { theme::bold(12.5) } else { theme::sans(12.5) }, if active { ACCENT } else if hovered { TEXT } else { TEXT_2 });
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
-}
-
 fn scenes_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, a: &mut Actions) {
     if section_header(ui, "Scenes", None, Some("Hide UI (H)")) {
         a.hide_ui = true;
     }
-    hint(ui, "A scene is a mix of up to three layers plus the picture settings. Space cycles; A lets the director pick on track changes and drops.");
-    ui.add_space(8.0);
-    small_caps(ui, "Scene director (A)");
+    hint(ui, "A scene is up to three layers plus the Picture settings. Space goes to the next one.");
+    ui.add_space(6.0);
+    now_showing(ui, settings, state, stats, a);
+    ui.add_space(10.0);
+    small_caps(ui, "Director (A)");
     if let Some(i) = segmented(ui, &["Manual", "Auto"], settings.auto_scenes as usize) {
         settings.auto_scenes = i == 1;
     }
-    hint(ui, &format!("Last cue: {}{}", stats.last_cue, if stats.fading { " · fading" } else { "" }));
-    if let Some(np) = &stats.now_playing {
-        hint(ui, np);
-    }
+    let last = if stats.fading { format!("{} · fading", stats.last_cue) } else { stats.last_cue.to_string() };
+    hint(ui, &format!("Auto changes scene on a track change, a drop, a long quiet passage, or after six minutes, choosing among the ticked scenes below. Last change: {last}."));
     ui.add_space(8.0);
-    small_caps(ui, "Built in");
-    for def in stats.scenes.iter().filter(|s| s.factory) {
-        let active = settings.scene_name == def.name;
-        let label = if def.edited { format!("{} (edited)", def.name) } else { def.name.clone() };
-        if scene_row(ui, &label, active, ui.available_width()) {
-            a.apply_scene = Some(def.name.clone());
-        }
+    // Yours first, then the shipped ones.
+    let mut order: Vec<&SceneDef> = stats.scenes.iter().filter(|s| !s.factory).collect();
+    order.extend(stats.scenes.iter().filter(|s| s.factory));
+    small_caps(ui, "All scenes");
+    for def in order {
+        scene_list_row(ui, settings, state, def, a);
     }
-    if stats.scenes.iter().any(|s| s.edited) && ghost_button(ui, "Restore factory scenes", false).on_hover_text("Write the shipped versions back over the ones you changed").clicked() {
-        a.restore_scenes = true;
-    }
-    let user: Vec<&SceneDef> = stats.scenes.iter().filter(|s| !s.factory).collect();
-    if !user.is_empty() {
-        small_caps(ui, "Yours");
-        for def in user {
-            let active = settings.scene_name == def.name;
-            ui.horizontal(|ui| {
-                if scene_row(ui, &def.name, active, ui.available_width() - 56.0) {
-                    a.apply_scene = Some(def.name.clone());
-                }
-                if ui.add(egui::Button::new(egui::RichText::new("Delete").size(11.0).color(TEXT_3)).frame(false)).clicked() {
-                    a.delete_scene = Some(def.name.clone());
-                }
-            });
-        }
-    }
-    if !settings.scene_name.is_empty() && !stats.scenes.iter().any(|s| s.name == settings.scene_name) {
-        hint(ui, &format!("'{}' (edited, not saved)", settings.scene_name));
-    }
-    ui.add_space(10.0);
-    small_caps(ui, "Save current as");
+    hint(ui, "Tick a scene to keep it in Auto's rotation. The dots at the end of a row duplicate, rename or delete it.");
+    ui.add_space(8.0);
     ui.horizontal(|ui| {
-        ui.add(egui::TextEdit::singleline(&mut state.scene_name).desired_width(150.0).hint_text("Name"));
-        if ui.add_enabled(!state.scene_name.trim().is_empty(), egui::Button::new("Save")).clicked() {
-            a.save_scene = Some(state.scene_name.trim().to_string());
+        if ghost_button(ui, "Open scenes folder", false).on_hover_text("Each scene is a JSON file: copy one to share it, drop one in to add it").clicked() {
+            a.open_scenes_folder = true;
+        }
+        if stats.scenes.iter().any(|s| s.edited) && ghost_button(ui, "Restore factory", false).on_hover_text("Write the shipped scenes back over the ones you changed; your own scenes are kept").clicked() {
+            a.restore_scenes = true;
         }
     });
-    if !settings.scene_name.is_empty() && stats.scenes.iter().any(|s| s.name == settings.scene_name) {
-        let name = settings.scene_name.clone();
-        if ghost_button(ui, &format!("Update '{name}'"), false).clicked() {
-            a.save_scene = Some(name);
+}
+
+/// The visuals of a scene's enabled layers, top first ("Crystal · Wheel").
+fn scene_visuals(s: &Settings) -> String {
+    let names: Vec<&str> = s.layers.iter().take(MAX_LAYERS).filter(|l| l.enabled && l.opacity > 0.0).map(|l| crate::visuals::short(&l.visual)).collect();
+    if names.is_empty() { "Nothing on".into() } else { names.join(" · ") }
+}
+
+/// The card at the top: the scene that is showing, its layers, whether it
+/// has changed since it was loaded, and saving.
+fn now_showing(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, a: &mut Actions) {
+    let saved = stats.scenes.iter().find(|s| s.name == settings.scene_name);
+    let changed = saved.is_some_and(|d| crate::scene_store::changed(settings, &d.settings));
+    egui::Frame::new().fill(theme::with_alpha(TEXT, 8)).stroke(egui::Stroke::new(1.0, HAIRLINE)).corner_radius(6.0).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        small_caps(ui, "Now showing");
+        ui.horizontal(|ui| {
+            let name = if settings.scene_name.is_empty() { "Unsaved scene" } else { settings.scene_name.as_str() };
+            ui.label(egui::RichText::new(name).font(theme::bold(15.0)).color(TEXT));
+            if changed || saved.is_none() {
+                ui.label(egui::RichText::new(if saved.is_none() { "not saved" } else { "• changed" }).size(11.5).color(WARN_C));
+            }
+        });
+        // One chip per layer slot in its hue; a dash for a slot that is off.
+        ui.horizontal(|ui| {
+            for i in 0..MAX_LAYERS {
+                let l = settings.layer(i);
+                let on = l.enabled && l.opacity > 0.0;
+                let text = if on { crate::visuals::short(&l.visual).to_string() } else { "—".into() };
+                let g = ui.painter().layout_no_wrap(text, theme::sans(11.5), if on { TEXT } else { TEXT_3 });
+                let (r, _) = ui.allocate_exact_size(vec2(g.size().x + 10.0, 18.0), Sense::hover());
+                ui.painter().rect_filled(Rect::from_min_size(r.min + vec2(0.0, 2.0), vec2(3.0, 14.0)), 1.0, if on { theme::layer_hue(i) } else { TEXT_3 });
+                ui.painter().galley(pos2(r.min.x + 7.0, r.center().y - g.size().y * 0.5), g, TEXT);
+            }
+        });
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            let factory = saved.is_some_and(|d| d.factory);
+            if let Some(d) = saved.filter(|_| changed) {
+                let r = ghost_button(ui, "Save", true).on_hover_text(if factory { "Saves your copy of this shipped scene; Restore brings the shipped one back" } else { "Save the changes into this scene" });
+                if r.clicked() {
+                    a.save_scene = Some(d.name.clone());
+                }
+            }
+            if ghost_button(ui, "Save as…", saved.is_none()).clicked() {
+                state.save_as = !state.save_as;
+                if state.save_as && state.scene_name.is_empty() && !settings.scene_name.is_empty() {
+                    let taken: Vec<&str> = stats.scenes.iter().map(|s| s.name.as_str()).collect();
+                    state.scene_name = crate::scene_store::copy_name(&settings.scene_name, &taken);
+                }
+            }
+            if changed && ghost_button(ui, "Revert", false).on_hover_text("Go back to the scene as it was saved").clicked() {
+                a.apply_scene = Some(settings.scene_name.clone());
+            }
+        });
+        if state.save_as {
+            ui.horizontal(|ui| {
+                ui.set_max_width(ui.available_width());
+                let w = (ui.available_width() - 64.0).max(60.0);
+                let r = ui.add(egui::TextEdit::singleline(&mut state.scene_name).desired_width(w).hint_text("Name"));
+                let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if (ghost_button(ui, "Save", true).clicked() || enter) && !state.scene_name.trim().is_empty() {
+                    a.save_scene = Some(state.scene_name.trim().to_string());
+                    state.save_as = false;
+                }
+            });
+            if stats.scenes.iter().any(|s| s.name.eq_ignore_ascii_case(state.scene_name.trim())) {
+                hint(ui, "A scene with that name exists; saving replaces it.");
+            }
+        }
+    });
+}
+
+/// One row of the scene list: Auto tick, name (a dot when edited), its
+/// visuals, and a ⋯ menu. Rename and delete happen in the row.
+fn scene_list_row(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, def: &SceneDef, a: &mut Actions) {
+    let active = settings.scene_name == def.name;
+    // Renaming: the row becomes a text field.
+    if let Some((old, new)) = &mut state.renaming {
+        if *old == def.name {
+            let mut done = None;
+            ui.horizontal(|ui| {
+                ui.set_max_width(ui.available_width());
+                let w = (ui.available_width() - 120.0).max(60.0);
+                let r = ui.add(egui::TextEdit::singleline(new).desired_width(w));
+                r.request_focus();
+                let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if ghost_button(ui, "Rename", true).clicked() || enter {
+                    done = Some(true);
+                }
+                if ghost_button(ui, "Cancel", false).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    done = Some(false);
+                }
+            });
+            match done {
+                Some(true) if !new.trim().is_empty() => {
+                    a.rename_scene = Some((old.clone(), new.trim().to_string()));
+                    state.renaming = None;
+                }
+                Some(_) => state.renaming = None,
+                None => {}
+            }
+            return;
         }
     }
-    ui.add_space(6.0);
-    if ghost_button(ui, "Open scenes folder", false).clicked() {
-        a.open_scenes_folder = true;
+    if state.confirm_delete.as_deref() == Some(def.name.as_str()) {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(format!("Delete '{}'?", def.name)).size(12.0).color(WARN_C));
+            if ghost_button(ui, "Delete", false).clicked() {
+                a.delete_scene = Some(def.name.clone());
+                state.confirm_delete = None;
+            }
+            if ghost_button(ui, "Keep", false).clicked() {
+                state.confirm_delete = None;
+            }
+        });
+        return;
     }
-    hint(ui, "Each scene is a JSON file. Copy one to share it; drop one in to import.");
+    let width = ui.available_width();
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, 28.0), Sense::click());
+    let hovered = resp.hovered();
+    let p = ui.painter();
+    if active || hovered {
+        p.rect_filled(rect, 4.0, theme::with_alpha(ACCENT, if active { 26 } else { 12 }));
+    }
+    // Auto tick.
+    let in_auto = !settings.auto_skip.iter().any(|s| *s == def.name);
+    let tick = Rect::from_center_size(pos2(rect.min.x + 12.0, rect.center().y), vec2(12.0, 12.0));
+    let tick_resp = ui.interact(tick.expand(4.0), ui.scope_id().with(("auto", &def.name)), Sense::click());
+    let p = ui.painter();
+    p.rect_stroke(tick, 2.0, egui::Stroke::new(1.0, if tick_resp.hovered() { TEXT } else { TEXT_3 }), egui::StrokeKind::Inside);
+    if in_auto {
+        p.rect_filled(tick.shrink(3.0), 1.0, if settings.auto_scenes { ACCENT } else { TEXT_2 });
+    }
+    if tick_resp.clicked() {
+        if in_auto {
+            settings.auto_skip.push(def.name.clone());
+        } else {
+            settings.auto_skip.retain(|s| *s != def.name);
+        }
+    }
+    let tick_resp = tick_resp.on_hover_text(if in_auto { "In Auto's rotation: click to leave it out" } else { "Left out of Auto: click to add it" });
+    // Name, an edited dot, and the visuals, dimmer, cut to the room left.
+    let name_col = if active { ACCENT } else if hovered { TEXT } else { TEXT_2 };
+    let p = ui.painter();
+    let nr = p.text(pos2(rect.min.x + 26.0, rect.center().y), Align2::LEFT_CENTER, &def.name, if active { theme::bold(12.5) } else { theme::sans(12.5) }, name_col);
+    let mut x = nr.max.x + 6.0;
+    if def.edited {
+        p.circle_filled(pos2(x + 2.0, rect.center().y), 2.5, WARN_C);
+        x += 10.0;
+    }
+    let menu_w = 24.0;
+    let room = rect.max.x - menu_w - x - 4.0;
+    if room > 30.0 {
+        let mut job = egui::text::LayoutJob::single_section(scene_visuals(&def.settings), egui::TextFormat { font_id: theme::sans(11.0), color: TEXT_3, ..Default::default() });
+        job.wrap = egui::text::TextWrapping { max_width: room, max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+        let g = ui.fonts_mut(|f| f.layout_job(job));
+        ui.painter().galley(pos2(x + 4.0, rect.center().y - g.size().y * 0.5), g, TEXT_3);
+    }
+    // The menu: three painted dots (the bundled font has no ellipsis glyph).
+    let mrect = Rect::from_min_size(pos2(rect.max.x - menu_w, rect.min.y), vec2(menu_w, rect.height()));
+    let mresp = ui.interact(mrect, ui.scope_id().with(("scene menu", &def.name)), Sense::click());
+    for k in 0..3 {
+        ui.painter().circle_filled(pos2(mrect.center().x + (k as f32 - 1.0) * 4.5, rect.center().y), 1.5, if mresp.hovered() { TEXT } else { TEXT_3 });
+    }
+    let menu_open = mresp.clicked();
+    egui::Popup::menu(&mresp).show(|ui| {
+        ui.set_min_width(170.0);
+        if ui.button("Duplicate").clicked() {
+            a.duplicate_scene = Some(def.name.clone());
+        }
+        if !def.factory {
+            if ui.button("Rename").clicked() {
+                state.renaming = Some((def.name.clone(), def.name.clone()));
+            }
+            if ui.button("Delete…").clicked() {
+                state.confirm_delete = Some(def.name.clone());
+            }
+        } else if def.edited && ui.button("Restore the shipped version").clicked() {
+            a.restore_scene = Some(def.name.clone());
+        }
+    });
+    let mresp = mresp.on_hover_text("Duplicate, rename or delete");
+    if resp.clicked() && !tick_resp.clicked() && !menu_open && !mresp.clicked() {
+        a.apply_scene = Some(def.name.clone());
+    }
+    resp.on_hover_text(scene_visuals(&def.settings)).on_hover_cursor(egui::CursorIcon::PointingHand);
 }
 
 /// Payload type for dragging a modifier row (distinct from the layer rows).

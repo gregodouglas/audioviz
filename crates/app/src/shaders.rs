@@ -29,6 +29,7 @@ shader_table!(
     "spiral_params.wgsl",
     "spiral.wgsl",
     "visual_api.wgsl",
+    "visual_lines.wgsl",
     "waves.wgsl",
     "decay.wgsl",
     "beam.wgsl",

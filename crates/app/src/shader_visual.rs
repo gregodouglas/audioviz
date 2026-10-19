@@ -31,6 +31,8 @@ use crate::shaders::ShaderSet;
 pub const MAX_PARAMS: usize = 16;
 /// Most items a prepare step may compute.
 pub const MAX_ITEMS: u32 = 4096;
+/// Most points a loaded visual's line may have.
+pub const MAX_LINE: u32 = 65536;
 const PREPARE_GROUP: u32 = 64;
 /// Waveform samples a loaded visual sees.
 const WAVE: usize = 1024;
@@ -105,6 +107,9 @@ struct Manifest {
     /// How many items `prepare(i)` computes each frame (0 = no prepare step).
     #[serde(default)]
     items: u32,
+    /// How many points `point(i)` gives a line drawn over the picture (0 = no line).
+    #[serde(default)]
+    line: u32,
 }
 
 /// A loaded visual, as the registry holds it.
@@ -120,6 +125,8 @@ pub struct ShaderDef {
     pub feedback: bool,
     /// Items computed by `prepare` once a frame (0 = none).
     pub items: u32,
+    /// Points of the line `point` draws (0 = none).
+    pub line: u32,
     pub wgsl: String,
     /// The folder it came from, watched for changes (none for embedded copies).
     pub dir: Option<PathBuf>,
@@ -127,11 +134,11 @@ pub struct ShaderDef {
 
 const RESERVED: &[&str] = &["array", "bool", "break", "case", "const", "continue", "default", "discard", "else", "enable", "f32", "fn", "for", "i32", "if", "let", "loop", "mat2x2", "override", "ptr", "return", "struct", "switch", "true", "false", "type", "u32", "var", "vec2", "vec3", "vec4", "while", "target", "patch", "self", "super", "static", "move", "mod", "macro", "texture", "sampler", "uniform", "storage", "private", "function", "workgroup"];
 
-/// Whether the code defines `fn prepare(`, ignoring line comments.
-fn has_prepare(wgsl: &str) -> bool {
+/// Whether the code defines `fn <name>(`, ignoring line comments.
+fn defines(wgsl: &str, name: &str) -> bool {
     wgsl.lines().map(|l| l.split("//").next().unwrap_or("")).any(|l| {
         let t = l.trim_start();
-        t.strip_prefix("fn").is_some_and(|r| r.starts_with(char::is_whitespace) && r.trim_start().strip_prefix("prepare").is_some_and(|r| r.trim_start().starts_with('(')))
+        t.strip_prefix("fn").is_some_and(|r| r.starts_with(char::is_whitespace) && r.trim_start().strip_prefix(name).is_some_and(|r| r.trim_start().starts_with('(')))
     })
 }
 
@@ -163,13 +170,22 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
     if m.items > MAX_ITEMS {
         return Err(format!("visual.json: at most {MAX_ITEMS} items"));
     }
-    match (has_prepare(wgsl), m.items > 0) {
+    match (defines(wgsl, "prepare"), m.items > 0) {
         (true, false) => return Err("visual.wgsl has fn prepare: set \"items\" in visual.json to how many it computes".into()),
         (false, true) => return Err("visual.json sets \"items\" but visual.wgsl has no fn prepare(i: u32) -> vec4<f32>".into()),
         _ => {}
     }
+    if m.line > MAX_LINE {
+        return Err(format!("visual.json: a line of at most {MAX_LINE} points"));
+    }
+    match (defines(wgsl, "point"), m.line > 0) {
+        (true, false) => return Err("visual.wgsl has fn point: set \"line\" in visual.json to how many points the line has".into()),
+        (false, true) => return Err("visual.json sets \"line\" but visual.wgsl has no fn point(i: u32) -> LinePoint".into()),
+        (true, true) if m.line < 2 => return Err("visual.json: a line needs at least 2 points".into()),
+        _ => {}
+    }
     let short = if m.short.is_empty() { m.name.clone() } else { m.short };
-    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, wgsl: wgsl.to_string(), dir })
+    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, wgsl: wgsl.to_string(), dir })
 }
 
 // ------------------------------------------------------------ values
@@ -209,7 +225,7 @@ impl ShaderDef {
 
     /// The WGSL the engine adds between the API and the visual's code.
     fn generated(&self) -> String {
-        let mut s = format!("// Generated from visual.json.\nconst ITEMS: u32 = {}u;\n\nstruct Params {{\n", self.items);
+        let mut s = format!("// Generated from visual.json.\nconst ITEMS: u32 = {}u;\nconst LINE_POINTS: u32 = {}u;\n\nstruct Params {{\n", self.items, self.line);
         for p in &self.params {
             s.push_str(&format!("    {}: f32,\n", p.id));
         }
@@ -232,11 +248,17 @@ impl ShaderDef {
     fn source(&self, shaders: &ShaderSet, wgsl: &str) -> String {
         // The prepare step's entry point goes after the visual's code, so
         // error lines in visual.wgsl keep their offset.
-        let prepare = if self.items > 0 {
-            format!("\n@group(1) @binding(0) var<storage, read_write> items_out: array<vec4<f32>>;\n\n@compute @workgroup_size({PREPARE_GROUP})\nfn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {{\n    if (id.x < ITEMS) {{\n        items_out[id.x] = prepare(id.x);\n    }}\n}}\n")
-        } else {
-            String::new()
-        };
+        // Both write group 1, binding 0: one pipeline uses each.
+        let mut prepare = String::new();
+        if self.items > 0 || self.line > 0 {
+            prepare.push_str("\n@group(1) @binding(0) var<storage, read_write> items_out: array<vec4<f32>>;\n");
+        }
+        if self.items > 0 {
+            prepare.push_str(&format!("\n@compute @workgroup_size({PREPARE_GROUP})\nfn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {{\n    if (id.x < ITEMS) {{\n        items_out[id.x] = prepare(id.x);\n    }}\n}}\n"));
+        }
+        if self.line > 0 {
+            prepare.push_str(&format!("\n@compute @workgroup_size({PREPARE_GROUP})\nfn cs_line(@builtin(global_invocation_id) id: vec3<u32>) {{\n    if (id.x < LINE_POINTS) {{\n        let q = point(id.x);\n        items_out[2u * id.x] = vec4<f32>(q.pos, q.width, 0.0);\n        items_out[2u * id.x + 1u] = vec4<f32>(q.colour, 0.0);\n    }}\n}}\n"));
+        }
         prepare_after(&prepare, format!(
             "{}{}\n\n@fragment\nfn fs_main(in: FsIn) -> @location(0) vec4<f32> {{\n    let c = shade(in.uv);\n    // One NaN pixel would black out the layer's levelling: drop it.\n    let ok = all(c == c);\n    return vec4<f32>(select(vec3<f32>(0.0), max(c, vec3<f32>(0.0)), ok), 1.0);\n}}\n",
             self.prefix(shaders),
@@ -466,6 +488,16 @@ pub struct ShaderVisual {
     item_groups: Vec<wgpu::BindGroup>,
     /// Which item buffer holds the latest values.
     icur: usize,
+    /// The line: its point pass, the points buffer (written by `point`,
+    /// group 1 of that pass), and the engine's draw over the picture.
+    line_cs: Option<wgpu::ComputePipeline>,
+    line_points: wgpu::Buffer,
+    line_len: u32,
+    line_out_group: wgpu::BindGroup,
+    line_uniform: wgpu::Buffer,
+    line_layout: wgpu::BindGroupLayout,
+    line_group: wgpu::BindGroup,
+    line_draw: Option<wgpu::RenderPipeline>,
     uniform: wgpu::Buffer,
     wave_buf: wgpu::Buffer,
     sampler: wgpu::Sampler,
@@ -508,6 +540,31 @@ fn art_pixels(a: &audioviz_metadata::ArtImage) -> Option<Vec<u8>> {
     Some(image::imageops::resize(&img, ART, ART, image::imageops::FilterType::Triangle).into_raw())
 }
 
+fn line_buffer(device: &wgpu::Device, n: u32) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor { label: Some("loaded visual line"), size: n.max(1) as u64 * 32, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false })
+}
+
+/// The engine's line pipeline (`visual_lines.wgsl`), additive over the picture.
+fn line_pipeline(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Option<wgpu::RenderPipeline> {
+    scene::guarded(device, || {
+        let m = scene::shader(device, shaders, "visual_lines.wgsl");
+        scene::pipeline(device, "loaded visual line", layout, &m, HDR_FORMAT, Some(scene::ADDITIVE))
+    })
+    .map_err(|e| tracing::warn!("visual_lines.wgsl: {e}"))
+    .ok()
+}
+
+/// The points buffer as the point pass writes it and as the draw reads it.
+fn line_groups(device: &wgpu::Device, out_layout: &wgpu::BindGroupLayout, layout: &wgpu::BindGroupLayout, points: &wgpu::Buffer, uniform: &wgpu::Buffer) -> (wgpu::BindGroup, wgpu::BindGroup) {
+    let out = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("loaded visual line out"), layout: out_layout, entries: &[wgpu::BindGroupEntry { binding: 0, resource: points.as_entire_binding() }] });
+    let draw = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("loaded visual line draw"),
+        layout,
+        entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniform.as_entire_binding() }, wgpu::BindGroupEntry { binding: 1, resource: points.as_entire_binding() }],
+    });
+    (out, draw)
+}
+
 fn item_buffers(device: &wgpu::Device, n: u32) -> [wgpu::Buffer; 2] {
     let make = |label| device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: n.max(1) as u64 * 16, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false });
     [make("loaded visual items a"), make("loaded visual items b")]
@@ -537,7 +594,26 @@ impl ShaderVisual {
             entries: &[wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: false }, has_dynamic_offset: false, min_binding_size: None }, count: None }],
         });
         let art = art_texture(device);
+        let line_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("loaded visual line draw"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None },
+                wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::VERTEX, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
+            ],
+        });
+        let line_uniform = scene::uniform_buffer(device, "loaded visual line", 16);
+        let line_points = line_buffer(device, def.line);
+        let (line_out_group, line_group) = line_groups(device, &out_layout, &line_layout, &line_points, &line_uniform);
+        let line_draw = (def.line > 0).then(|| line_pipeline(device, shaders, &line_layout)).flatten();
         let mut me = Self {
+            line_cs: None,
+            line_points,
+            line_len: def.line,
+            line_out_group,
+            line_uniform,
+            line_layout,
+            line_group,
+            line_draw,
             def,
             art_view: art.create_view(&wgpu::TextureViewDescriptor::default()),
             art,
@@ -606,19 +682,33 @@ impl ShaderVisual {
         let (layout, out_layout) = (&self.layout, &self.out_layout);
         let id = self.live.id.clone();
         let with_prepare = self.live.items > 0;
+        let with_line = self.live.line > 0;
         let built = scene::guarded(device, || {
             let m = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(&id), source: wgpu::ShaderSource::Wgsl(src.into()) });
             let prepare = with_prepare.then(|| {
                 let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("loaded visual prepare"), bind_group_layouts: &[Some(layout), Some(out_layout)], immediate_size: 0 });
                 device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("loaded visual prepare"), layout: Some(&pl), module: &m, entry_point: Some("cs_main"), compilation_options: Default::default(), cache: None })
             });
-            (scene::pipeline(device, &id, layout, &m, HDR_FORMAT, None), prepare)
+            let line = with_line.then(|| {
+                let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("loaded visual line points"), bind_group_layouts: &[Some(layout), Some(out_layout)], immediate_size: 0 });
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some("loaded visual line points"), layout: Some(&pl), module: &m, entry_point: Some("cs_line"), compilation_options: Default::default(), cache: None })
+            });
+            (scene::pipeline(device, &id, layout, &m, HDR_FORMAT, None), prepare, line)
         });
         match built {
-            Ok((p, prepare)) => {
+            Ok((p, prepare, line)) => {
                 self.pipeline = Some(p);
                 self.prepare = prepare;
+                self.line_cs = line;
                 self.error = None;
+                if self.live.line != self.line_len {
+                    self.line_points = line_buffer(device, self.live.line);
+                    self.line_len = self.live.line;
+                    (self.line_out_group, self.line_group) = line_groups(device, &self.out_layout, &self.line_layout, &self.line_points, &self.line_uniform);
+                }
+                if self.live.line > 0 && self.line_draw.is_none() {
+                    self.line_draw = line_pipeline(device, shaders, &self.line_layout);
+                }
                 // A reload may have changed how many items there are.
                 if self.live.items != self.items_len {
                     self.items = item_buffers(device, self.live.items);
@@ -670,6 +760,9 @@ impl Scene for ShaderVisual {
     }
 
     fn reload_shaders(&mut self, device: &wgpu::Device, shaders: &ShaderSet) -> Result<(), String> {
+        if self.line_draw.is_some() {
+            self.line_draw = line_pipeline(device, shaders, &self.line_layout);
+        }
         self.build(device, shaders);
         self.error.clone().map_or(Ok(()), Err)
     }
@@ -781,7 +874,28 @@ impl Scene for ShaderVisual {
             drop(pass);
             self.icur = next;
         }
-        fullscreen_pass(encoder, &self.def.id, &self.out[write], wgpu::LoadOp::Clear(wgpu::Color::BLACK), pipeline, &self.groups[prev * 2 + self.icur]);
+        let group = &self.groups[prev * 2 + self.icur];
+        // The line's points, after prepare so point() can read this frame's items.
+        let line = match (&self.line_cs, &self.line_draw) {
+            (Some(cs), Some(draw)) if self.line_len >= 2 => {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("loaded visual line points"), timestamp_writes: None });
+                pass.set_pipeline(cs);
+                pass.set_bind_group(0, group, &[]);
+                pass.set_bind_group(1, &self.line_out_group, &[]);
+                pass.dispatch_workgroups(self.line_len.div_ceil(PREPARE_GROUP), 1, 1);
+                Some(draw)
+            }
+            _ => None,
+        };
+        fullscreen_pass(encoder, &self.def.id, &self.out[write], wgpu::LoadOp::Clear(wgpu::Color::BLACK), pipeline, group);
+        if let Some(draw) = line {
+            let u: [u32; 4] = [(ctx.width as f32).to_bits(), (ctx.height as f32).to_bits(), self.line_len, 0];
+            queue.write_buffer(&self.line_uniform, 0, bytemuck::cast_slice(&u));
+            let mut pass = scene::begin_pass(encoder, "loaded visual line", &self.out[write], wgpu::LoadOp::Load);
+            pass.set_pipeline(draw);
+            pass.set_bind_group(0, &self.line_group, &[]);
+            pass.draw(0..6, 0..self.line_len - 1);
+        }
         self.cur = write;
     }
 
@@ -941,15 +1055,29 @@ mod tests {
     fn a_prepare_step_needs_items_and_items_need_a_prepare_step() {
         let prep = "fn prepare(i: u32) -> vec4<f32> { return vec4<f32>(0.0); }
 fn shade(uv: vec2<f32>) -> vec3<f32> { return item(0u).rgb; }";
-        assert!(has_prepare(prep));
-        assert!(has_prepare("fn  prepare (i: u32)"));
-        assert!(!has_prepare("// fn prepare(i: u32)
-fn prepared(x: f32)"));
+        assert!(defines(prep, "prepare"));
+        assert!(defines("fn  prepare (i: u32)", "prepare"));
+        assert!(!defines("// fn prepare(i: u32)
+fn prepared(x: f32)", "prepare"));
         assert!(parse(r#"{"id": "x", "name": "x"}"#, prep, None).is_err());
         assert!(parse(r#"{"id": "x", "name": "x", "items": 8}"#, "fn shade(uv: vec2<f32>) -> vec3<f32> { return vec3<f32>(0.0); }", None).is_err());
         assert!(parse(r#"{"id": "x", "name": "x", "items": 99999}"#, prep, None).is_err());
         let d = parse(r#"{"id": "x", "name": "x", "items": 8}"#, prep, None).unwrap();
         assert!(d.generated().contains("const ITEMS: u32 = 8u;"));
+    }
+
+    #[test]
+    fn a_line_needs_points_and_points_need_a_line() {
+        let shade = "fn shade(uv: vec2<f32>) -> vec3<f32> { return vec3<f32>(0.0); }";
+        let pts = "fn point(i: u32) -> LinePoint { var q: LinePoint; return q; }";
+        let both = format!("{pts}
+{shade}");
+        assert!(parse(r#"{"id": "x", "name": "x"}"#, &both, None).is_err());
+        assert!(parse(r#"{"id": "x", "name": "x", "line": 100}"#, shade, None).is_err());
+        assert!(parse(r#"{"id": "x", "name": "x", "line": 1}"#, &both, None).is_err());
+        let d = parse(r#"{"id": "x", "name": "x", "line": 100}"#, &both, None).unwrap();
+        assert!(d.generated().contains("const LINE_POINTS: u32 = 100u;"));
+        assert!(d.source(&ShaderSet::load(), &d.wgsl).contains("fn cs_line"));
     }
 
     #[test]

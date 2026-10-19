@@ -17,9 +17,10 @@ pub fn root() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("audioviz"))
 }
 
-/// Dev runs read the embedded set and never touch the user's folder.
+/// Dev runs read the embedded set and never touch the user's folder; nor
+/// do tests (the registry they build would otherwise install visuals).
 pub fn embedded_only() -> bool {
-    std::env::var_os("AUDIOVIZ_DEFAULTS").is_some()
+    cfg!(test) || std::env::var_os("AUDIOVIZ_DEFAULTS").is_some()
 }
 
 /// Factory files whose relative path starts with `prefix` ("presets/ribbons", "scenes").

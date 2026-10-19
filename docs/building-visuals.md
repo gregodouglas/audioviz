@@ -54,6 +54,7 @@ The visuals that ship with the app live in the repo under `assets/visuals/` and 
 | `hint` | no | A longer explanation at the foot of the Visual tab: what the controls do, which part of the music drives what. |
 | `feedback` | no | `true` keeps your last frame so `prev(uv)` can read it (example 3). Default `false`. |
 | `items` | no | How many values your `prepare` step computes each frame (up to 4096); required when `visual.wgsl` has `fn prepare`, and only then. See "Once a frame: prepare" below. |
+| `line` | no | How many points your line has (2 to 65536); required when `visual.wgsl` has `fn point`, and only then. See "Drawing a line" below. |
 | `params` | no | Up to 16 controls (below). |
 
 Each entry in `params`:
@@ -85,7 +86,7 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
 }
 ```
 
-Add any helper functions and constants you like above it. Names the API already uses (below, plus `FsIn`, `fullscreen_vertex`, `vs_main`, `fs_main`, `cs_main`, `V`, `Params`, `ITEMS`) cannot be reused.
+Add any helper functions and constants you like above it. Names the API already uses (below, plus `FsIn`, `fullscreen_vertex`, `vs_main`, `fs_main`, `cs_main`, `cs_line`, `V`, `Params`, `ITEMS`, `LINE_POINTS`, `LinePoint`) cannot be reused.
 
 ### Coordinates
 
@@ -338,6 +339,25 @@ fn prepare(i: u32) -> vec4<f32> {
 
 Use `V.dt` for anything that accumulates, so it runs at the same speed at every frame rate. Items are not saved: they start from zero when the app starts or the visual is picked again.
 
+## Drawing a line
+
+Some pictures are one long line: a spiral, a Lissajous figure, a waveform. Drawing a line in `shade` means measuring each pixel's distance to every segment, which is the loop-per-pixel trap at its worst. Instead, say in `visual.json` how many points the line has (`"line": 6000`) and give them from a function:
+
+```wgsl
+fn point(i: u32) -> LinePoint {
+    let u = f32(i) / f32(LINE_POINTS - 1u);   // 0 at the first point, 1 at the last
+    var q: LinePoint;
+    q.pos = vec2<f32>(cos(u * TAU), sin(u * TAU)) * 0.8;   // centred coordinates
+    q.width = 2.0;                                       // pixels; 0 breaks the line here
+    q.colour = colour(u);                                // linear light
+    return q;
+}
+```
+
+The engine calls `point(i)` once for each point every frame (after `prepare`, so it can read this frame's items), then draws the segments between consecutive points as soft, round-capped strokes, added over whatever `shade` returned (return `vec3<f32>(0.0)` from `shade` if the line is all there is). Width and colour blend along each segment. A point with width 0 ends one stroke and the next point starts another, so one line can be many strokes. With `feedback`, the line is part of what `prev()` reads next frame, so trails work.
+
+**Harmonograph** (`assets/visuals/harmonograph/`) is the example: a damped Lissajous figure of 6000 points whose two swings run at the interval between the music's two strongest pitch classes. Its `prepare` step finds the interval and glides toward it (state, in one item), and `point` reads that item. It costs 0.19 ms at 2560x1440.
+
 ## A performance budget
 
 `shade` runs for every pixel: 3.7 million at 2560x1440, 8.3 million at 4K, every frame. A line of code is cheap; a line inside a loop is that line times the loop count, times millions.
@@ -352,6 +372,7 @@ What a frame costs (release build, RTX 2070 Super, 2560x1440):
 | Polygon | 0.12 |
 | Comet (three heads, feedback) | 0.24 |
 | Pulse (five rings) | 0.44 |
+| Harmonograph (a 6000-point line) | 0.19 |
 | Eclipse (16 dots, a loop with a halo per dot, levels in `prepare`) | 0.69 |
 | Eclipse at 64 dots | 2.7 |
 | Eclipse at 16 and 64 dots before it had a `prepare` step | 1.1 and 4.5 |
@@ -393,7 +414,7 @@ A visual is its folder: zip it, send it, and the recipient unzips it into `%APPD
 What a loaded visual cannot do yet, each a possible extension of the format:
 
 - **State is four numbers per item**, kept by `prepare` from frame to frame, and lost when the app restarts or the visual is picked again.
-- **No meshes, lines or particles.** One fragment function draws everything, so a visual that is a long polyline (Loop, Spiral) or thousands of particles (Ribbons) stays built in.
+- **No meshes or particles.** A picture and one line are what a loaded visual draws; thousands of moving particles (Ribbons) or solid 3D shapes (Crystal) stay built in.
 - **No pictures of your own**: the album art is the one picture a visual can read.
 - **Sixteen controls**, all numbers.
 - **A changed `id` needs a restart**, and a folder deleted while the app runs stays listed until then.

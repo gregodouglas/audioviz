@@ -65,6 +65,7 @@ The app reads the folder at start and lists each visual with the built-ins, mark
 - `id`: lowercase letters, digits, `-` or `_`; what files point at, so it never changes. An id already taken (a built-in) is skipped.
 - Up to 16 `params`. `type` is `slider` (the default), `integer`, `toggle` or `choice` (three options or fewer show as a segmented control, more as a dropdown). Param ids are lowercase identifiers, not WGSL words. `group` gathers controls under a heading, in order of first use. Values are saved in the layer as `"<id>": { "radius": 0.5, ... }`.
 - `feedback: true` keeps last frame's picture for `prev(uv)`.
+- `line: N` (2 to 65536) draws a line through the N points that `fn point(i: u32) -> LinePoint` gives (`pos` centred, `width` in pixels with 0 breaking the line, `colour`), added over `shade`'s picture. `LINE_POINTS` is N. Required with a `point` function and refused without one.
 - `items: N` (up to 4096) runs `fn prepare(i: u32) -> vec4<f32>` from `visual.wgsl` once a frame for each `i < N`, before `shade`; `shade` reads the results with `item(i)`. Inside `prepare`, `item(i)` is last frame's value, so items can keep state. `ITEMS` is N in the shader. Required with a `prepare` function and refused without one.
 
 ### visual.wgsl
@@ -96,6 +97,7 @@ The colour is linear HDR light (values above 1 are fine; levelling, effects and 
 | `wave(t)`, `wave_mono(t)` | the last 1024 samples (t 0 oldest .. 1 newest), auto-gained |
 | `colour(t)` | the layer's palette at t (moving with its cycle) over its tint |
 | `prev(uv)` | last frame (with `feedback`) |
+| `LinePoint`, `LINE_POINTS` | a point of the line (`pos`, `width` px, `colour`) and how many there are |
 | `art(uv)`, `V.has_art` | the playing track's album art (512 x 512, linear colour, y down; black and 0 without art) |
 | `item(i)`, `ITEMS` | the prepare step's item `i` (this frame's in `shade`, last frame's in `prepare`), and how many |
 | `centred(uv)`, `uncentred(p)`, `pixel()`, `TAU` | coordinates (short side's half-extent 1, y up) and back to uv, one pixel in them |
@@ -104,10 +106,12 @@ The colour is linear HDR light (values above 1 are fine; levelling, effects and 
 
 A loaded visual sees only the shared `params.wgsl` prelude and this API, not the built-in visuals' own helpers, so their names never collide with yours. `cargo test -p audioviz factory_visuals_compile` compiles every factory visual the way the engine does.
 
-Factory examples, each a worked example in the guide: **Polygon** (a still shape), **Pulse** (bands, beats, onsets, the music clock), **Comet** (feedback trails).
+Factory examples, each a worked example in the guide: **Polygon** (a still shape), **Pulse** (bands, beats, onsets, the music clock), **Comet** (feedback trails), **Eclipse** (a prepare step), **Harmonograph** (a line, with state in a prepare step).
 
 How the prepare step runs: a compute pass (`cs_main`, generated after the visual's code, 64 per workgroup) writes one of two item buffers while reading the other through `item()`; the fragment pass then reads the one just written. Eclipse moved its dot levels, positions and colours there: 1.1 → 0.69 ms at 16 dots and 4.5 → 2.7 at 64 (2560x1440, release), under the old compiled-in Eclipse's 0.8 and 3.5.
 
 The album art is resampled on the CPU to 512 x 512 once per track (`image`'s triangle filter) and written into an sRGB texture each loaded visual owns; `has_art` took the uniform's old pad slot, so the layout did not move.
 
-What a loaded visual cannot do yet: draw meshes, lines or particles (Loop, Spiral, Ribbons and Crystal stay built in), or read pictures other than the album art. Each is a possible extension of the format.
+How the line runs: a compute pass (`cs_line`, after `cs_main`) writes each `point(i)` as two vec4 into a storage buffer; the engine's own `visual_lines.wgsl` draws instance i as the quad from point i to i + 1 (soft edge, round caps at half strength so joins do not double, colour and width blended along it), additively into the visual's output after the `shade` pass. Factory example: **Harmonograph** (6000 points, 0.19 ms).
+
+What a loaded visual cannot do yet: draw meshes or particles (Ribbons and Crystal stay built in), or read pictures other than the album art. Each is a possible extension of the format.

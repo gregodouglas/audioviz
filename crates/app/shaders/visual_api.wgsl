@@ -104,6 +104,15 @@ fn wave_mono(t: f32) -> f32 {
     return 0.5 * (w.x + w.y);
 }
 
+// One point of a visual's line (with "line": N in visual.json, fn point(i)
+// returns point i): where it is in centred coordinates, the line's width
+// there in pixels (0 breaks the line), and its colour (linear light).
+struct LinePoint {
+    pos: vec2<f32>,
+    width: f32,
+    colour: vec3<f32>,
+};
+
 // Item i as prepare() computed it (zero without a prepare step). In shade()
 // it is this frame's value; inside prepare() it is last frame's, so a
 // prepare step can keep state: smooth, integrate, remember.

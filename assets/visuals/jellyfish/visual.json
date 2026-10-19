@@ -5,8 +5,8 @@
   "summary": "A swarm of one jellyfish species in a deep tank: moon, sea nettle, crystal, atolla, comb jelly or lion's mane, each glowing the way it does in the sea, to the music.",
   "hint": "One species per layer; stack layers to mix them. They live on their own (swimming, drifting with the current, keeping apart) and the music only sways them: Natural barely, Reactive gently, Performance fully. Each species lights its own way: moon jellies breathe their gonads with the bass, sea nettles' stripes pulse with the mids, crystal jellies flash their green rims on onsets, an atolla spins its blue alarm pinwheel on a drop, comb jellies race rainbows along their combs with the hi-hats, a lion's mane sends waves of light down its hair with the sustained low end.",
   "uses": ["creatures"],
-  "items": 31360,
-  "triangles": 15552,
+  "items": 31852,
+  "triangles": 85248,
   "line": 30720,
   "params": [
     { "id": "species", "label": "Species", "type": "choice", "group": "Swarm", "options": ["Moon jelly", "Sea nettle", "Crystal jelly", "Atolla", "Comb jelly", "Lion's mane"], "values": ["moon", "nettle", "crystal", "atolla", "comb", "lion"], "default": "moon" },
@@ -26,6 +26,7 @@
     { "id": "body", "label": "Translucency", "group": "Light", "min": 0.0, "max": 2.0, "default": 1.0, "help": "The glassy bell: edges glow, faces stay clear." },
     { "id": "water", "label": "Water", "group": "Tank", "min": 0.0, "max": 1.0, "default": 0.0, "help": "Deep water and light shafts behind them, for an aquarium look. Auto exposure lifts water that fills the frame, so keep it low (0: black, best for stacking layers)." },
     { "id": "plankton", "label": "Plankton", "group": "Tank", "min": 0.0, "max": 1.0, "default": 0.35 },
+    { "id": "view", "label": "View", "type": "choice", "group": "Tank", "options": ["Tank", "Close-up"], "default": "tank", "help": "Tank: the whole swarm. Close-up: the camera follows one jelly and slowly circles it." },
     { "id": "camera", "label": "Camera drift", "group": "Tank", "min": 0.0, "max": 1.0, "default": 0.35 }
   ]
 }

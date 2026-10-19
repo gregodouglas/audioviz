@@ -9,15 +9,16 @@
 // and a rainbow for iridescence. Everything is in world units: the tank is
 // a few units across, y up.
 
-// A camera looking at the origin from `dist` away, turned `yaw` about the
-// vertical and tipped `pitch` (radians). `focal` is centred units per unit
-// of depth: 2.2 at a distance of 4.2 shows about 1.9 units above and below
-// the middle.
+// A camera looking at `look` (the origin unless set) from `dist` away,
+// turned `yaw` about the vertical and tipped `pitch` (radians). `focal` is
+// centred units per unit of depth: 2.2 at a distance of 4.2 shows about 1.9
+// units above and below the middle.
 struct Camera {
     yaw: f32,
     pitch: f32,
     dist: f32,
     focal: f32,
+    look: vec3<f32>,
 };
 
 // A camera that swings slowly round the tank by up to `drift` radians.
@@ -27,6 +28,7 @@ fn drifting_camera(drift: f32, dist: f32, focal: f32) -> Camera {
     c.pitch = sin(V.time * 0.017 + 0.4) * 0.12 * drift;
     c.dist = dist;
     c.focal = focal;
+    c.look = vec3<f32>(0.0);
     return c;
 }
 
@@ -43,7 +45,7 @@ fn camera_dir(c: Camera, d: vec3<f32>) -> vec3<f32> {
 // A world point in camera space: x right, y up, z its depth (distance in
 // front of the camera).
 fn to_camera(c: Camera, p: vec3<f32>) -> vec3<f32> {
-    return camera_dir(c, p) + vec3<f32>(0.0, 0.0, c.dist);
+    return camera_dir(c, p - c.look) + vec3<f32>(0.0, 0.0, c.dist);
 }
 
 // Where the camera is, in world space.
@@ -54,7 +56,7 @@ fn camera_position(c: Camera) -> vec3<f32> {
     let q = vec3<f32>(0.0, sp * -c.dist, cp * -c.dist);
     let cy = cos(c.yaw);
     let sy = sin(c.yaw);
-    return vec3<f32>(cy * q.x + sy * q.z, q.y, -sy * q.x + cy * q.z);
+    return vec3<f32>(cy * q.x + sy * q.z, q.y, -sy * q.x + cy * q.z) + c.look;
 }
 
 // Where world point p lands on screen (centred coordinates, xy), and how
@@ -111,6 +113,22 @@ fn stroke(since: f32, squeeze: f32, release: f32) -> f32 {
     return exp(-r) - 0.12 * sin(clamp(r * 0.9, 0.0, 3.14159));
 }
 
+// An elastic swim stroke `since` seconds after it began: closes 0 to 1 over
+// `squeeze` seconds (eased), then springs back, crossing rest after
+// `spring` seconds, overshooting below zero (a bell flaring past its rest
+// shape) and settling. Crisper than `stroke`: what a bell of springy jelly
+// does once the muscle lets go.
+fn elastic_stroke(since: f32, squeeze: f32, spring: f32) -> f32 {
+    if (since < 0.0) {
+        return 0.0;
+    }
+    if (since < squeeze) {
+        return 0.5 - 0.5 * cos(since / squeeze * 3.14159);
+    }
+    let r = since - squeeze;
+    return exp(-r / spring) * cos(r / spring * 1.5708);
+}
+
 // One link of a chain (a tentacle, a hair, an arm) for this frame: `held`
 // is where it was (water holds it, so it trails), `parent` the link above
 // (as it was last frame, or the anchor); it eases toward lying along
@@ -160,4 +178,61 @@ fn wander_point(id: f32, half: vec3<f32>, rate: f32) -> vec3<f32> {
 // A rainbow: hue t (0..1, wraps) as a saturated colour, for iridescence.
 fn spectrum(t: f32) -> vec3<f32> {
     return clamp(abs(fract(t + vec3<f32>(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+// ---------------------------------------------------------------- textures
+//
+// Procedural textures for living tissue: resolution-free (sharp at 4K and
+// in a close-up), animated for nothing, no files. Coordinates are whatever
+// the caller maps across the surface.
+
+// Fractal noise: `octaves` (1..6) layers of value noise, each twice as fine
+// and half as strong; 0..1, about 0.5 on average.
+fn fbm(p: vec2<f32>, octaves: u32) -> f32 {
+    var sum = 0.0;
+    var amp = 0.5;
+    var q = p;
+    var norm = 0.0;
+    for (var o = 0u; o < min(octaves, 6u); o++) {
+        sum += noise(q) * amp;
+        norm += amp;
+        q = q * 2.03 + vec2<f32>(17.1, 9.3);
+        amp *= 0.5;
+    }
+    return sum / norm;
+}
+
+// Cells (Voronoi): x the distance to the nearest cell centre, y to the
+// second nearest, z a 0..1 id of the nearest cell. y - x is small along the
+// walls between cells: tissue, scales, foam. `jitter` 0 is a grid, 1 fully
+// irregular; `t` moves the centres slowly.
+fn cells(p: vec2<f32>, jitter: f32, t: f32) -> vec3<f32> {
+    let base = floor(p);
+    let f = p - base;
+    var d1 = 8.0;
+    var d2 = 8.0;
+    var id = 0.0;
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            let o = vec2<f32>(f32(x), f32(y));
+            let h = hash22(base + o);
+            let c = o + 0.5 + (h - 0.5) * jitter + 0.15 * jitter * sin(t + h * 6.2831);
+            let d = length(f - c);
+            if (d < d1) {
+                d2 = d1;
+                d1 = d;
+                id = h.x;
+            } else if (d < d2) {
+                d2 = d;
+            }
+        }
+    }
+    return vec3<f32>(d1, d2, id);
+}
+
+// Fine texture that would only shimmer at this size fades to its average:
+// `detail` is the texture's frequency times one pixel in its coordinates
+// (fwidth); 1 at and below about a cycle per two pixels, 0 when finer.
+fn keep_detail(detail: f32) -> f32 {
+    return 1.0 - smoothstep(0.25, 0.6, detail);
 }

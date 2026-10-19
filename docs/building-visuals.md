@@ -417,6 +417,10 @@ For living things moving in 3D, add `"uses": ["creatures"]` to `visual.json`: th
 - **Mind the levelling.** A layer is levelled to the mean brightness of its lit part. A background that fills the frame (water, fog) is then lifted to full brightness and the creatures are dimmed under it; keep backgrounds off by default and faint when on. Likewise many faint strands add up: hundreds of hairs at the brightness of one tentacle drown their bell.
 - **Additive light needs no sorting.** Glowing creatures drawn with alpha 0 look right in any order; only covering (alpha 1) needs far-to-near.
 - **Look from slightly below.** A camera level with the tank shows bells edge on and hides what glows inside them.
+- **Shape from angles, not from scaling.** The moon jelly's bell is a profile whose tangent angle turns down from crown to margin, integrated into radius and height once a frame per node (a prepare item each), then spun round the axis. Bending the angle (a muscle curling the outer bell, the passive margin following 0.12 s late) gives a whip and a flare that no scale of a fixed shape can, and the mesh, the tentacle roots and the mouth all read the same nodes, so nothing comes apart. Thrust is the rate the bell closes (the water it pushes out), plus a smaller push as it reopens.
+- **Strokes are springs.** `elastic_stroke` closes eased, then springs back past rest and settles; a slow exponential release reads as a squish rather than a pulse.
+- **Real anatomy is the texture.** A translucent creature looks real by what shows through it: light where the eye looks through more jelly (thickness over facing), the edge seen side on, and the organs painted on an inner skin (the moon jelly's gonads, forking canals, ring canal, muscle rings). This follows Fatahalian and Foley's CS348B jellies (Stanford, 2004): emission mapped over the surface did more than physically right scattering. Use `fbm` and `cells` for tissue, `keep_detail` so fine texture fades instead of shimmering, and interpolate plan (x, y) coordinates rather than an angle round, which kinks across a quad's diagonal and wraps.
+- **No regular patterns on living things.** Neighbouring tentacles swaying in step read as a comb; a sway that turns round a strand coils it into a spring; a ruffle finer than the mesh aliases into zig-zags (put fine detail in `paint`, keep the mesh's folds slow).
 
 ## A performance budget
 
@@ -440,6 +444,7 @@ What a frame costs (release build, RTX 2070 Super, 2560x1440):
 | Eclipse at 16 and 64 dots before it had a `prepare` step | 1.1 and 4.5 |
 | Sigil (rings, rays, orbs, star, triangles, trace and drips per pixel; 81 prepare items; a trail) | ~2.8 |
 | Jellyfish (12 lion's manes: 1440 hairs, 12 bells, 48 arms, in 3D) | 0.48 |
+| Jellyfish (6 moon jellies: two skins with painted anatomy, 960 fringe tentacles, V-section arms; 12 large ones) | 0.50 (0.89) |
 | Black hole (a ray march per pixel) | ~4 |
 
 The frame you have: 4.2 ms at 240 Hz, 6.9 at 144, 16.7 at 60, for everything: three layers, their effects, the Picture and the panel. The app's own goal is that a full scene runs on one ordinary PC. So **aim for 1 ms or less for a visual at 2560x1440**, treat 2 ms as heavy, and leave 3.5 ms to the two built-ins that earn it. Costs scale with pixels: double them for 4K.

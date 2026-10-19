@@ -59,8 +59,10 @@ visuals/harmonograph/visual.json 548d04f846e1fcb4
 visuals/harmonograph/visual.wgsl 3ea8bf81525e9a66
 visuals/harmonograph/visual.wgsl cdfe8fe68fcd9536
 visuals/jellyfish/visual.json 837f24cda13524c0
+visuals/jellyfish/visual.json aed7919e047bb97e
 visuals/jellyfish/visual.json c015f5b23cf4d721
 visuals/jellyfish/visual.wgsl 2c5ccee4c4862f6e
+visuals/jellyfish/visual.wgsl 4d31203da1ac986d
 visuals/jellyfish/visual.wgsl 73bc208e278951de
 visuals/kaleido/visual.json 61603cabff3e5530
 visuals/kaleido/visual.wgsl 069d6bcf431d8c05

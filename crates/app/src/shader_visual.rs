@@ -151,6 +151,18 @@ struct Manifest {
     /// Shared libraries put in front of the code ("creatures").
     #[serde(default)]
     uses: Vec<String>,
+    /// More code files in the visual's folder, after visual.wgsl, in order
+    /// (read from the raw JSON by `with_parts`, before the manifest is parsed).
+    #[serde(default)]
+    #[allow(dead_code)]
+    parts: Vec<String>,
+    /// How the layer's levelling measures it: "lit" (the default: every lit
+    /// part) or "bright" (only the bright part; faint fill does not count).
+    #[serde(default)]
+    levelling: String,
+    /// Smooth the triangles' edges (4x multisampling of the triangle pass).
+    #[serde(default)]
+    antialias: bool,
 }
 
 /// Where a visual's pictures come from: a choice control whose second
@@ -195,13 +207,81 @@ pub struct ShaderDef {
     pub trail: bool,
     /// Shared libraries in front of the code.
     pub uses: Vec<String>,
+    /// The levelling measures only the bright part ("levelling": "bright").
+    pub level_bright: bool,
+    /// The triangles are multisampled ("antialias": true).
+    pub antialias: bool,
     pub wgsl: String,
     /// The folder it came from, watched for changes (none for embedded copies).
     pub dir: Option<PathBuf>,
 }
 
-/// Libraries a visual may put in front of its code with "uses": (name, file).
-const LIBRARIES: &[(&str, &str)] = &[("creatures", "creatures.wgsl")];
+/// Libraries a visual may put in front of its code with "uses": (name,
+/// file, the libraries it needs, which come with it).
+const LIBRARIES: &[(&str, &str, &[&str])] = &[
+    ("creatures", "library/creatures.wgsl", &[]),
+    ("luminous", "library/luminous.wgsl", &[]),
+    ("jelly", "library/jelly.wgsl", &["creatures", "luminous"]),
+];
+
+/// The library files a visual's "uses" brings in, each once, what a library
+/// needs before it.
+fn library_files(uses: &[String]) -> Vec<&'static str> {
+    fn add(name: &str, out: &mut Vec<&'static str>) {
+        if let Some((_, file, needs)) = LIBRARIES.iter().find(|(n, _, _)| *n == name) {
+            for n in needs.iter() {
+                add(n, out);
+            }
+            if !out.contains(file) {
+                out.push(file);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for u in uses {
+        add(u, &mut out);
+    }
+    out
+}
+
+/// How many code files a visual may add to visual.wgsl with "parts".
+const MAX_PARTS: usize = 16;
+
+/// The line in front of each part in a visual's code.
+fn part_marker(name: &str) -> String {
+    format!("// ==== part: {name} ====")
+}
+
+/// A visual's whole code: visual.wgsl, then each file its manifest lists in
+/// "parts" (plain .wgsl names in the same folder), each behind a marker line
+/// so errors can name the file. `read` gives a file's text by name.
+fn with_parts(json: &str, main: &str, read: impl Fn(&str) -> Option<String>) -> Result<String, String> {
+    let parts: Vec<String> = serde_json::from_str::<Value>(json)
+        .ok()
+        .and_then(|v| v.get("parts").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()))
+        .unwrap_or_default();
+    if parts.len() > MAX_PARTS {
+        return Err(format!("visual.json: at most {MAX_PARTS} parts"));
+    }
+    let mut code = main.to_string();
+    for name in &parts {
+        if !name.ends_with(".wgsl") || name.contains(['/', '\\']) || name.starts_with('.') || name == "visual.wgsl" {
+            return Err(format!("visual.json: part \"{name}\" must be a .wgsl file in the visual's folder"));
+        }
+        let Some(text) = read(name) else { return Err(format!("visual.json: part \"{name}\" is not in the folder")) };
+        code.push('\n');
+        code.push_str(&part_marker(name));
+        code.push('\n');
+        code.push_str(&text);
+    }
+    Ok(code)
+}
+
+/// The code of the visual in folder `d` (visual.wgsl and its parts).
+fn read_code(d: &Path, json: &str) -> Result<String, String> {
+    let main = std::fs::read_to_string(d.join("visual.wgsl")).map_err(|e| format!("visual.wgsl: {e}"))?;
+    with_parts(json, &main, |name| std::fs::read_to_string(d.join(name)).ok())
+}
 
 /// WGSL keywords and type names: never a control id.
 const RESERVED: &[&str] = &["array", "bool", "break", "case", "const", "continue", "default", "discard", "else", "enable", "f32", "fn", "for", "i32", "if", "let", "loop", "mat2x2", "override", "ptr", "return", "struct", "switch", "true", "false", "type", "u32", "var", "vec2", "vec3", "vec4", "while", "texture", "sampler", "uniform", "storage", "private", "function", "workgroup"];
@@ -271,8 +351,15 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
     if !matches!(m.line_style.as_str(), "" | "line" | "beam") {
         return Err(format!("visual.json: line_style \"{}\" is not \"line\" or \"beam\"", m.line_style));
     }
-    if let Some(u) = m.uses.iter().find(|u| !LIBRARIES.iter().any(|(name, _)| name == u)) {
-        return Err(format!("visual.json: uses \"{u}\" is not a library (there is: creatures)"));
+    if let Some(u) = m.uses.iter().find(|u| !LIBRARIES.iter().any(|(name, _, _)| name == u)) {
+        let names: Vec<&str> = LIBRARIES.iter().map(|(name, _, _)| *name).collect();
+        return Err(format!("visual.json: uses \"{u}\" is not a library (there are: {})", names.join(", ")));
+    }
+    if !matches!(m.levelling.as_str(), "" | "lit" | "bright") {
+        return Err(format!("visual.json: levelling \"{}\" is not \"lit\" or \"bright\"", m.levelling));
+    }
+    if m.antialias && m.trail {
+        return Err("visual.json: \"antialias\" and \"trail\" do not go together yet".into());
     }
     if m.trail && !defines(wgsl, "shade") {
         return Err("visual.json sets \"trail\": fn shade writes it, and visual.wgsl has none".into());
@@ -300,7 +387,7 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
         return Err(format!("visual.json: line_count \"{}\" is not a number param", m.line_count));
     }
     let short = if m.short.is_empty() { m.name.clone() } else { m.short };
-    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, uses: m.uses, wgsl: wgsl.to_string(), dir })
+    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, uses: m.uses, level_bright: m.levelling == "bright", antialias: m.antialias && m.triangles > 0, wgsl: wgsl.to_string(), dir })
 }
 
 // ------------------------------------------------------------ values
@@ -371,7 +458,7 @@ impl ShaderDef {
     /// The text in front of the visual's own code (its first line is the
     /// next one), so errors can point into visual.wgsl.
     fn prefix(&self, shaders: &ShaderSet) -> String {
-        let libs: String = self.uses.iter().filter_map(|u| LIBRARIES.iter().find(|(name, _)| name == u)).map(|(_, file)| format!("{}\n", shaders.raw(file))).collect();
+        let libs: String = library_files(&self.uses).iter().map(|file| format!("{}\n", shaders.raw(file))).collect();
         format!("{}\n{libs}{}\n// ---- visual.wgsl ----\n", shaders.source_base("visual_api.wgsl"), self.generated())
     }
 
@@ -414,15 +501,16 @@ impl ShaderDef {
     fn job(&self, shaders: &ShaderSet) -> Job {
         let src = self.source(shaders, &self.wgsl);
         let (prepare, line, mesh, trail) = (self.items > 0, self.line > 0, self.triangles > 0, self.trail);
+        let samples = if mesh && self.antialias { MESH_SAMPLES } else { 1 };
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        (&src, prepare, line, mesh, trail).hash(&mut h);
+        (&src, prepare, line, mesh, trail, samples).hash(&mut h);
         let line_src = line.then(|| {
             let text = shaders.source("visual_lines.wgsl");
             let mut h = std::collections::hash_map::DefaultHasher::new();
             text.hash(&mut h);
             (h.finish(), text)
         });
-        Job { key: h.finish(), id: self.id.clone(), src, prepare, line, mesh, trail, line_src }
+        Job { key: h.finish(), id: self.id.clone(), src, prepare, line, mesh, trail, samples, line_src }
     }
 }
 
@@ -431,9 +519,27 @@ fn prepare_after(prepare: &str, mut s: String) -> String {
     s
 }
 
+/// Line `line` (1-based) of a visual's code, as (file, line in it): the
+/// part markers `with_parts` puts in say where each file starts.
+fn code_position(code: &str, line: usize) -> (String, usize) {
+    let mut file = "visual.wgsl".to_string();
+    let mut start = 0;
+    for (i, l) in code.lines().enumerate() {
+        if i + 1 >= line {
+            break;
+        }
+        if let Some(name) = l.strip_prefix("// ==== part: ").and_then(|r| r.strip_suffix(" ====")) {
+            file = name.to_string();
+            start = i + 1;
+        }
+    }
+    (file, line - start)
+}
+
 /// Rewrite the compiler's `wgsl:LINE:COL` positions, which count the whole
-/// composed shader, as positions in visual.wgsl (or the engine's part).
-fn visual_lines(err: &str, offset: usize) -> String {
+/// composed shader, as positions in visual.wgsl or one of its parts (`code`,
+/// the visual's code), or the engine's part.
+fn visual_lines(err: &str, offset: usize, code: &str) -> String {
     let mut out = String::with_capacity(err.len());
     let mut rest = err;
     while let Some(at) = rest.find("wgsl:") {
@@ -441,7 +547,10 @@ fn visual_lines(err: &str, offset: usize) -> String {
         let tail = &rest[at + 5..];
         let digits: String = tail.chars().take_while(char::is_ascii_digit).collect();
         match digits.parse::<usize>() {
-            Ok(line) if line > offset => out.push_str(&format!("visual.wgsl line {}, col", line - offset)),
+            Ok(line) if line > offset => {
+                let (file, at) = code_position(code, line - offset);
+                out.push_str(&format!("{file} line {at}, col"));
+            }
             Ok(_) => out.push_str("the engine's part, line"),
             Err(_) => {
                 out.push_str("wgsl:");
@@ -486,8 +595,11 @@ fn read_folder_except(root: &Path, watch: bool, skip: &[PathBuf]) -> Vec<ShaderD
     let mut dirs: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_dir() && !skip.contains(p)).collect();
     dirs.sort();
     for d in dirs {
-        let (Ok(json), Ok(wgsl)) = (std::fs::read_to_string(d.join("visual.json")), std::fs::read_to_string(d.join("visual.wgsl"))) else { continue };
-        match parse(&json, &wgsl, watch.then(|| d.clone())) {
+        let Ok(json) = std::fs::read_to_string(d.join("visual.json")) else { continue };
+        if !d.join("visual.wgsl").is_file() {
+            continue;
+        }
+        match read_code(&d, &json).and_then(|wgsl| parse(&json, &wgsl, watch.then(|| d.clone()))) {
             Ok(def) => out.push(def),
             Err(e) => tracing::warn!("visual {}: {e}", d.display()),
         }
@@ -502,18 +614,19 @@ pub fn is_factory(id: &str) -> bool {
 }
 
 pub fn embedded() -> Vec<ShaderDef> {
-    let mut by_folder: BTreeMap<&str, (Option<&str>, Option<&str>)> = BTreeMap::new();
+    let mut by_folder: BTreeMap<&str, BTreeMap<&str, &str>> = BTreeMap::new();
     for (rel, text) in factory::embedded("visuals/") {
         let mut parts = rel.split('/');
-        let (_, Some(f), Some(file)) = (parts.next(), parts.next(), parts.next()) else { continue };
-        let e = by_folder.entry(f).or_default();
-        match file {
-            "visual.json" => e.0 = Some(text),
-            "visual.wgsl" => e.1 = Some(text),
-            _ => {}
-        }
+        let (_, Some(f), Some(file), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else { continue };
+        by_folder.entry(f).or_default().insert(file, text);
     }
-    by_folder.into_iter().filter_map(|(f, (j, w))| parse(j?, w?, None).map_err(|e| tracing::warn!("factory visual {f}: {e}")).ok()).collect()
+    by_folder
+        .into_iter()
+        .filter_map(|(f, files)| {
+            let (json, main) = (files.get("visual.json")?, files.get("visual.wgsl")?);
+            with_parts(json, main, |name| files.get(name).map(|t| t.to_string())).and_then(|wgsl| parse(json, &wgsl, None)).map_err(|e| tracing::warn!("factory visual {f}: {e}")).ok()
+        })
+        .collect()
 }
 
 /// Whether layer `l`'s visual `id` takes pictures and its source control is
@@ -698,6 +811,8 @@ struct Job {
     line: bool,
     mesh: bool,
     trail: bool,
+    /// The triangle pass's samples (1, or MESH_SAMPLES when antialiased).
+    samples: u32,
     line_src: Option<(u64, String)>,
 }
 
@@ -708,6 +823,8 @@ struct Built {
     line: Option<wgpu::ComputePipeline>,
     mesh: Option<wgpu::RenderPipeline>,
     line_draw: Option<wgpu::RenderPipeline>,
+    /// Samples per pixel of the picture and triangles (1, or MESH_SAMPLES).
+    samples: u32,
 }
 
 fn shared(device: &wgpu::Device) -> Arc<Shared> {
@@ -809,7 +926,7 @@ impl Shared {
                 }
                 p
             });
-            let built = self.compile(&job).map(|(picture, prepare, line, mesh)| Arc::new(Built { picture, prepare, line, mesh, line_draw: line_draw.flatten() }));
+            let built = self.compile(&job).map(|(picture, prepare, line, mesh)| Arc::new(Built { picture, prepare, line, mesh, line_draw: line_draw.flatten(), samples: job.samples }));
             match &built {
                 Ok(_) => tracing::debug!("visual {} built in {} ms", job.id, started.elapsed().as_millis()),
                 Err(e) => tracing::debug!("visual {} failed to build: {e}", job.id),
@@ -832,8 +949,8 @@ impl Shared {
             };
             let prepare = job.prepare.then(|| compute("loaded visual prepare", "cs_main"));
             let line = job.line.then(|| compute("loaded visual line points", "cs_line"));
-            let mesh = job.mesh.then(|| mesh_pipeline(device, layout, &m));
-            let picture = if job.trail { scene::pipeline2(device, &job.id, layout, &m, HDR_FORMAT) } else { scene::pipeline(device, &job.id, layout, &m, HDR_FORMAT, None) };
+            let mesh = job.mesh.then(|| mesh_pipeline(device, layout, &m, job.samples));
+            let picture = if job.trail { scene::pipeline2(device, &job.id, layout, &m, HDR_FORMAT) } else { scene::pipeline_samples(device, &job.id, layout, &m, HDR_FORMAT, None, job.samples) };
             (picture, prepare, line, mesh)
         })
     }
@@ -888,6 +1005,9 @@ pub struct ShaderVisual {
     line_draw: Option<wgpu::RenderPipeline>,
     /// The triangles' pipeline (premultiplied over the picture).
     mesh: Option<wgpu::RenderPipeline>,
+    /// Antialiased: the multisampled target the picture and the triangles
+    /// draw in (made when the built code asks for antialiasing).
+    msaa: Option<wgpu::TextureView>,
     uniform: wgpu::Buffer,
     wave_buf: wgpu::Buffer,
     sampler: wgpu::Sampler,
@@ -984,7 +1104,27 @@ const PREMULTIPLIED_OVER: wgpu::BlendState = wgpu::BlendState {
     alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
 };
 
-fn mesh_pipeline(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, module: &wgpu::ShaderModule) -> wgpu::RenderPipeline {
+/// Samples per pixel of an antialiased triangle pass.
+const MESH_SAMPLES: u32 = 4;
+
+/// The multisampled target an antialiased visual draws its picture and
+/// triangles in before they resolve into its output.
+fn msaa_target(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
+    device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: Some("loaded visual msaa"),
+            size: wgpu::Extent3d { width: width.max(1), height: height.max(1), depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: MESH_SAMPLES,
+            dimension: wgpu::TextureDimension::D2,
+            format: HDR_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        })
+        .create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+fn mesh_pipeline(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, module: &wgpu::ShaderModule, samples: u32) -> wgpu::RenderPipeline {
     let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("loaded visual triangles"), bind_group_layouts: &[Some(layout)], immediate_size: 0 });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("loaded visual triangles"),
@@ -993,7 +1133,7 @@ fn mesh_pipeline(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, module: 
         fragment: Some(wgpu::FragmentState { module, entry_point: Some("fs_mesh"), targets: &[Some(wgpu::ColorTargetState { format: HDR_FORMAT, blend: Some(PREMULTIPLIED_OVER), write_mask: wgpu::ColorWrites::ALL })], compilation_options: Default::default() }),
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
+        multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
         multiview_mask: None,
         cache: None,
     })
@@ -1023,9 +1163,18 @@ fn item_buffers(device: &wgpu::Device, n: u32) -> [wgpu::Buffer; 2] {
     [make("loaded visual items a"), make("loaded visual items b")]
 }
 
+/// When visual.json last changed, and the newest of the folder's .wgsl files
+/// (visual.wgsl and its parts).
 fn stamp(dir: &Path) -> Option<(SystemTime, SystemTime)> {
-    let m = |f: &str| std::fs::metadata(dir.join(f)).and_then(|m| m.modified()).ok();
-    Some((m("visual.json")?, m("visual.wgsl")?))
+    let m = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let mut code = m(&dir.join("visual.wgsl"))?;
+    for e in std::fs::read_dir(dir).ok()?.flatten() {
+        let p = e.path();
+        if p.extension().is_some_and(|x| x == "wgsl") {
+            code = code.max(m(&p).unwrap_or(code));
+        }
+    }
+    Some((m(&dir.join("visual.json"))?, code))
 }
 
 impl ShaderVisual {
@@ -1046,6 +1195,7 @@ impl ShaderVisual {
             line_group,
             line_draw: None,
             mesh: None,
+            msaa: None,
             def,
             art_view: art.create_view(&wgpu::TextureViewDescriptor::default()),
             art,
@@ -1158,6 +1308,9 @@ impl ShaderVisual {
                 self.prepare = b.prepare.clone();
                 self.line_cs = b.line.clone();
                 self.mesh = b.mesh.clone();
+                if (b.samples > 1) != self.msaa.is_some() {
+                    self.msaa = (b.samples > 1).then(|| msaa_target(&device, self.size.0, self.size.1));
+                }
                 if b.line_draw.is_some() {
                     self.line_draw = b.line_draw.clone();
                 }
@@ -1179,7 +1332,7 @@ impl ShaderVisual {
                 }
             }
             Err(e) => {
-                let e = self::visual_lines(&e, self.prefix_lines);
+                let e = self::visual_lines(&e, self.prefix_lines, &self.live.wgsl);
                 tracing::warn!("visual {}: {e}", self.live.id);
                 self.error = Some(e);
             }
@@ -1194,8 +1347,8 @@ impl ShaderVisual {
             return;
         }
         self.stamp = now;
-        let (Ok(json), Ok(wgsl)) = (std::fs::read_to_string(dir.join("visual.json")), std::fs::read_to_string(dir.join("visual.wgsl"))) else { return };
-        match parse(&json, &wgsl, Some(dir)) {
+        let Ok(json) = std::fs::read_to_string(dir.join("visual.json")) else { return };
+        match read_code(&dir, &json).and_then(|wgsl| parse(&json, &wgsl, Some(dir))) {
             Ok(mut d) => {
                 // The id is what saved files point at; it stays the registered one.
                 d.id = self.def.id.clone();
@@ -1222,6 +1375,9 @@ impl Scene for ShaderVisual {
             self.trail = Some(trail_textures(device, &self.def.id, width, height));
         }
         self.size = (width, height);
+        if self.msaa.is_some() {
+            self.msaa = Some(msaa_target(device, width, height));
+        }
         self.make_groups(device);
     }
 
@@ -1229,6 +1385,10 @@ impl Scene for ShaderVisual {
         // Errors arrive later, in the panel.
         self.build(shaders);
         Ok(())
+    }
+
+    fn level_bright(&self) -> bool {
+        self.live.level_bright
     }
 
     fn ready(&self) -> bool {
@@ -1386,13 +1546,31 @@ impl Scene for ShaderVisual {
         let mesh = self.mesh.as_ref().filter(|_| self.live.triangles > 0);
         // The passes in order (picture, triangles, line); the first clears.
         let picture = self.live.shade || (line.is_none() && mesh.is_none());
-        if picture {
+        if let (Some(ms), Some(mesh)) = (&self.msaa, mesh) {
+            // Antialiased: the picture and the triangles in one multisampled
+            // pass, resolved into the output.
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("loaded visual antialiased"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: ms, depth_slice: None, resolve_target: Some(&self.out[write]), ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Discard } })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_bind_group(0, group, &[]);
+            if picture {
+                pass.set_pipeline(pipeline);
+                pass.draw(0..3, 0..1);
+            }
+            pass.set_pipeline(mesh);
+            pass.draw(0..self.live.triangles * 3, 0..1);
+        } else if picture {
             match &self.trail {
                 Some(t) if self.live.trail => scene::fullscreen_pass2(encoder, &self.def.id, &self.out[write], &t[write], pipeline, group),
                 _ => fullscreen_pass(encoder, &self.def.id, &self.out[write], wgpu::LoadOp::Clear(wgpu::Color::BLACK), pipeline, group),
             }
         }
-        if let Some(mesh) = mesh {
+        if let (Some(mesh), None) = (mesh, &self.msaa) {
             let load = if picture { wgpu::LoadOp::Load } else { wgpu::LoadOp::Clear(wgpu::Color::BLACK) };
             let mut pass = scene::begin_pass(encoder, "loaded visual triangles", &self.out[write], load);
             pass.set_pipeline(mesh);
@@ -1605,8 +1783,14 @@ mod tests {
 
     #[test]
     fn error_positions_point_into_the_visual() {
-        assert_eq!(visual_lines("x wgsl:593:5 y", 590), "x visual.wgsl line 3, col 5 y");
-        assert_eq!(visual_lines("wgsl:12:1", 590), "the engine's part, line 1");
+        assert_eq!(visual_lines("x wgsl:593:5 y", 590, "a\nb\nc\n"), "x visual.wgsl line 3, col 5 y");
+        assert_eq!(visual_lines("wgsl:12:1", 590, ""), "the engine's part, line 1");
+        // A visual in parts: errors name the part and its own line.
+        let code = with_parts(r#"{"parts": ["b.wgsl"]}"#, "one\ntwo", |n| (n == "b.wgsl").then(|| "three\nfour".to_string())).unwrap();
+        assert_eq!(visual_lines("wgsl:592:1", 590, &code), "visual.wgsl line 2, col 1");
+        assert_eq!(visual_lines("wgsl:595:1", 590, &code), "b.wgsl line 2, col 1");
+        assert!(with_parts(r#"{"parts": ["../x.wgsl"]}"#, "", |_| Some(String::new())).is_err());
+        assert!(with_parts(r#"{"parts": ["gone.wgsl"]}"#, "", |_| None).is_err());
     }
 
     #[test]
@@ -1631,9 +1815,16 @@ mod tests {
 
     #[test]
     fn factory_visuals_parse() {
-        for d in embedded() {
+        // Every shipped folder parses (a broken one would only be skipped with a warning).
+        let folders: std::collections::BTreeSet<&str> = factory::embedded("visuals/").into_iter().filter(|(rel, _)| rel.ends_with("/visual.json")).filter_map(|(rel, _)| rel.split('/').nth(1)).collect();
+        let all = embedded();
+        assert_eq!(all.len(), folders.len(), "a factory visual did not parse (see the warning above)");
+        for d in &all {
             assert!(!d.wgsl.is_empty(), "{}", d.id);
         }
+        // A visual in parts carries them all.
+        let jelly = all.iter().find(|d| d.id == "jellyfish").expect("jellyfish");
+        assert!(jelly.wgsl.contains(&part_marker("tank.wgsl")));
     }
 
     #[test]
@@ -1696,7 +1887,7 @@ fn prepared(x: f32)", "prepare"));
         all.push(parse(TEMPLATE_JSON, TEMPLATE_WGSL, None).unwrap());
         for d in all {
             let src = d.source(&shaders, &d.wgsl);
-            let module = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| panic!("{}: {}", d.id, visual_lines(&e.emit_to_string(&src), d.prefix(&shaders).lines().count())));
+            let module = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| panic!("{}: {}", d.id, visual_lines(&e.emit_to_string(&src), d.prefix(&shaders).lines().count(), &d.wgsl)));
             naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::empty()).validate(&module).unwrap_or_else(|e| panic!("{}: {e:?}", d.id));
         }
     }

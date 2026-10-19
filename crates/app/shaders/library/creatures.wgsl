@@ -3,11 +3,11 @@
 // between the API and its code. See docs/building-visuals.md, "Creatures".
 //
 // The pieces: a camera into a tank (to camera space, to the screen, to a
-// triangle corner), a slow water current, a swim stroke, a chain link for
+// triangle corner), a slow water current, swim strokes, a chain link for
 // tentacles, hair and arms (no momentum: chains with momentum wind into
-// loops), turning an axis, keeping apart, edge glow for translucent bodies,
-// and a rainbow for iridescence. Everything is in world units: the tank is
-// a few units across, y up.
+// loops), turning an axis, keeping apart, wandering. Everything is in world
+// units: the tank is a few units across, y up. How things look (light,
+// glass, tissue) is the "luminous" library; bells are "jelly".
 
 // A camera looking at `look` (the origin unless set) from `dist` away,
 // turned `yaw` about the vertical and tipped `pitch` (radians). `focal` is
@@ -77,11 +77,6 @@ fn clip_pos(c: Camera, p: vec3<f32>) -> vec4<f32> {
 // on, 0 edge on; either side).
 fn facing(c: Camera, p: vec3<f32>, n: vec3<f32>) -> f32 {
     return abs(dot(normalize(camera_dir(c, n)), -normalize(to_camera(c, p))));
-}
-
-// Edge glow for translucent bodies: 1 seen edge on, 0 face on.
-fn fresnel(facing_amount: f32, power: f32) -> f32 {
-    return pow(1.0 - clamp(facing_amount, 0.0, 1.0), power);
 }
 
 // Dimming with distance from the camera beyond `near`, for depth.
@@ -173,66 +168,4 @@ fn wander_point(id: f32, half: vec3<f32>, rate: f32) -> vec3<f32> {
     let s = creature_hash(id, 9.0) * 50.0;
     let n = vec3<f32>(noise(vec2<f32>(t + s, id * 3.0)), noise(vec2<f32>(t + s * 1.3, id * 3.0 + 7.0)), noise(vec2<f32>(t + s * 0.7, id * 3.0 + 13.0)));
     return clamp((n * 2.0 - 1.0) * half * 1.6, -half, half);
-}
-
-// A rainbow: hue t (0..1, wraps) as a saturated colour, for iridescence.
-fn spectrum(t: f32) -> vec3<f32> {
-    return clamp(abs(fract(t + vec3<f32>(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, vec3<f32>(0.0), vec3<f32>(1.0));
-}
-
-// ---------------------------------------------------------------- textures
-//
-// Procedural textures for living tissue: resolution-free (sharp at 4K and
-// in a close-up), animated for nothing, no files. Coordinates are whatever
-// the caller maps across the surface.
-
-// Fractal noise: `octaves` (1..6) layers of value noise, each twice as fine
-// and half as strong; 0..1, about 0.5 on average.
-fn fbm(p: vec2<f32>, octaves: u32) -> f32 {
-    var sum = 0.0;
-    var amp = 0.5;
-    var q = p;
-    var norm = 0.0;
-    for (var o = 0u; o < min(octaves, 6u); o++) {
-        sum += noise(q) * amp;
-        norm += amp;
-        q = q * 2.03 + vec2<f32>(17.1, 9.3);
-        amp *= 0.5;
-    }
-    return sum / norm;
-}
-
-// Cells (Voronoi): x the distance to the nearest cell centre, y to the
-// second nearest, z a 0..1 id of the nearest cell. y - x is small along the
-// walls between cells: tissue, scales, foam. `jitter` 0 is a grid, 1 fully
-// irregular; `t` moves the centres slowly.
-fn cells(p: vec2<f32>, jitter: f32, t: f32) -> vec3<f32> {
-    let base = floor(p);
-    let f = p - base;
-    var d1 = 8.0;
-    var d2 = 8.0;
-    var id = 0.0;
-    for (var y = -1; y <= 1; y++) {
-        for (var x = -1; x <= 1; x++) {
-            let o = vec2<f32>(f32(x), f32(y));
-            let h = hash22(base + o);
-            let c = o + 0.5 + (h - 0.5) * jitter + 0.15 * jitter * sin(t + h * 6.2831);
-            let d = length(f - c);
-            if (d < d1) {
-                d2 = d1;
-                d1 = d;
-                id = h.x;
-            } else if (d < d2) {
-                d2 = d;
-            }
-        }
-    }
-    return vec3<f32>(d1, d2, id);
-}
-
-// Fine texture that would only shimmer at this size fades to its average:
-// `detail` is the texture's frequency times one pixel in its coordinates
-// (fwidth); 1 at and below about a cycle per two pixels, 0 when finer.
-fn keep_detail(detail: f32) -> f32 {
-    return 1.0 - smoothstep(0.25, 0.6, detail);
 }

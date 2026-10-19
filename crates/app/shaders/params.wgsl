@@ -52,7 +52,7 @@ struct PostParams {
 struct LayerParams {
     opacity: f32,
     dt: f32,
-    flags: u32,       // bit0 (1): apply the layer's levelling gain; bit1 (2): first layer (nothing beneath)
+    flags: u32,       // bit0 (1): apply the layer's levelling gain; bit1 (2): first layer (nothing beneath); bit2 (4): level by the bright part only
     blend: u32,       // 0 add, 1 over, 2 screen, 3 multiply
 };
 

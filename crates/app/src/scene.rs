@@ -55,6 +55,12 @@ pub trait Scene {
     fn ready(&self) -> bool {
         true
     }
+    /// Whether the layer's levelling should measure only the bright part of
+    /// the picture, so faint fill across the frame (plankton, glow in the
+    /// water) does not count as lit and lift the bright things.
+    fn level_bright(&self) -> bool {
+        false
+    }
     /// Visual-specific controls in the panel.
     fn ui(&mut self, _ui: &mut egui::Ui, _layer: &mut Layer) {}
 }
@@ -183,6 +189,11 @@ pub const ADDITIVE: wgpu::BlendState = wgpu::BlendState {
 
 /// A fullscreen-triangle pipeline (vs_main / fs_main) writing `format`.
 pub fn pipeline(device: &wgpu::Device, label: &str, layout: &wgpu::BindGroupLayout, module: &wgpu::ShaderModule, format: wgpu::TextureFormat, blend: Option<wgpu::BlendState>) -> wgpu::RenderPipeline {
+    pipeline_samples(device, label, layout, module, format, blend, 1)
+}
+
+/// `pipeline` drawing into a target with `samples` samples per pixel.
+pub fn pipeline_samples(device: &wgpu::Device, label: &str, layout: &wgpu::BindGroupLayout, module: &wgpu::ShaderModule, format: wgpu::TextureFormat, blend: Option<wgpu::BlendState>, samples: u32) -> wgpu::RenderPipeline {
     let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some(label), bind_group_layouts: &[Some(layout)], immediate_size: 0 });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
@@ -191,7 +202,7 @@ pub fn pipeline(device: &wgpu::Device, label: &str, layout: &wgpu::BindGroupLayo
         fragment: Some(wgpu::FragmentState { module, entry_point: Some("fs_main"), targets: &[Some(wgpu::ColorTargetState { format, blend, write_mask: wgpu::ColorWrites::ALL })], compilation_options: Default::default() }),
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
+        multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
         multiview_mask: None,
         cache: None,
     })

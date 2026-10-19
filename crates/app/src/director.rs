@@ -26,7 +26,8 @@ use crate::gpu_timer::{GpuTimer, Part};
 struct LayerParams {
     opacity: f32,
     dt: f32,
-    /// bit0: apply the layer's levelling gain; bit1: first layer (meets black).
+    /// bit0: apply the layer's levelling gain; bit1: first layer (meets
+    /// black); bit2: level by the bright part only (`Scene::level_bright`).
     flags: u32,
     /// `settings::Blend` as u32.
     blend: u32,
@@ -1040,7 +1041,7 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
     let ctx = FrameCtx { features: feats, tint: slot.tint, dt, time, sample_rate: fr.sample_rate, width: fr.width, height: fr.height, points: pts, auto_gain: fr.auto_gain, art: fr.art_image, art_id: fr.art_id, photos_folder: fr.photos_folder, palette: pal_active.then_some(pal_table), palette_shift: pal_shift, palette_amount: pal_amount };
     timer.mark(encoder, Part::Visual(si));
     visual.render(queue, encoder, &ctx, layer);
-    queue.write_buffer(&slot.buf, 0, bytemuck::bytes_of(&LayerParams { opacity: level, dt, flags: fr.level as u32 | if first { 2 } else { 0 }, blend: layer.blend as u32 }));
+    queue.write_buffer(&slot.buf, 0, bytemuck::bytes_of(&LayerParams { opacity: level, dt, flags: fr.level as u32 | if first { 2 } else { 0 } | if visual.level_bright() { 4 } else { 0 }, blend: layer.blend as u32 }));
 
     // Effects director: which pool effects are live, and a gate per slot
     // that slews toward live or resting; pinned effects stay at 1.

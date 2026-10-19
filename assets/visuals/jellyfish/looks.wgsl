@@ -1,0 +1,326 @@
+// How every part looks: paint, per pixel of the triangles.
+//
+// One look for every bell (the luminous model): light from the jelly itself,
+// more where the eye looks through more of it (glass) and where the skin is
+// seen edge on, shaped by the light from above and glowing when the eye
+// looks up through it; the inner skin lights as the swimming muscle
+// squeezes, the light rising from the crown to the margin with the stroke.
+// On top, each species' own organs and light (the *_light functions), and
+// all of it dimmed and blued by the water between it and the eye.
+
+// What paint knows about a pixel of a bell.
+struct Look {
+    s: f32,          // crown 0 to margin 1
+    th: f32,         // round the bell, 0..1
+    plan: vec2<f32>, // s * (cos, sin) of the angle round: clean to interpolate
+    face: f32,       // how face on (1) or edge on (0) the eye sees it
+    top: f32,        // how much it faces the light from above
+    sheen: f32,      // the light above on its wet skin: glint, and glow through it
+    inner: bool,     // the subumbrella, under the jelly
+    squeeze: f32,    // the stroke here
+    fs: f32,         // one pixel in s
+    fp: f32,         // one pixel in plan
+};
+
+fn paint(f: MeshFragment) -> vec4<f32> {
+    let P = params();
+    // Derivatives first, while every pixel is still on the same path.
+    let s = length(f.colour.zw);
+    let fs = fwidth(s);
+    let fp = length(fwidth(f.colour.zw));
+    let id = f.data.w;
+    if (id > PART_GLOW) {
+        // Its glow in the water, close round the bell: faint, so it reads as
+        // light in the water, not fog.
+        let a = item(HALO0 + 2u * (u32(id) % 16u));
+        let b = item(HALO0 + 2u * (u32(id) % 16u) + 1u);
+        let d = length(f.data.xy);
+        let fade = 1.0 - smoothstep(GLOW_REACH * 0.6, GLOW_REACH, d);
+        return vec4<f32>(b.rgb * a.w * halo(d, 0.8) * fade * P.halo * 0.012, 0.0);
+    }
+    let J = jelly_at(u32(id) % 16u);
+    let k = kind();
+    var c = vec3<f32>(0.0);
+    if (id > PART_ARM) {
+        c = arm_look(J, k, f.colour.y, f.colour.z, f.data.z, f.data.x, fp);
+    } else {
+        var L: Look;
+        L.s = s;
+        L.th = fract(atan2(f.colour.w, f.colour.z + 1e-7) / TAU);
+        L.plan = f.colour.zw;
+        L.face = f.data.z;
+        L.top = f.data.x;
+        L.sheen = f.data.y;
+        L.inner = id > PART_INNER;
+        L.squeeze = f.colour.y;
+        L.fs = fs;
+        L.fp = fp;
+        c = bell_look(J, k, L);
+    }
+    c = water(c, f.colour.x, eye_near(), natural_bodies());
+    return vec4<f32>(c * P.glow, 0.0);
+}
+
+// ---------------------------------------------------------------- the shared look
+
+// A light level that swells and ebbs: x near 0 unchanged, loud ones
+// brightening less and less (so a run of loud onsets never blows it out).
+fn soft(x: f32) -> f32 {
+    return x / (1.0 + 0.45 * max(x, 0.0));
+}
+
+fn bell_look(J: Jelly, k: u32, L: Look) -> vec3<f32> {
+    let P = params();
+    let sp = species_of(k);
+    let b = bell_of(k);
+    let hue = hue_of(J);
+    // A little dimmer through the thick middle, brighter toward the rim.
+    let body = tone(BODY, hue) * mix(0.85, 1.05, smoothstep(0.2, 1.0, L.s));
+    let lit = 0.55 + 0.45 * L.top;
+    let seed = vec2<f32>(J.hue * 13.0, J.hue * 7.0);
+    var c = vec3<f32>(0.0);
+    if (!L.inner) {
+        // The jelly is not quite even: a soft mottling through it, and faint
+        // fibres running out from the crown (noise of the direction out, so
+        // it has no seam).
+        let out = L.plan / max(L.s, 1e-3);
+        let fibres = 0.85 + 0.3 * noise(out * 26.0 + vec2<f32>(L.s * 3.0, J.hue * 11.0)) * keep_detail(L.fp * 26.0 / max(L.s, 0.05));
+        let tissue = (0.75 + 0.5 * fbm(L.plan * 6.0 + seed, 3)) * fibres;
+        let rimzone = select(smoothstep(0.1, 0.7, L.s), 1.0, k == COMB);
+        c = body * (sp.glass * glass(L.face, bell_thickness(b, L.s)) * tissue + sp.edge * fresnel(L.face, 3.0) * rimzone) * lit;
+        // The light above on the wet skin: a glint sliding over the dome as it
+        // turns, and the thin skin glowing when the eye looks up through it.
+        c += mix(body, vec3<f32>(1.0), 0.55) * L.sheen * 0.22;
+        if (k != COMB) {
+            // The thin margin glows, brightest on the lobes.
+            let lobe = select(1.0, 0.5 - 0.5 * cos(fract(L.th * b.lobes) * TAU), b.lobes > 0.0);
+            c += body * thin_line(1.0 - L.s, 0.012, L.fs) * (0.5 + 0.5 * lobe) * 0.9;
+        }
+    } else {
+        c = body * (0.012 + 0.08 * fresnel(L.face, 2.5) + 0.012 * fbm(L.plan * 10.0 + seed, 3)) * lit;
+        c += mix(body, vec3<f32>(1.0), 0.4) * L.sheen * 0.06;
+        // The stroke's light: the swimming muscle in the outer bell glows as it squeezes.
+        let zone = smoothstep(0.3, 0.45, L.s) * smoothstep(0.97, 0.88, L.s);
+        c += tone(LIGHT, hue) * zone * pow(max(L.squeeze, 0.0), 1.5) * sp.stroke_light * 0.22;
+    }
+    var own = vec3<f32>(0.0);
+    switch (k) {
+        case 1u: { own = nettle_light(J, L); }
+        case 2u: { own = crystal_light(J, L); }
+        case 3u: { own = atolla_light(J, L); }
+        case 4u: { own = comb_light(J, L); }
+        case 5u: { own = lion_light(J, L); }
+        default: { own = moon_light(J, L); }
+    }
+    return c * P.body + own * P.light;
+}
+
+// An oral arm at u (root 0 to tip 1), x across (-1..1): clear jelly, the
+// light in its crenulated lips and a groove down its fold.
+fn arm_look(J: Jelly, k: u32, u: f32, x: f32, face: f32, top: f32, fu: f32) -> vec3<f32> {
+    let P = params();
+    let hue = hue_of(J);
+    let c = mix(tone(ARMS_C, hue), tone(ORGANS, hue), 0.15 * (1.0 - u));
+    let rim = fresnel(face, 2.0);
+    // The lips: a fine scallop with tiny tentacle-like processes.
+    let side = select(0.0, 9.0, x > 0.0);
+    let scallop = 0.5 + 0.5 * sin(u * 150.0 + 7.0 * noise(vec2<f32>(u * 9.0, side)) + side);
+    let lipline = 1.0 - 0.12 * scallop - abs(x);
+    let lip = smoothstep(0.14, 0.0, lipline) * (0.6 + 0.4 * scallop);
+    let beads = 0.5 + 0.5 * noise(vec2<f32>(u * 120.0, side));
+    let groove = thin_line(abs(x), 0.05, fu * 4.0) * 0.2;
+    let tissue = 0.7 + 0.6 * fbm(vec2<f32>(u * 14.0, x * 2.5 + J.hue * 9.0), 3);
+    var lips = 0.4;
+    switch (k) {
+        case 1u: { lips = 0.5; }
+        case 2u: { lips = 0.25; }
+        case 5u: { lips = 0.35; }
+        default: {}
+    }
+    let light = ((0.014 + 0.08 * rim) * tissue + lip * beads * lips + groove) * (0.55 + 0.45 * top);
+    return c * light * (1.0 - 0.6 * u) * (0.6 + 0.5 * J.glow) * P.body;
+}
+
+// ---------------------------------------------------------------- each species' own light
+
+// Moon jelly. Outer skin: warts (clusters of stinging cells) and the eight
+// rhopalia, bright beads in the notches that sparkle on the hi-hats. Inner
+// skin, what shows through the glass: the stomach, four horseshoe gonads of
+// lumpy folded tissue (breathing with the bass), sixteen radial canals (the
+// eight under the rhopalia forking three times on the way out) joining the
+// ring canal, and the fine rings of the swimming muscle.
+fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
+    let hue = hue_of(J);
+    let body = tone(BODY, hue);
+    let seed = vec2<f32>(J.hue * 13.0, J.hue * 7.0);
+    let s = L.s;
+    let ang = L.th * TAU;
+    // Luminescence swells and ebbs: loud music brightens it less and less.
+    let glow = soft(J.glow);
+    let flash = soft(J.flash);
+    if (!L.inner) {
+        let w = cells(L.plan * 55.0 + seed, 1.0, 0.0);
+        let wart = smoothstep(0.17, 0.05, w.x) * step(0.55, w.z) * keep_detail(L.fp * 55.0);
+        var c = body * wart * 0.1;
+        let x = fract(L.th * 8.0);
+        let d = vec2<f32>(min(x, 1.0 - x) / 8.0 * TAU * s, 1.0 - s - 0.02);
+        let rh = max(exp(-dot(d, d) / (0.012 * 0.012)) - 0.02, 0.0);
+        c += mix(tone(LIGHT, hue), vec3<f32>(1.0), 0.5) * rh * (1.0 + 1.2 * glow + 2.5 * flash);
+        return c;
+    }
+    let gon = tone(ORGANS, hue);
+    let canal = mix(body, gon, 0.2) + vec3<f32>(0.1);
+    let q = L.plan;
+    let fq = L.fp;
+    var c = vec3<f32>(0.0);
+    // The stomach in the middle, a four-cornered mouth.
+    let st = smoothstep(0.15, 0.05, s * (1.0 + 0.3 * cos(ang * 4.0)));
+    c += mix(body, gon, 0.4) * st * 0.07;
+    // The gonads: four horseshoes, open toward the middle, each a ribbon
+    // folded on itself (bright where the ribbon turns, along its edges), and
+    // under each the round opening of its subgenital pit.
+    var g = 0.0;
+    var pits = 0.0;
+    for (var n = 0u; n < 4u; n++) {
+        let a = (f32(n) + 0.5) * 1.5708;
+        let dir = vec2<f32>(cos(a), sin(a));
+        let off = q - dir * 0.31;
+        let l = length(off);
+        let ring = 0.125 + 0.022 * (noise(off * 13.0 + f32(n) * 7.0) - 0.5);
+        let open = smoothstep(-0.6, -0.2, dot(off / max(l, 1e-4), dir));
+        let dd = abs(l - ring);
+        let round = atan2(off.y, off.x);
+        let folds = 0.55 + 0.45 * sin(round * 18.0 + 3.0 * noise(off * 20.0 + f32(n)));
+        let edges = mix(0.6, 1.0, smoothstep(0.012, 0.028, dd));
+        g += (thin_line(dd, 0.03, fq) * 0.75 * folds * edges + thin_line(abs(dd - 0.022), 0.006, fq) * 0.5) * open;
+        g += smoothstep(ring, 0.0, l) * 0.04 * open;
+        pits += thin_line(abs(length(off - dir * 0.02) - 0.055), 0.005, fq);
+    }
+    c += mix(body, vec3<f32>(1.0), 0.3) * pits * 0.12;
+    let lumps = cells(q * 80.0 + seed, 1.0, V.time * 0.2);
+    let folds = mix(0.6, 1.15, smoothstep(0.0, 0.18, lumps.y - lumps.x));
+    let grain = mix(1.0, folds * (0.75 + 0.5 * fbm(q * 40.0, 3)), keep_detail(fq * 80.0));
+    c += gon * g * grain * (0.55 + glow * 1.3);
+    // Sixteen radial canals from the stomach out to the ring canal.
+    let u = L.th * 16.0;
+    let kc = floor(u + 0.5);
+    let wig = (noise(vec2<f32>(s * 9.0, kc * 3.7)) - 0.5) * 0.02;
+    var dx = abs((u - kc) / 16.0 * TAU * s + wig);
+    if (u32(kc) % 2u == 0u) {
+        dx = abs(dx - 0.06 * smoothstep(0.42, 0.6, s));
+        dx = abs(dx - 0.03 * smoothstep(0.6, 0.76, s));
+        dx = abs(dx - 0.015 * smoothstep(0.74, 0.88, s));
+    }
+    let span = smoothstep(0.14, 0.2, s) * smoothstep(0.95, 0.92, s);
+    var canals = thin_line(dx, 0.005, fq) * span * mix(1.0, 0.55, s);
+    canals += thin_line(abs(s - 0.93), 0.005, L.fs) * 0.8;
+    c += canal * canals * (0.2 + 0.15 * glow);
+    // The fringe's roots: a bead where each of the hundred and sixty
+    // tentacles leaves the margin.
+    let bx = abs(fract(L.th * 160.0 + 0.5) - 0.5) / 160.0 * TAU * s;
+    let bulbs = thin_line(length(vec2<f32>(bx, 1.0 - s - 0.012)), 0.006, fq);
+    c += tone(STRANDS_C, hue) * bulbs * 0.5;
+    // The swimming muscle: faint, uneven rings in the outer bell, lit by the squeeze.
+    let freq = 46.0;
+    let even = 0.4 + 1.2 * fbm(vec2<f32>(s * 25.0, L.th * 9.0) + seed, 2);
+    let bands = mix(pow(0.5 + 0.5 * cos(s * TAU * freq), 4.0) * even, 0.3, clamp(L.fs * freq * 1.5, 0.0, 1.0));
+    let zone = smoothstep(0.4, 0.5, s) * smoothstep(0.92, 0.85, s);
+    c += body * bands * zone * (0.008 + 0.15 * max(L.squeeze, 0.0));
+    return c;
+}
+
+// Sea nettle. Outer skin: sixteen dark stripes radiating from the crown
+// (they pulse with the mids and flash on its onsets), a speckle of
+// photophores, the scalloped lappets lit. Inner: four frilled gonads.
+fn nettle_light(J: Jelly, L: Look) -> vec3<f32> {
+    let hue = hue_of(J);
+    let s = L.s;
+    if (!L.inner) {
+        let a = L.th * TAU + 0.07 * (noise(vec2<f32>(s * 5.0, J.hue * 9.0 + L.th * 16.0)) - 0.5);
+        let width = mix(0.6, 1.0, s);
+        let stripes = pow(0.5 + 0.5 * cos(a * 16.0), 5.0 / width) * smoothstep(0.08, 0.35, s) * (0.6 + 0.4 * s);
+        let aa = mix(1.0, 0.35, clamp(L.fp * 16.0 * 1.5, 0.0, 1.0));
+        var c = tone(ORGANS, hue) * mix(0.35, stripes, aa) * (0.4 + 1.6 * J.glow + 1.2 * J.flash);
+        c += tone(LIGHT, hue) * photophores(L.plan, 70.0, 0.3, V.time, L.fp) * 0.3 * (0.5 + J.glow);
+        let lappet = thin_line(1.0 - s, 0.02, L.fs) * (0.5 + 0.5 * cos(L.th * TAU * 32.0));
+        c += tone(BODY, hue) * lappet * 0.5;
+        return c;
+    }
+    var g = 0.0;
+    for (var n = 0u; n < 4u; n++) {
+        let a = (f32(n) + 0.5) * 1.5708;
+        let off = L.plan - vec2<f32>(cos(a), sin(a)) * 0.34;
+        let r = 0.13 + 0.03 * (noise(off * 18.0 + f32(n) * 5.0) - 0.5);
+        g += smoothstep(r, r - 0.05, length(off));
+    }
+    return tone(ORGANS, hue) * g * 0.15 * (0.5 + J.glow);
+}
+
+// Crystal jelly. Inner skin: a hundred hair-thin radial canals, thicker
+// along the gonads in the outer half. Outer: a ring of green photocytes
+// round the rim that flash on strong low onsets, the flash running round.
+fn crystal_light(J: Jelly, L: Look) -> vec3<f32> {
+    let hue = hue_of(J);
+    let s = L.s;
+    if (L.inner) {
+        let u = L.th * 96.0;
+        let dx = abs(fract(u + 0.5) - 0.5) / 96.0 * TAU * s;
+        let canals = thin_line(dx, 0.0035, L.fp) * smoothstep(0.15, 0.25, s) * smoothstep(0.98, 0.94, s);
+        let gonads = thin_line(dx, 0.009, L.fp) * smoothstep(0.45, 0.55, s) * smoothstep(0.88, 0.8, s);
+        return tone(ORGANS, hue) * (canals * 0.25 + gonads * 0.3) * (0.4 + J.glow);
+    }
+    let rim = smoothstep(0.88, 0.99, s);
+    let dots = pow(0.5 + 0.5 * cos(L.th * TAU * 48.0), 4.0) * rim;
+    let run = exp(-fract(L.th - J.pa) * 6.0) * J.flash;
+    return tone(LIGHT, hue) * dots * (1.5 + 2.0 * J.glow + 8.0 * J.flash + 6.0 * run);
+}
+
+// Atolla. Outer skin: the coronal groove's edges and twenty lappet dots; on
+// a drop the blue alarm pinwheel spins round the rim. Inner: the red cross
+// of the stomach.
+fn atolla_light(J: Jelly, L: Look) -> vec3<f32> {
+    let hue = hue_of(J);
+    let s = L.s;
+    let b = bell_of(ATOLLA);
+    if (L.inner) {
+        let st = smoothstep(0.35, 0.1, s * (1.0 + 0.4 * cos(L.th * TAU * 4.0)));
+        return tone(ORGANS, hue) * st * 0.3 * (0.5 + J.glow);
+    }
+    let groove = thin_line(abs(abs(s - b.groove_at) - 0.04), 0.008, L.fs) * 0.4;
+    let rim = smoothstep(0.88, 0.99, s);
+    let dots = pow(0.5 + 0.5 * cos(L.th * TAU * 20.0), 8.0) * rim * 0.5;
+    let wheel = exp(-fract(L.th - J.pa) * 8.0) * rim * J.flash * 8.0;
+    return tone(BODY, hue) * groove + tone(LIGHT, hue) * (dots + wheel);
+}
+
+// Comb jelly. Outer skin: eight comb rows from pole to pole whose plates of
+// cilia break the light into rainbows racing along them with the highs,
+// over a faint thin-film shimmer of the whole body.
+fn comb_light(J: Jelly, L: Look) -> vec3<f32> {
+    let hue = hue_of(J);
+    let s = L.s;
+    if (L.inner) {
+        return tone(ORGANS, hue) * fresnel(L.face, 2.0) * 0.05;
+    }
+    let m = abs(fract(L.th * 8.0 + 0.5) - 0.5);
+    let row = exp(-m / 0.05) * smoothstep(0.1, 0.2, s) * smoothstep(0.9, 0.8, s);
+    let plates = pow(0.5 + 0.5 * cos(s * TAU * 22.0 - J.pa * TAU * 1.5), 3.0);
+    let natural = params().colours > 0.5 && params().colours < 1.5;
+    let irid = select(colour(hue + s - J.pa * 0.2), spectrum(s * 2.0 - J.pa * 0.5 + L.th) * 0.7 + 0.3 * thin_film(L.face, 2.0 + s * 3.0 + J.pa * 0.2), natural);
+    let sheen = thin_film(L.face, 1.5 + s) * fresnel(L.face, 2.0) * 0.04;
+    return irid * row * plates * (0.8 + J.glow * 2.5 + J.flash * 2.0) + sheen * tone(BODY, hue);
+}
+
+// Lion's mane. Outer skin: thirty-two radial folds over the lobes; inner:
+// the glowing heart of folded tissue in the middle.
+fn lion_light(J: Jelly, L: Look) -> vec3<f32> {
+    let hue = hue_of(J);
+    let s = L.s;
+    if (L.inner) {
+        let heart = exp(-s * 3.0) * (0.7 + 0.6 * fbm(L.plan * 9.0 + J.hue * 5.0, 3));
+        return tone(ORGANS, hue) * heart * 0.6 * (0.5 + J.glow * 1.5);
+    }
+    let aa = mix(1.0, 0.25, clamp(L.fp * 32.0 * 1.5, 0.0, 1.0));
+    let folds = mix(0.25, pow(0.5 + 0.5 * cos(L.th * TAU * 32.0), 8.0), aa) * 0.5 * s;
+    return tone(ORGANS, hue) * folds * (0.5 + J.glow * 1.5);
+}

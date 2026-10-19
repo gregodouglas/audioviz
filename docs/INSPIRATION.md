@@ -25,7 +25,7 @@ audioviz borrows ideas, never code, unless a licence says otherwise and the entr
 | Spiral visual (a loaded visual since 2026-10-18, `assets/visuals/spiral/`) | the spiral family in audible-visuals | Sonia Boller | Apache-2.0 | the idea: parametric spirals whose parameter drifts slowly, displaced by the waveform, drawn as a line. No code ported. Written fresh: Vogel spiral and Maurer rose, drift multiplied along the line, palette along it, beat kick. |
 | Polygon and Pulse visuals (loaded, `assets/visuals/polygon/`, `pulse/`; examples in `docs/building-visuals.md`) | sdRegularPolygon from Inigo Quilez's 2D distance functions, https://iquilezles.org/articles/distfunctions2d/ | Inigo Quilez | MIT | the polygon distance function, translated to WGSL with its credit in the code. The visuals themselves are ours. |
 | Harmonograph visual (loaded, `assets/visuals/harmonograph/`) | the Victorian harmonograph (pendulums drawing a damped figure) | | | the idea only; tuning the swings to the music's interval is ours |
-| Waves visual | the stacked-waveform landscape made famous by the *Unknown Pleasures* cover (Peter Saville, after a pulsar plot by Harold Craft) | | | the look only |
+| Waves visual (a loaded visual since 2026-10-18, `assets/visuals/waves/`) | the stacked-waveform landscape made famous by the *Unknown Pleasures* cover (Peter Saville, after a pulsar plot by Harold Craft) | | | the look only |
 
 ## Queued ports (from the 2026-10-18 research), with what each takes
 

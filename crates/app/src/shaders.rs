@@ -17,12 +17,10 @@ macro_rules! shader_table {
 shader_table!(
     "params.wgsl",
     "scope_params.wgsl",
-    "waves_params.wgsl",
     "crystal_params.wgsl",
     "crystal.wgsl",
     "visual_api.wgsl",
     "visual_lines.wgsl",
-    "waves.wgsl",
     "decay.wgsl",
     "bloom_down.wgsl",
     "bloom_up.wgsl",

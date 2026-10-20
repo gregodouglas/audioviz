@@ -883,9 +883,14 @@ impl Director {
     }
 
     /// Let every visual check its sources (loaded visuals reload when saved).
-    pub fn poll(&mut self, device: &wgpu::Device, shaders: &ShaderSet) {
-        for s in self.layers.iter_mut().chain(self.outgoing.iter_mut().flatten().map(|o| &mut o.scene)) {
+    pub fn poll(&mut self, device: &wgpu::Device, shaders: &ShaderSet, settings: &Settings) {
+        for (i, s) in self.layers.iter_mut().enumerate() {
+            s.values(&settings.layer(i));
             s.poll(device, shaders);
+        }
+        for o in self.outgoing.iter_mut().flatten() {
+            o.scene.values(&o.layer);
+            o.scene.poll(device, shaders);
         }
     }
 

@@ -1811,8 +1811,17 @@ impl Scene for ShaderVisual {
         self.live.level_bright
     }
 
+    /// Ready when it can draw the variant the layer's values pick (until
+    /// then the director holds the layer dark: the program of another
+    /// variant would draw it wrong); or when it has an error to show.
     fn ready(&self) -> bool {
-        self.pipeline.is_some() || self.error.is_some()
+        (self.pipeline.is_some() && (self.want.is_empty() || self.want == self.live.variant)) || self.error.is_some()
+    }
+
+    fn values(&mut self, layer: &Layer) {
+        if !self.top.variants.is_empty() {
+            self.want = self.top.variant_for(layer.params.get(&self.def.id)).variant.clone();
+        }
     }
 
     fn poll(&mut self, _device: &wgpu::Device, shaders: &ShaderSet) {
@@ -2034,9 +2043,6 @@ impl ShaderVisual {
             chroma[i / 4][i % 4] = *c;
         }
         let stored = layer.params.get(&self.def.id).and_then(Value::as_object);
-        if !self.top.variants.is_empty() {
-            self.want = self.top.variant_for(layer.params.get(&self.def.id)).variant.clone();
-        }
         let mut p = [[0.0f32; 4]; MAX_PARAMS / 4];
         for (i, d) in self.live.params.iter().enumerate().take(MAX_PARAMS) {
             p[i / 4][i % 4] = if d.kind == ParamKind::Button { self.presses.get(&d.id).copied().unwrap_or(0) as f32 } else { d.number(stored.and_then(|o| o.get(&d.id))) };
@@ -2478,10 +2484,11 @@ fn prepared(x: f32)", "prepare"));
         let mut all = embedded();
         assert!(all.len() >= 4);
         all.push(parse(TEMPLATE_JSON, TEMPLATE_WGSL, None).unwrap());
-        for d in all {
+        // Every variant is a program of its own.
+        for d in all.iter().flat_map(|d| d.builds()) {
             let src = d.source(&shaders, &d.wgsl);
-            let module = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| panic!("{}: {}", d.id, visual_lines(&e.emit_to_string(&src), d.prefix(&shaders).lines().count(), &d.wgsl)));
-            naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::empty()).validate(&module).unwrap_or_else(|e| panic!("{}: {e:?}", d.id));
+            let module = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| panic!("{} {}: {}", d.id, d.variant, visual_lines(&e.emit_to_string(&src), d.prefix(&shaders).lines().count(), &d.wgsl)));
+            naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::empty()).validate(&module).unwrap_or_else(|e| panic!("{} {}: {e:?}", d.id, d.variant));
         }
     }
 }

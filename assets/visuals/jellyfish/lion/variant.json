@@ -1,0 +1,5 @@
+{
+  "when": ["lion"],
+  "parts": ["mass.wgsl", "mane.wgsl", "looks.wgsl"],
+  "triangles": 131352
+}

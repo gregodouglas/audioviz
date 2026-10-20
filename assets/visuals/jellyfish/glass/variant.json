@@ -1,0 +1,5 @@
+{
+  "when": ["moon", "nettle", "crystal", "atolla", "comb"],
+  "parts": ["arms.wgsl", "lights.wgsl"],
+  "triangles": 108312
+}

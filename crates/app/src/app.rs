@@ -602,7 +602,7 @@ impl Running {
             self.set_fullscreen(true);
         }
         self.director.sync(&self.gpu.device, &self.shaders, &self.settings);
-        self.director.poll(&self.gpu.device, &self.shaders);
+        self.director.poll(&self.gpu.device, &self.shaders, &self.settings);
         self.maybe_save(false);
         if self.last_battery_check.elapsed() > Duration::from_secs(30) {
             self.last_battery_check = Instant::now();

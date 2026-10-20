@@ -382,7 +382,7 @@ impl Lab {
                 bail!("{visual} did not build in 120 s");
             }
             std::thread::sleep(Duration::from_millis(10));
-            self.director.poll(&self.device, &self.shaders);
+            self.director.poll(&self.device, &self.shaders, &self.settings);
         }
         if let Some(e) = &self.director.last_error {
             bail!("{e}");
@@ -425,7 +425,7 @@ impl Lab {
     /// Pick up saved files: the visual's (the director polls its folder) and
     /// the engine's shaders.
     fn reload(&mut self) {
-        self.director.poll(&self.device, &self.shaders);
+        self.director.poll(&self.device, &self.shaders, &self.settings);
         if self.shaders.poll() {
             self.director.reload_shaders(&self.device, &self.shaders);
             if let Err(e) = self.post.reload_shaders(&self.device, &self.shaders) {

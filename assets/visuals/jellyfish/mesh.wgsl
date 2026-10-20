@@ -108,8 +108,13 @@ fn vertex(vi: u32) -> MeshVertex {
     let e_side = cross(dir, e_out);
     // A moon jelly's arm narrows a little and ends in a rounded tip.
     let tip = sqrt(max(1.0 - pow(smoothstep(0.7, 1.0, u), 2.0), 0.0));
-    let width = sp.arm_w * radius(J) * P.arms * select(mix(1.0, 0.45, u), mix(1.0, 0.6, u) * max(tip, 0.12), moon);
-    let fold = select(0.25, 0.55, moon);
+    var width = sp.arm_w * radius(J) * P.arms * select(mix(1.0, 0.45, u), mix(1.0, 0.6, u) * max(tip, 0.12), moon);
+    var fold = select(0.25, 0.55, moon);
+    if (k == LION) {
+        // Broad curtains, deeply folded, hardly narrowing.
+        width = sp.arm_w * radius(J) * P.arms * mix(0.6, 1.0, smoothstep(0.0, 0.3, u)) * mix(1.0, 0.7, u);
+        fold = 0.6;
+    }
     // The lips: a slow ruffle and a slower, irregular wave, strongest at the edges.
     let lip = x * x;
     // Each lip its own ruffle, so the two edges of an arm are not mirrors.
@@ -124,7 +129,7 @@ fn vertex(vi: u32) -> MeshVertex {
     switch (k) {
         case 0u: { frills = 5.0; }
         case 1u: { frills = 10.0; tall = 0.22; }
-        case 5u: { frills = 7.0; tall = 0.14; }
+        case 5u: { frills = 6.0; tall = 0.2; }
         default: {}
     }
     var frill = 0.0;

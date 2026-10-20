@@ -17,6 +17,24 @@ const GLINT_SHARP: f32 = 350.0;
 // a bell of sixteen or more, too many for the mesh's sectors to round.
 const LAPPET_DEPTH: f32 = 0.05;
 
+// The painted lappets of species k: how many round the margin, and how deep
+// (0: none). A lion's mane's eight lobes are each scalloped into four.
+fn lappets(k: u32) -> vec2<f32> {
+    let b = bell_of(k);
+    if (k == LION) {
+        return vec2<f32>(32.0, 0.025);
+    }
+    return select(vec2<f32>(0.0), vec2<f32>(b.lobes, LAPPET_DEPTH), b.lobes >= 16.0);
+}
+
+// A lion's mane's pigment: sixteen rounded gastric pouches round the middle,
+// red-brown, their scalloped edge about halfway out (0..1 where they are).
+fn lion_pouches(L: Look) -> f32 {
+    let v = 0.5 + 0.5 * cos(L.th * TAU * 16.0);
+    let edge = 0.42 + 0.14 * sqrt(v);
+    return smoothstep(edge + 0.06 + L.fs, edge - 0.04 - L.fs, L.s);
+}
+
 // What paint knows about a pixel of a bell.
 struct Look {
     s: f32,          // crown 0 to margin 1
@@ -139,7 +157,8 @@ fn bell_look(J: Jelly, k: u32, L: Look) -> vec3<f32> {
     // lion's mane deepens to red-brown toward its middle.
     var body = tone(BODY, hue) * mix(0.85, 1.05, smoothstep(0.2, 1.0, L.s));
     if (k == LION && params().colours > 0.5) {
-        body *= mix(vec3<f32>(0.9, 0.38, 0.25), vec3<f32>(1.0), smoothstep(0.05, 0.75, L.s));
+        // Red-brown in the pouches, amber on the lobes.
+        body *= mix(vec3<f32>(1.0), vec3<f32>(0.72, 0.36, 0.3), lion_pouches(L));
     }
     let lit = 0.55 + 0.45 * L.top;
     let seed = vec2<f32>(J.hue * 13.0, J.hue * 7.0);
@@ -148,9 +167,10 @@ fn bell_look(J: Jelly, k: u32, L: Look) -> vec3<f32> {
     // two or three sectors each the mesh drew them as saw teeth).
     var rim_s = 1.0;
     var cut = 1.0;
-    if (b.lobes >= 16.0) {
-        let x = fract(L.th * b.lobes) * 2.0 - 1.0;
-        rim_s = 1.0 - LAPPET_DEPTH * (1.0 - sqrt(max(1.0 - x * x, 0.0)));
+    let lp = lappets(k);
+    if (lp.y > 0.0) {
+        let x = fract(L.th * lp.x) * 2.0 - 1.0;
+        rim_s = 1.0 - lp.y * (1.0 - sqrt(max(1.0 - x * x, 0.0)));
         cut = smoothstep(rim_s + L.fs, rim_s - L.fs, L.s);
     }
     var c = vec3<f32>(0.0);
@@ -502,16 +522,42 @@ fn comb_light(J: Jelly, L: Look) -> vec3<f32> {
     return diffuse(combs, COMBS_DIFFUSE, params().light) + (sheen + base) * tone(BODY, hue);
 }
 
-// Lion's mane. Outer skin: thirty-two radial folds over the lobes; inner:
-// the glowing heart of folded tissue in the middle.
+// Lion's mane. Outer skin: the edge of the sixteen pouches, fine muscle
+// fibres running out over the lobes, the clefts between them, and a
+// rhopalium in each. Inner: the folded tissue of the stomach and gonads in
+// a four-lobed mass in the middle, glowing.
 fn lion_light(J: Jelly, L: Look) -> vec3<f32> {
     let hue = hue_of(J);
     let s = L.s;
+    let glow = soft(J.glow);
+    let org = tone(ORGANS, hue);
     if (L.inner) {
-        let heart = exp(-s * 3.0) * (0.7 + 0.6 * fbm(L.plan * 9.0 + J.hue * 5.0, 3));
-        return diffuse(tone(ORGANS, hue) * heart * 0.6 * (0.5 + J.glow * 1.5), ORGANS_DIFFUSE, params().light);
+        // The sixteen pouches, red tissue seen through the jelly, and in the
+        // middle the folded mass of stomach and gonads, four-lobed.
+        let ang = L.th * TAU;
+        let reach = 0.3 * (1.0 + 0.35 * cos(ang * 4.0));
+        let mass = smoothstep(reach + 0.08, reach - 0.1, s);
+        let folds = 0.55 + 0.9 * abs(fbm(L.plan * 14.0 + J.hue * 5.0, 3) - 0.5) * 2.0;
+        let pouch = lion_pouches(L) * (0.6 + 0.4 * fbm(L.plan * 7.0 + J.hue * 3.0, 2));
+        return diffuse(org * (mass * folds * 0.4 + pouch * 0.1) * (0.5 + glow * 1.5), ORGANS_DIFFUSE, params().light);
     }
-    let aa = mix(1.0, 0.25, clamp(L.fp * 32.0 * 1.5, 0.0, 1.0));
-    let folds = mix(0.25, pow(0.5 + 0.5 * cos(L.th * TAU * 32.0), 8.0), aa) * 0.25 * s;
-    return diffuse(tone(ORGANS, hue) * folds * (0.5 + J.glow * 1.5), PATTERN_DIFFUSES, params().light);
+    let body = tone(BODY, hue);
+    // The lobes' own amber, warm through the thin jelly.
+    var c = body * smoothstep(0.35, 0.95, s) * (0.05 + 0.02 * fbm(L.plan * 5.0 + J.hue * 3.0, 2));
+    // The pouches' scalloped edge, a faint darker line.
+    let v = 0.5 + 0.5 * cos(L.th * TAU * 16.0);
+    let edge = 0.42 + 0.14 * sqrt(v);
+    c += org * thin_line(abs(s - edge), 0.006, L.fs) * 0.05;
+    // Fibres over the lobes: many, fine, uneven, fading out as they get too
+    // fine to draw.
+    let fib = pow(0.5 + 0.5 * cos(L.th * TAU * 96.0 + 0.6 * noise(vec2<f32>(L.th * 40.0, s * 4.0))), 6.0);
+    let fine = keep_detail(L.fp * 96.0 / max(s, 0.1));
+    c += body * fib * fine * smoothstep(0.45, 0.75, s) * 0.035;
+    // The clefts between the lobes, and a rhopalium at the head of each.
+    let x = fract(L.th * 8.0);
+    let d = min(x, 1.0 - x) * TAU / 8.0 * s;
+    c += org * thin_line(d, 0.004, L.fp) * smoothstep(0.7, 0.95, s) * 0.12;
+    let rh = vec2<f32>(d, s - 0.9);
+    c += diffuse(tone(LIGHT, hue) * exp(-dot(rh, rh) / (0.012 * 0.012)) * (0.2 + 0.8 * glow), POINTS_DIFFUSE, params().light);
+    return diffuse(c * (0.6 + glow), PATTERN_DIFFUSES, params().light);
 }

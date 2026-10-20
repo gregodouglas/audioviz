@@ -36,11 +36,13 @@ fn strand_root(j: u32, s: u32, n: u32) -> Root {
     var th = (f32(s) + 0.5) / f32(max(n, 1u));
     var node = RINGS;
     if (k == LION) {
-        // Hair in eight clusters under the lobes, a few rings deep.
-        let cluster = s % 8u;
-        let within = f32(s / 8u) / f32(max(n / 8u, 1u));
-        th = (f32(cluster) + 0.5 + (within - 0.5) * 0.7) / 8.0;
-        node = RINGS - (s / 8u) % 3u;
+        // Hair in eight clusters under the lobes, set in from the margin:
+        // each a horseshoe of four rows, open to the margin (its middle
+        // deepest in), the hairs a little uneven along it.
+        let h = lion_hair(s, n);
+        let a = h.y * 2.0 - 1.0;
+        th = (h.x + 0.5 + a * 0.42 + (creature_hash(f32(s), 31.0) - 0.5) * 0.03) / 8.0;
+        node = RINGS - 2u - u32(h.z) - u32(round((1.0 - a * a) * 3.0));
     }
     // From the underside of the margin.
     r.pos = jelly_skin(j, node, th, true).pos;
@@ -49,12 +51,28 @@ fn strand_root(j: u32, s: u32, n: u32) -> Root {
     return r;
 }
 
+// Lion's mane hair s of n: (its cluster, how far along the cluster's
+// horseshoe 0..1, its row 0..3, its lock: a few neighbours that sway
+// together, so the mane moves in locks, not as a comb).
+fn lion_hair(s: u32, n: u32) -> vec4<f32> {
+    let per = max(n / 8u, 1u);
+    let m = s / 8u;
+    let along = (f32(m / 4u) + 0.5) / f32(max(per / 4u, 1u));
+    return vec4<f32>(f32(s % 8u), along, f32(m % 4u), f32(s % 8u) * 16.0 + floor(along * 6.0));
+}
+
 fn strand_length(s: u32) -> f32 {
     let sp = species_of(kind());
     // The atolla trails one long tentacle.
     let long = kind() == ATOLLA && s == 0u;
     // Each strand its own length, so the ends are ragged, not a cut edge.
-    let ragged = select(mix(select(0.55, 0.35, kind() == MOON), 1.0, fract(f32(s) * 0.618 + 0.3)), 1.0, kind() == COMB);
+    var shortest = 0.55;
+    switch (kind()) {
+        case 0u: { shortest = 0.35; }
+        case 5u: { shortest = 0.4; }
+        default: {}
+    }
+    let ragged = select(mix(shortest, 1.0, fract(f32(s) * 0.618 + 0.3)), 1.0, kind() == COMB);
     return sp.strand_len * select(1.0, 7.0, long) * ragged * params().reach;
 }
 
@@ -93,11 +111,24 @@ fn strand_step(i: u32) -> vec4<f32> {
     // out, it flipped in a frame when a tipping bell brought the two into
     // line.)
     let side = dir_to_world(J, root.round);
-    let w = groove_clock() * 1.1 - f32(k) * 0.18 + creature_hash(f32(s), 24.0 + f32(j)) * TAU;
+    var w = groove_clock() * 1.1 - f32(k) * 0.18 + creature_hash(f32(s), 24.0 + f32(j)) * TAU;
+    if (kd == LION) {
+        // In locks: a lock's hairs sway nearly together.
+        let lock = lion_hair(s, n).w;
+        w = groove_clock() * 0.8 - f32(k) * 0.16 + (creature_hash(lock, 24.0 + f32(j)) + 0.08 * creature_hash(f32(s), 24.0 + f32(j))) * TAU;
+    }
     var rest = normalize(hang + side * sin(w) * amp);
     let follow = sp.follow * mix(1.0, 0.13, u);
     let h = vec3<f32>(creature_hash(f32(s), 21.0 + f32(j)), creature_hash(f32(s), 22.0 + f32(j)), creature_hash(f32(s), 23.0 + f32(j))) - 0.5;
     rest = normalize(out_dir * follow + rest * (1.0 - 0.4 * follow) + h * select(0.2, 0.45, kd == MOON));
+    if (kd == LION) {
+        // Each hair a slow, gentle wave, more toward the tip, so the mane
+        // hangs soft and a little tangled.
+        let ph = creature_hash(f32(s), 25.0 + f32(j)) * TAU;
+        let curl = 0.15 + 0.45 * creature_hash(f32(s), 27.0 + f32(j));
+        let wave = sin(f32(k) * 0.45 + ph + groove_clock() * 0.3) * side + cos(f32(k) * 0.3 + ph * 1.3 - groove_clock() * 0.25) * out_dir * 0.5;
+        rest = normalize(rest + wave * curl * (0.2 + 0.9 * u));
+    }
     if (kd == MOON) {
         // The fringe curls a little: each fine tentacle its own long, slow
         // wave, more toward the tip, some curling more than others, so the
@@ -143,13 +174,18 @@ fn arm_step(i: u32) -> vec4<f32> {
     if (j >= jelly_count() || len <= 0.0 || k == 0u) {
         return vec4<f32>(anchor, 0.0);
     }
+    let lion = kd == LION;
     let twist = select(0.0, f32(k) * 0.45 + groove_clock() * 0.3, kd == NETTLE) + f32(a) * 1.5708;
     let ex = frame_x(J);
     let ez = cross(J.axis, ex);
     let amp = 0.2 * P.sway * (0.5 + 0.5 * item(1u).y * music());
     let ph = f32(a) * 1.7 + f32(j) * 2.9;
-    let wobble = (ex * sin(groove_clock() * 0.7 - f32(k) * 0.42 + ph) + ez * cos(groove_clock() * 0.55 - f32(k) * 0.33 + ph * 1.3)) * (0.25 + 0.5 * amp);
-    let splay = select(0.3, 1.2, moon);
+    // (A lion's mane's heavy curtains billow less, and slower.)
+    let wobble = (ex * sin(groove_clock() * 0.7 - f32(k) * 0.42 + ph) + ez * cos(groove_clock() * 0.55 - f32(k) * 0.33 + ph * 1.3)) * (0.25 + 0.5 * amp) * select(1.0, 0.3, lion);
+    var splay = select(0.3, 1.2, moon);
+    if (lion) {
+        splay = 0.35;
+    }
     let rest = normalize(-J.axis + vec3<f32>(0.0, -0.3, 0.0) - J.vel * 2.0 + (ex * cos(twist) + ez * sin(twist)) * splay + current(anchor, V.time) * 0.1 * P.current + wobble);
     if (J.age < 1.5) {
         return vec4<f32>(anchor + rest * len * f32(k), 0.0);
@@ -185,8 +221,9 @@ fn point(i: u32) -> LinePoint {
     var light = (0.35 + 0.5 * J.glow) * (1.0 - 0.7 * u) * select(1.0, 0.35, kd == LION);
     switch (kd) {
         case 5u: {
-            // Waves of light running down the hair.
-            light *= 0.2 + 4.0 * pow(0.5 + 0.5 * sin(u * 12.0 - J.pa * 6.0 + f32(s / 8u) * 0.4), 4.0) * J.glow;
+            // Waves of light running down the hair; each hair a little
+            // brighter or fainter than the next.
+            light *= (0.2 + 4.0 * pow(0.5 + 0.5 * sin(u * 12.0 - J.pa * 6.0 + f32(s / 8u) * 0.4), 4.0) * J.glow) * (0.5 + creature_hash(f32(s), 26.0 + f32(j)));
         }
         case 3u: {
             light *= select(0.7, 1.0, s == 0u);
@@ -209,7 +246,12 @@ fn point(i: u32) -> LinePoint {
     let before = (u - J.prev * 1.4) / 0.14;
     let pulse = mix(exp(-before * before), exp(-front * front), stroke_handover(J)) * sp.stroke_light * select(1.0, 0.0, sp.period <= 0.0);
     let hue = hue_of(J);
-    var c = tone(STRANDS_C, hue + 0.1 * u) * light + tone(LIGHT, hue) * pulse * 0.6 * (1.0 - 0.5 * u);
+    var hair = tone(STRANDS_C, hue + 0.1 * u);
+    if (kd == LION && natural_bodies() > 0.5) {
+        // From orange to pale, hair by hair.
+        hair = mix(hair, vec3<f32>(1.0, 0.8, 0.55), 0.45 * creature_hash(f32(s), 28.0 + f32(j)));
+    }
+    var c = hair * light + tone(LIGHT, hue) * pulse * 0.6 * (1.0 - 0.5 * u);
     c = water(c, to_camera(cam, p3).z, cam.dist - 1.0, natural_bodies());
     q.colour = shown(L_TENTACLES, c * P.glow);
     return q;

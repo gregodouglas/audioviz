@@ -62,6 +62,7 @@ visuals/harmonograph/visual.json 548d04f846e1fcb4
 visuals/harmonograph/visual.wgsl 3ea8bf81525e9a66
 visuals/harmonograph/visual.wgsl cdfe8fe68fcd9536
 visuals/jellyfish/body.wgsl 42e352a93fd1b6ed
+visuals/jellyfish/body.wgsl 6be0c6dacde68e15
 visuals/jellyfish/body.wgsl 6e891ea366dd8f69
 visuals/jellyfish/body.wgsl 7ce437eddad4fc36
 visuals/jellyfish/body.wgsl a2299f4e99e5eaf2
@@ -75,8 +76,10 @@ visuals/jellyfish/looks.wgsl 70788d5c56314c11
 visuals/jellyfish/looks.wgsl a4507a3661fe2695
 visuals/jellyfish/looks.wgsl b434f8fb2610b62e
 visuals/jellyfish/looks.wgsl c490541b7c47f1ed
+visuals/jellyfish/looks.wgsl e3c471ff6937556e
 visuals/jellyfish/looks.wgsl fe276820936ba93d
 visuals/jellyfish/mesh.wgsl 56b75b037f67f5b1
+visuals/jellyfish/mesh.wgsl 6c537712c0e03fe5
 visuals/jellyfish/mesh.wgsl 74c2095b40ab00e1
 visuals/jellyfish/mesh.wgsl 91a84eb9987d7988
 visuals/jellyfish/mesh.wgsl b20560b3d3aa2332
@@ -87,6 +90,7 @@ visuals/jellyfish/species.wgsl 5757b06ab752d5a0
 visuals/jellyfish/species.wgsl 7dc894337b5a84f8
 visuals/jellyfish/species.wgsl 971b37f49a88455a
 visuals/jellyfish/species.wgsl ae379328cb6a31b5
+visuals/jellyfish/species.wgsl b59e4095a17084d2
 visuals/jellyfish/species.wgsl d620b86c65152f47
 visuals/jellyfish/species.wgsl db4b784bd9526a88
 visuals/jellyfish/species.wgsl eb56605c8e8cddcb

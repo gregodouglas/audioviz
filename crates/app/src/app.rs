@@ -128,6 +128,9 @@ struct Running {
     applied_monitor: usize,
     start: Instant,
     last_frame: Instant,
+    /// The engine's recent past and the director view over it (ADR-0006).
+    history: crate::audio_view::History,
+    audio_view: crate::audio_view::ViewState,
     /// Onset counts at the last frame: new ones become this frame's hits.
     onset_count: [u32; 4],
     fps: f32,
@@ -299,6 +302,8 @@ impl Running {
             start: Instant::now(),
             last_frame: Instant::now(),
             onset_count: [0; 4],
+            history: crate::audio_view::History::new(),
+            audio_view: crate::audio_view::ViewState::new(),
             fps: 0.0,
             worst_ms: 0.0,
             points_per_sec: 0.0,
@@ -626,6 +631,7 @@ impl Running {
             self.pending_points.drain(..drop);
         }
         let mut features = self.engine.features();
+        self.history.extend(self.engine.drain_records());
         // A hit lasts one analysis hop (10.7 ms), shorter than a frame: count
         // them instead, so every onset is a hit on exactly one frame.
         for g in 0..4 {
@@ -648,6 +654,9 @@ impl Running {
         // Track change: toast and art tint.
         let track_id = now_playing.as_ref().map(|n| n.track_id);
         if track_id != self.last_track {
+            if let Some(np) = now_playing.as_ref().filter(|n| !n.title.is_empty()) {
+                self.history.mark(format!("{} · {}", np.artist, np.title));
+            }
             if let (Some(_), Some(np)) = (self.last_track, now_playing.as_ref()) {
                 if !np.title.is_empty() {
                     self.toast = Some((np.title.clone(), np.artist.clone(), Instant::now()));
@@ -815,6 +824,9 @@ impl Running {
         let current_delay = settings.audio_delay_ms;
         let spotify_installed = self.spotify_installed;
         let beat = features.beat_pulse;
+        let history = &self.history;
+        let audio_view = &mut self.audio_view;
+        let capture_health = self.engine.capture_health();
         let egui::FullOutput { platform_output, mut textures_delta, shapes, pixels_per_point, .. } = self.egui_ctx.run_pass(raw_input, |ctx| {
             let t_chrome = ctx.animate_bool_with_time(egui::Id::unique("t-chrome"), chrome_wanted, theme::ANIM_S);
             let t_panel = ctx.animate_bool_with_time(egui::Id::unique("t-panel"), settings.show_ui, theme::ANIM_S);
@@ -860,6 +872,9 @@ impl Running {
             if let Some(fr) = first_run {
                 let names: Vec<String> = stats.scenes.iter().map(|d| d.name.clone()).collect();
                 fr_actions = overlays::first_run(ctx, fr, &stats.monitors, settings.monitor, settings.start_fullscreen, &names, &settings.scene_name);
+            }
+            if audio_view.open {
+                audio_view.draw(ctx, history, &capture_health, right, bottom);
             }
             overlays::notices(ctx, &notices, bottom);
 
@@ -1239,6 +1254,8 @@ impl Running {
             KeyCode::Escape => {
                 if self.show_shortcuts {
                     self.show_shortcuts = false;
+                } else if self.audio_view.open {
+                    self.audio_view.open = false;
                 } else if self.calibration.is_some() {
                     self.calibration = None;
                 } else if self.first_run.is_some() {
@@ -1277,6 +1294,8 @@ impl Running {
             KeyCode::KeyC => self.toggle_calibration(),
             KeyCode::KeyA => self.settings.auto_scenes = !self.settings.auto_scenes,
             KeyCode::KeyN => self.settings.show_now_playing = !self.settings.show_now_playing,
+            KeyCode::KeyD => self.audio_view.open = !self.audio_view.open,
+            KeyCode::KeyF if self.audio_view.open => self.audio_view.toggle_freeze(&self.history),
             KeyCode::Slash | KeyCode::F1 => self.show_shortcuts = !self.show_shortcuts,
             KeyCode::Digit1 => self.select_layer(0),
             KeyCode::Digit2 => self.select_layer(1),

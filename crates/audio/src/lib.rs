@@ -11,6 +11,7 @@ use std::time::Instant;
 
 use crossbeam_channel::{Receiver, Sender};
 
+pub mod wav;
 #[cfg(windows)]
 pub mod windows;
 

@@ -3,6 +3,7 @@
 //! for design work.
 
 pub mod app;
+pub mod audio_view;
 pub mod bandfilter;
 pub mod chrome;
 pub mod color;

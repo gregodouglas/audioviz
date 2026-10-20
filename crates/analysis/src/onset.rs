@@ -42,6 +42,8 @@ pub struct OnsetDetector {
 
     /// Flux normalized by its running peak, ~0..1.5, continuous.
     pub strength: [f32; GROUPS],
+    /// The threshold a peak of `strength` must clear to be a hit, on the same scale.
+    pub threshold: [f32; GROUPS],
     /// Discrete onset this hop (one hop late: peak-picked).
     pub hit: [bool; GROUPS],
     /// Onsets so far, per group. A reader that compares it with the last
@@ -90,6 +92,7 @@ impl OnsetDetector {
             prev2_x: [0.0; GROUPS],
             prev_thr: [f32::MAX; GROUPS],
             strength: [0.0; GROUPS],
+            threshold: [0.0; GROUPS],
             hit: [false; GROUPS],
             count: [0; GROUPS],
             pulse: [0.0; GROUPS],
@@ -141,6 +144,7 @@ impl OnsetDetector {
             // MAD ~ 0.67 sigma for Gaussian noise, so 4 MAD ~ 2.7 sigma, plus a
             // floor relative to the recent peak so quiet jitter never counts.
             let thr = median + 4.0 * mad + 0.05 * self.norm[g] + 0.005;
+            self.threshold[g] = (thr / self.norm[g]).min(1.5);
 
             // Peak-pick the previous frame: a local maximum above its threshold.
             self.since_hit[g] += dt;

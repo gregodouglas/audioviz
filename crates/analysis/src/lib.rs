@@ -8,12 +8,14 @@
 
 pub mod beat;
 pub mod chroma;
+pub mod history;
 pub mod loudness;
 pub mod onset;
 pub mod stft;
 
 use beat::BeatTracker;
 use chroma::Chroma;
+use history::{HopRecord, RECORD_BANDS, SPEC_ROWS, SpectrumMap};
 use loudness::Loudness;
 use onset::OnsetDetector;
 use stft::{Ring, Stft};
@@ -168,6 +170,11 @@ pub struct Analyzer {
     e_short: f32,
     e_long: f32,
     frame: FeatureFrame,
+    spectrum_map: SpectrumMap,
+    /// Records of the hops since the last `drain_records`.
+    records: Vec<HopRecord>,
+    hops: u64,
+    last_beat_count: u32,
 }
 
 impl Analyzer {
@@ -195,6 +202,7 @@ impl Analyzer {
 
         let onsets = OnsetDetector::new(short.bins(), short.bin_hz(sr), mid.bins(), mid.bin_hz(sr), frame_rate);
         let chroma = Chroma::new(long.bins(), long.bin_hz(sr));
+        let spectrum_map = SpectrumMap::new(&long, &mid, sr);
         Self {
             ring: Ring::new(N_LONG),
             loudness: Loudness::new(sr),
@@ -217,6 +225,10 @@ impl Analyzer {
             e_short: 0.0,
             e_long: 0.0,
             frame: FeatureFrame { bands: vec![0.0; cfg.bands], ..Default::default() },
+            spectrum_map,
+            records: Vec::with_capacity(64),
+            hops: 0,
+            last_beat_count: 0,
             cfg,
         }
     }
@@ -227,6 +239,13 @@ impl Analyzer {
 
     pub fn frame(&self) -> &FeatureFrame {
         &self.frame
+    }
+
+    /// Moves the records of the hops analyzed since the last call into
+    /// `out`. Records pile up until drained (about 94 a second), so a user
+    /// of the analyzer that wants none should still drain now and then.
+    pub fn drain_records(&mut self, out: &mut Vec<HopRecord>) {
+        out.append(&mut self.records);
     }
 
     /// Feed interleaved stereo samples. Runs analysis every hop.
@@ -346,6 +365,42 @@ impl Analyzer {
         f.chroma = self.chroma.values;
         f.chroma_slow = self.chroma.slow;
         f.key_class = self.chroma.dominant;
+
+        // Remember the hop. A reader that never drains is capped at a minute.
+        if self.records.len() >= 94 * 60 {
+            self.records.remove(0);
+        }
+        let mut spectrum = [0u8; SPEC_ROWS];
+        self.spectrum_map.column(&self.long, &self.mid, &mut spectrum);
+        let mut bands = [0.0f32; RECORD_BANDS];
+        for (o, b) in bands.iter_mut().zip(&f.bands) {
+            *o = *b;
+        }
+        let hits = self.onsets.hit.iter().enumerate().fold(0u8, |m, (g, h)| m | ((*h as u8) << g));
+        self.records.push(HopRecord {
+            hop: self.hops,
+            time_s: f.time_s,
+            rms: f.rms,
+            lufs_m: f.lufs_m,
+            spectrum,
+            bands,
+            onset_strength: f.onset_strength,
+            onset_threshold: self.onsets.threshold,
+            onset_hits: hits,
+            bpm: f.bpm,
+            beat_confidence: f.beat_confidence,
+            beat_phase: f.beat_phase,
+            beat: f.beat_count != self.last_beat_count,
+            bass: f.bass,
+            mid: f.mid,
+            treb: f.treb,
+            centroid_hz: f.centroid_hz,
+            stereo_width: f.stereo_width,
+            energy_trend: f.energy_trend,
+            silent: f.silent,
+        });
+        self.hops += 1;
+        self.last_beat_count = f.beat_count;
     }
 }
 
@@ -374,6 +429,31 @@ mod tests {
         assert!(fr.stereo_width < 0.05);
         let (imax, _) = fr.bands.iter().enumerate().fold((0, 0.0), |m, (i, v)| if *v > m.1 { (i, *v) } else { m });
         assert!((14..=20).contains(&imax), "peak band {imax}");
+    }
+
+    #[test]
+    fn records_carry_a_spectrum_column() {
+        let cfg = AnalyzerConfig::default();
+        let mut a = Analyzer::new(cfg.clone());
+        let mut buf = Vec::new();
+        for i in 0..cfg.sample_rate as usize {
+            let s = sine(1000.0, 0.5, cfg.sample_rate, i);
+            buf.push(s);
+            buf.push(s);
+        }
+        a.push(&buf);
+        let mut recs = Vec::new();
+        a.drain_records(&mut recs);
+        assert_eq!(recs.len(), cfg.sample_rate as usize / cfg.hop);
+        assert!(recs.windows(2).all(|w| w[1].hop == w[0].hop + 1));
+        let last = recs.last().unwrap();
+        let (row, _) = last.spectrum.iter().enumerate().fold((0, 0u8), |m, (i, v)| if *v > m.1 { (i, *v) } else { m });
+        let (lo, hi) = (history::SPEC_LO_HZ.ln(), history::SPEC_HI_HZ.ln());
+        let hz = (lo + (hi - lo) * (row as f32 + 0.5) / SPEC_ROWS as f32).exp();
+        assert!((hz / 1000.0).log2().abs() < 0.1, "loudest row at {hz} Hz");
+        // A half-scale sine is -6 dB.
+        let db = history::SPEC_FLOOR_DB * (1.0 - last.spectrum[row] as f32 / 255.0);
+        assert!((db + 6.0).abs() < 1.5, "{db} dB");
     }
 
     #[test]

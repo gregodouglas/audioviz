@@ -224,6 +224,11 @@ fn point(i: u32) -> LinePoint {
             // Waves of light running down the hair; each hair a little
             // brighter or fainter than the next.
             light *= (0.2 + 4.0 * pow(0.5 + 0.5 * sin(u * 12.0 - J.pa * 6.0 + f32(s / 8u) * 0.4), 4.0) * J.glow) * (0.5 + creature_hash(f32(s), 26.0 + f32(j)));
+            // Hair beyond the body is mostly hidden by it and the mane in
+            // front (the line has no depth to be covered with): dimmed by
+            // how far behind it hangs, less so toward the tips, below the mass.
+            let behind = (to_camera(cam, p3).z - to_camera(cam, J.pos).z) / radius(J);
+            light *= mix(1.0, 0.3, smoothstep(-0.2, 0.7, behind) * (1.0 - 0.5 * u));
         }
         case 3u: {
             light *= select(0.7, 1.0, s == 0u);

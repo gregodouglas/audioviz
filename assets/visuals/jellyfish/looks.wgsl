@@ -72,6 +72,12 @@ fn paint(f: MeshFragment) -> vec4<f32> {
     let fs = fwidth(s);
     let fp = length(fwidth(f.colour.zw));
     let id = f.data.w;
+    if (id > PART_MANE) {
+        let J = jelly_at(u32(id) % 16u);
+        let m = mane_look(J, f.colour.y, f.colour.z, f.colour.w, f.data.x, fwidth(f.colour.z));
+        let keep = water_keep(f.colour.x, eye_near());
+        return vec4<f32>(shown(L_TENTACLES, water(m.rgb, f.colour.x, eye_near(), natural_bodies()) * P.glow), m.a * keep * select(0.0, 1.0, layer_on(L_TENTACLES)));
+    }
     if (id > PART_GLOW) {
         // Its glow in the water, close round the bell: faint, so it reads as
         // light in the water, not fog.
@@ -84,7 +90,12 @@ fn paint(f: MeshFragment) -> vec4<f32> {
     let J = jelly_at(u32(id) % 16u);
     let k = kind();
     var c = vec3<f32>(0.0);
-    if (id > PART_ARM) {
+    var cover = 0.0;
+    if (id > PART_ARM && k == LION) {
+        let m = mass_look(J, f.colour.y, f.colour.z, f.colour.w, f.data.x, f.data.y, f.data.z, fp);
+        c = shown(L_ARMS, m.rgb);
+        cover = m.a * select(0.0, 1.0, layer_on(L_ARMS));
+    } else if (id > PART_ARM) {
         c = shown(L_ARMS, arm_look(J, k, f.colour.y, f.colour.z, f.data.z, f.data.x, fp));
     } else {
         var L: Look;
@@ -110,10 +121,81 @@ fn paint(f: MeshFragment) -> vec4<f32> {
         L.fs = fs;
         L.fp = fp;
         c = bell_look(J, k, L);
+        cover = body_cover(k, L) * select(0.0, 1.0, layer_on(select(L_GLASS, L_INNER, L.inner)));
     }
     c = water(c, f.colour.x, eye_near(), natural_bodies());
     write_glow(water(diffused, f.colour.x, eye_near(), natural_bodies()) * P.glow);
-    return vec4<f32>(c * P.glow, 0.0);
+    // What it covers fades into the water with distance, as its light does.
+    cover *= water_keep(f.colour.x, eye_near());
+    return vec4<f32>(c * P.glow, cover);
+}
+
+// A lion's mane's sheet of hair at u (root 0 to tip 1), x across its gap
+// (0..1), `behind` how far beyond the body it hangs (radii): a few fine
+// hairs between the two it spans, each wavering its own way, over a soft
+// fill; it covers a little of what is behind it, fading toward the tips,
+// and on the far side the body and the mane in front hide most of it.
+fn mane_look(J: Jelly, u: f32, x: f32, behind: f32, gap: f32, fx: f32) -> vec4<f32> {
+    let hue = hue_of(J);
+    var hair = tone(STRANDS_C, hue + 0.1 * u);
+    if (natural_bodies() > 0.5) {
+        hair = mix(hair, vec3<f32>(1.0, 0.8, 0.55), 0.25);
+    }
+    let w = x + 0.08 * sin(u * 9.0 + gap * 1.7) + 0.05 * sin(u * 23.0 + gap * 3.1);
+    let hairs = 5.0;
+    let line = pow(0.5 + 0.5 * cos(w * TAU * hairs), 6.0);
+    let fine = keep_detail(fx * hairs * 2.0);
+    let fibres = mix(0.35, 0.3 + 0.9 * line, fine);
+    let fade = (1.0 - u) * smoothstep(0.0, 0.08, u);
+    let hidden = mix(1.0, 0.3, smoothstep(-0.2, 0.7, behind) * (1.0 - 0.5 * u));
+    let light = 0.05 * fibres * fade * hidden * (0.5 + 0.5 * soft(J.glow));
+    return vec4<f32>(hair * light, 0.22 * fibres * fade * hidden);
+}
+
+// How much of something dist from the eye is left by the water between
+// (as water() dims its light, in grey).
+fn water_keep(dist: f32, near: f32) -> f32 {
+    return exp(-max(dist - near, 0.0) * 0.3);
+}
+
+// How much of what is behind a bell it covers. The others are clear glass
+// (nothing: their light adds); a lion's mane is thick, coloured jelly, far
+// less see-through, and its inner skin carries the folded tissue.
+fn body_cover(k: u32, L: Look) -> f32 {
+    if (k != LION) {
+        return 0.0;
+    }
+    let lp = lappets(k);
+    let x = fract(L.th * lp.x) * 2.0 - 1.0;
+    let rim_s = 1.0 - lp.y * (1.0 - sqrt(max(1.0 - x * x, 0.0)));
+    let inside = smoothstep(rim_s + L.fs, rim_s - L.fs, L.s);
+    // Thick in the middle, thinning to the margin.
+    let thick = mix(0.6, 0.35, smoothstep(0.3, 1.0, L.s));
+    return select(thick, 0.3 * (1.0 - 0.6 * smoothstep(0.4, 1.0, L.s)), L.inner) * inside;
+}
+
+// A lion's mane's central mass at u (0..1 down it), th round it, `pleat`
+// (-1 a fold's hollow, 1 its ridge), lit from above (`top`), the light
+// through it (`through`), how face on (`face`): dense folded tissue, cream
+// to orange on the ridges and deep red in the folds, a crinkle of finer
+// folds over it, glowing a little from inside with its light; it hides
+// most of what is behind it, less toward its ragged end.
+fn mass_look(J: Jelly, u: f32, th: f32, pleat: f32, top: f32, through: f32, face: f32, fp: f32) -> vec4<f32> {
+    let P = params();
+    let hue = hue_of(J);
+    let tissue = tone(ARMS_C, hue);
+    let deep = tone(ORGANS, hue) * 0.5;
+    // (Waves at odd angles, not value noise: its grid showed as blocks.)
+    let q = vec2<f32>(th * 26.0, u * 18.0);
+    let crinkle = (0.5 + 0.25 * sin(q.x * 1.0 + q.y * 0.7 + J.hue * 9.0 + 2.0 * sin(q.y * 0.9)) + 0.25 * sin(q.x * 1.7 - q.y * 1.3 + 3.0 * sin(q.x * 0.4))) * keep_detail(fp * 40.0);
+    let ridge = smoothstep(-0.6, 0.9, pleat + 0.5 * (crinkle - 0.5));
+    let pale = mix(tissue, vec3<f32>(1.0, 0.82, 0.62), 0.35 * ridge);
+    let col = mix(deep, pale, ridge);
+    let lit = 0.05 + 0.12 * top + 0.06 * through + 0.05 * fresnel(face, 2.5);
+    let inner = tone(ORGANS, hue) * 0.015 * (0.5 + soft(J.glow) * 1.5) * (1.0 - ridge);
+    let c = (col * lit * (0.7 + 0.6 * crinkle) + inner) * (1.0 - 0.4 * u) * P.body;
+    let cover = 0.85 * (1.0 - 0.5 * smoothstep(0.75, 1.0, u)) * smoothstep(0.0, 0.04, u);
+    return vec4<f32>(c, cover);
 }
 
 // ---------------------------------------------------------------- the shared look

@@ -59,7 +59,9 @@
 // Line point i is strand link STRAND0 + i. Triangles per jelly: the bell's
 // outer skin (exumbrella) and inner skin (subumbrella), each RINGS x SECTORS
 // quads, then the arms (ARM_SEG - 1 links of ARM_SUB rows, ARM_ACROSS quads
-// across each, folded into a V), then its glow in the water (one quad facing the eye).
+// across each, folded into a V), then its glow in the water (one quad facing
+// the eye), then a lion's mane's sheets of hair (between neighbouring hairs
+// of the outer and inner rows of each cluster, a quad a link).
 
 const MAX_J: u32 = 12u;
 const STRANDS: u32 = 160u;
@@ -82,7 +84,10 @@ const SHELL_CORNERS: u32 = 9216u;   // RINGS * SECTORS * 2 * 3
 const BELL_CORNERS: u32 = 18432u;   // two skins
 const ARM_CORNERS: u32 = 8640u;     // ARMS * (ARM_SEG - 1) * ARM_SUB * ARM_ACROSS * 2 * 3
 const HALO_AT: u32 = 27072u;        // BELL_CORNERS + ARM_CORNERS
-const CORNERS_J: u32 = 27078u;      // HALO_AT + one quad
+const MANE_AT: u32 = 27078u;        // HALO_AT + one quad
+const MANE_GAPS: u32 = 4u;          // sheets along a row of a lion's mane cluster (between its five hairs)
+const MANE_CORNERS: u32 = 5760u;    // 8 clusters * 2 rows * MANE_GAPS * (SEG - 1) * 2 * 3
+const CORNERS_J: u32 = 32838u;      // MANE_AT + MANE_CORNERS
 // A bell's radius at size 1 (world units).
 const BELL_R: f32 = 0.2;
 

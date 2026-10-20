@@ -95,6 +95,40 @@ fn jelly_skin(j: u32, n: u32, th: f32, inner: bool) -> BellPoint {
     return p;
 }
 
+// The skin's frame at s (0..1 from the crown), th round, in world
+// directions: its normal, the way the profile runs out (along s) and the
+// way round. Paint works it out per pixel from the profile, the angle
+// interpolated smoothly between the rings (Catmull-Rom), so the shading has
+// no seam at a ring even where a stroke curls the bell sharply (the mesh's
+// corners alone would band it ring by ring).
+struct SkinFrame {
+    n: vec3<f32>,
+    out: vec3<f32>,
+    round: vec3<f32>,
+};
+
+fn skin_frame(J: Jelly, j: u32, s: f32, th: f32) -> SkinFrame {
+    let b = bell_of(kind());
+    let x = clamp(s, 0.0, 1.0) * f32(RINGS);
+    let n0 = min(u32(x), RINGS - 1u);
+    let t = x - f32(n0);
+    let a0 = profile(j, max(n0, 1u) - 1u).z;
+    let a1 = profile(j, n0).z;
+    let a2 = profile(j, n0 + 1u).z;
+    let a3 = profile(j, n0 + 2u).z;
+    let a = a1 + 0.5 * t * (a2 - a0 + t * (2.0 * a0 - 5.0 * a1 + 4.0 * a2 - a3 + t * (3.0 * (a1 - a2) + a3 - a0)));
+    let ang = th * TAU;
+    let ca = cos(ang);
+    let sa = sin(ang);
+    let n2 = normalize(vec2<f32>(sin(a), cos(a) * b.aspect));
+    let t2 = normalize(vec2<f32>(cos(a) * b.aspect, -sin(a)));
+    var f: SkinFrame;
+    f.n = dir_to_world(J, vec3<f32>(n2.x * ca, n2.y, n2.x * sa));
+    f.out = dir_to_world(J, vec3<f32>(t2.x * ca, t2.y, t2.x * sa));
+    f.round = dir_to_world(J, vec3<f32>(-sa, 0.0, ca));
+    return f;
+}
+
 // ---------------------------------------------------------------- swimming
 
 // One frame of jelly j: spawn, strokes, swimming, steering, its light.

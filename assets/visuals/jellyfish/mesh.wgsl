@@ -3,7 +3,8 @@
 // quads on the bell's profile), then its oral arms (V-folded sheets along
 // their links). What paint gets per corner:
 //   bell  colour (distance from the eye, the stroke there, plan x, plan y)
-//         data   (light from above, its glint's cosine (glint_cos), face on, id)
+//         data   (0, 0, 0, id): paint works the skin's light out per pixel
+//                from the profile (skin_frame) and its own ray
 //   arm   colour (distance from the eye, along 0..1, across -1..1, 0)
 //         data   (light from above, light through it, face on, id)
 //   glow  data   (x, y from its centre in sizes, 0, id)
@@ -43,11 +44,8 @@ fn vertex(vi: u32) -> MeshVertex {
         let th = f32(quad % SECTORS + db[c6]) / f32(SECTORS);
         let sk = jelly_skin(j, n, th, shell == 1u);
         let wp = to_world(J, sk.pos);
-        let wn = dir_to_world(J, sk.normal);
-        let view = normalize(wp - eye);
-        let face = facing(cam, wp, wn);
         v.pos = clip_pos(cam, wp);
-        v.data = vec4<f32>(key_light(wn, view).x, glint_cos(wn, view), face, f32(j) + 0.5 + PART_INNER * f32(shell));
+        v.data = vec4<f32>(0.0, 0.0, 0.0, f32(j) + 0.5 + PART_INNER * f32(shell));
         let plan = f32(n) / f32(RINGS) * vec2<f32>(cos(th * TAU), sin(th * TAU));
         v.colour = vec4<f32>(to_camera(cam, wp).z, profile(j, n).w, plan);
         return v;

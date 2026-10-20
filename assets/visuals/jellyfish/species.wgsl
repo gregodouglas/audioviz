@@ -13,6 +13,7 @@ struct Species {
     period: f32,       // seconds between strokes on its own (0: no strokes)
     swim: f32,         // push per stroke
     glass: f32,        // how milky its jelly is (light per unit looked through)
+    density: f32,      // how soon its jelly saturates, whitening (scatter): low clear, high milky
     edge: f32,         // how bright its skin seen edge on
     stroke_light: f32, // how much a stroke lights it
     follow: f32,       // how far its tentacles carry on the way the margin points
@@ -22,12 +23,12 @@ struct Species {
 fn species_of(kind: u32) -> Species {
     var s: Species;
     switch (kind) {
-        case 1u: { s = Species(0.9, 24.0, 5.0, 1.4, 3.5, 0.2, 1.1, 1.0, 0.03, 0.25, 0.35, 0.45, 1.2); }
-        case 2u: { s = Species(0.95, 28.0, 3.0, 0.3, 0.25, 0.1, 2.0, 0.7, 0.01, 0.35, 0.3, 0.45, 1.2); }
-        case 3u: { s = Species(0.7, 22.0, 0.8, 1.2, 0.0, 0.0, 0.9, 1.1, 0.05, 0.2, 0.3, 0.3, 1.0); }
-        case 4u: { s = Species(0.85, 2.0, 3.5, 0.9, 0.0, 0.0, 0.0, 0.6, 0.012, 0.3, 0.0, 0.3, 0.0); }
-        case 5u: { s = Species(1.9, 120.0, 5.0, 0.55, 2.0, 0.4, 2.2, 0.6, 0.03, 0.25, 0.3, 0.35, 1.2); }
-        default: { s = Species(1.3, 160.0, 0.6, 0.32, 1.25, 0.2, 1.7, 0.8, 0.045, 0.3, 0.5, 0.75, 1.5); }
+        case 1u: { s = Species(0.9, 24.0, 5.0, 1.4, 3.5, 0.2, 1.1, 1.0, 0.03, 1.2, 0.25, 0.35, 0.45, 1.2); }
+        case 2u: { s = Species(0.95, 28.0, 3.0, 0.3, 0.25, 0.1, 2.0, 0.7, 0.01, 1.2, 0.35, 0.3, 0.45, 1.2); }
+        case 3u: { s = Species(0.7, 22.0, 0.8, 1.2, 0.0, 0.0, 0.9, 1.1, 0.05, 1.2, 0.2, 0.3, 0.3, 1.0); }
+        case 4u: { s = Species(0.85, 2.0, 3.5, 0.9, 0.0, 0.0, 0.0, 0.6, 0.012, 1.2, 0.3, 0.0, 0.3, 0.0); }
+        case 5u: { s = Species(1.9, 120.0, 5.0, 0.55, 2.0, 0.4, 2.2, 0.6, 0.03, 1.2, 0.25, 0.3, 0.35, 1.2); }
+        default: { s = Species(1.3, 160.0, 0.6, 0.32, 1.25, 0.2, 1.7, 0.8, 0.14, 2.2, 0.3, 0.5, 0.75, 1.5); }
     }
     return s;
 }

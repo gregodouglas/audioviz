@@ -12,7 +12,7 @@
 // of all of it sitting sharp on the skin.
 
 // How tight the wet glint on a bell is (glint_at).
-const GLINT_SHARP: f32 = 150.0;
+const GLINT_SHARP: f32 = 350.0;
 
 // What paint knows about a pixel of a bell.
 struct Look {
@@ -22,6 +22,7 @@ struct Look {
     face: f32,       // how face on (1) or edge on (0) the eye sees it
     top: f32,        // how much it faces the light from above
     sheen: f32,      // the light above on its wet skin: glint, and glow through it
+    sky: f32,        // the bright water above as the skin mirrors it (sky_reflection)
     inner: bool,     // the subumbrella, under the jelly
     squeeze: f32,    // the stroke here
     fs: f32,         // one pixel in s
@@ -69,12 +70,21 @@ fn paint(f: MeshFragment) -> vec4<f32> {
         L.s = s;
         L.th = fract(atan2(f.colour.w, f.colour.z + 1e-7) / TAU);
         L.plan = f.colour.zw;
-        L.face = f.data.z;
-        L.top = f.data.x;
-        // The glint sharpened here, per pixel, and the light above seen
-        // through thin skin, from this pixel's own ray.
-        L.sheen = glint_at(f.data.y, GLINT_SHARP) + through_light(pixel_ray(the_camera(), f.pixel)) * fresnel(L.face, 1.5) * 0.6;
+        // The light, per pixel: the skin's normal from the profile and this
+        // pixel's own ray, so nothing is smeared across a quad or banded
+        // ring by ring. The wet skin is not mirror smooth: a fine relief
+        // breaks its glint into a scatter of sparks.
+        let ray = pixel_ray(the_camera(), f.pixel);
+        let F = skin_frame(J, u32(id) % 16u, s, L.th);
         L.inner = id > PART_INNER;
+        var wet = F.n;
+        if (!L.inner) {
+            wet = wet_normal(F, L.plan, s, fp, J.hue);
+        }
+        L.face = abs(dot(F.n, ray));
+        L.top = key_light(F.n, ray).x;
+        L.sky = sky_reflection(wet, ray);
+        L.sheen = glint_at(glint_cos(wet, ray), GLINT_SHARP) + through_light(ray) * fresnel(L.face, 1.5) * 0.6;
         L.squeeze = f.colour.y;
         L.fs = fs;
         L.fp = fp;
@@ -86,6 +96,30 @@ fn paint(f: MeshFragment) -> vec4<f32> {
 }
 
 // ---------------------------------------------------------------- the shared look
+
+// The skin's normal with its fine wet relief: a gentle, uneven swell of
+// the jelly, as a height over the plan tilting the normal along the skin's
+// frame. The height is a few waves at odd angles and sizes, its slope
+// worked out exactly: value noise showed its grid as blocks in a tight
+// glint. Each wave fades where it would be finer than a pixel.
+fn wet_normal(F: SkinFrame, plan: vec2<f32>, s: f32, fp: f32, seed: f32) -> vec3<f32> {
+    var g = vec2<f32>(0.0);
+    for (var i = 0u; i < 8u; i++) {
+        let fi = f32(i);
+        let a = fi * 2.399 + seed * 6.0;
+        let k = 9.0 * pow(1.6, fi);
+        let d = vec2<f32>(cos(a), sin(a)) * k;
+        let fade = keep_detail(fp * k / TAU * 8.0);
+        if (fade <= 0.0) {
+            break;
+        }
+        g += d * cos(dot(plan, d) + fi * 1.7 + seed * 11.0) / k * (0.5 + 0.12 * fi) * fade;
+    }
+    let out = plan / max(s, 1e-3);
+    let gr = dot(g, out);
+    let ga = dot(g, vec2<f32>(-out.y, out.x));
+    return normalize(F.n - (F.out * gr + F.round * ga) * 0.07);
+}
 
 // A light level that swells and ebbs: x near 0 unchanged, loud ones
 // brightening less and less (so a run of loud onsets never blows it out).
@@ -108,10 +142,15 @@ fn bell_look(J: Jelly, k: u32, L: Look) -> vec3<f32> {
         // fibres running out from the crown (noise of the direction out, so
         // it has no seam).
         let out = L.plan / max(L.s, 1e-3);
-        let fibres = 0.85 + 0.3 * noise(out * 26.0 + vec2<f32>(L.s * 3.0, J.hue * 11.0)) * keep_detail(L.fp * 26.0 / max(L.s, 0.05));
+        let fibres = 0.9 + 0.15 * noise(out * 26.0 + vec2<f32>(L.s * 3.0, J.hue * 11.0)) * keep_detail(L.fp * 26.0 / max(L.s, 0.05));
         let tissue = (0.75 + 0.5 * fbm(L.plan * 6.0 + seed, 3)) * fibres;
         let rimzone = select(smoothstep(0.1, 0.7, L.s), 1.0, k == COMB);
-        c = shown(L_GLASS, body * sp.glass * glass(L.face, bell_thickness(b, L.s)) * tissue * lit) + shown(L_EDGES, body * sp.edge * fresnel(L.face, 3.0) * rimzone * lit);
+        // The jelly scatters the light through it (more, and whiter, where
+        // the eye looks through more of it); its wet skin, seen edge on,
+        // mirrors the bright water above where the reflection looks up and
+        // stays dark where it looks down.
+        let edge = mix(body, vec3<f32>(1.0), 0.3 * L.sky) * sp.edge * fresnel(L.face, 4.0) * rimzone * (0.35 * lit + 0.9 * L.sky);
+        c = shown(L_GLASS, body * sp.glass * scatter(L.face, bell_thickness(b, L.s), sp.density) * tissue * lit) + shown(L_EDGES, edge);
         // The light above on the wet skin: a glint sliding over the dome as it
         // turns, and the thin skin glowing when the eye looks up through it.
         c += shown(L_SHEEN, mix(body, vec3<f32>(1.0), 0.55) * L.sheen * 0.45);
@@ -195,7 +234,7 @@ const COMBS_DIFFUSE: f32 = 0.25;
 // skin, what shows through the glass: the stomach, four horseshoe gonads of
 // lumpy folded tissue (breathing with the bass), sixteen radial canals (the
 // eight under the rhopalia forking three times on the way out) joining the
-// ring canal, and the fine rings of the swimming muscle.
+// ring canal, and the fine striation of the swimming muscle.
 fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
     let hue = hue_of(J);
     let body = tone(BODY, hue);
@@ -206,9 +245,13 @@ fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
     let glow = soft(J.glow);
     let flash = soft(J.flash);
     if (!L.inner) {
-        let w = cells(L.plan * 55.0 + seed, 1.0, 0.0);
-        let wart = smoothstep(0.17, 0.05, w.x) * step(0.55, w.z) * keep_detail(L.fp * 55.0);
-        var c = shown(L_MARKS, body * wart * 0.1);
+        // The warts (clusters of stinging cells): tiny, uneven in size and
+        // light, few near the crown and thicker toward the margin.
+        let w = cells(L.plan * 70.0 + seed, 1.0, 0.0);
+        let size = 0.06 + 0.08 * fract(w.z * 7.3);
+        let many = mix(0.85, 0.35, smoothstep(0.2, 0.9, s));
+        let wart = smoothstep(size, size * 0.3, w.x) * step(many, w.z) * (0.4 + 0.6 * fract(w.z * 13.1)) * keep_detail(L.fp * 70.0);
+        var c = shown(L_MARKS, mix(body, vec3<f32>(1.0), 0.3) * wart * 0.07);
         let x = fract(L.th * 8.0);
         let d = vec2<f32>(min(x, 1.0 - x) / 8.0 * TAU * s, 1.0 - s - 0.02);
         let rh = max(exp(-dot(d, d) / (0.012 * 0.012)) - 0.02, 0.0);
@@ -296,12 +339,17 @@ fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
     let bx = abs(fract(L.th * 160.0 + 0.5) - 0.5) / 160.0 * TAU * s;
     let bulbs = thin_line(length(vec2<f32>(bx, 1.0 - s - 0.012)), 0.006, fq);
     c += shown(L_MARKS, tone(STRANDS_C, hue) * bulbs * 0.5);
-    // The swimming muscle: faint, uneven rings in the outer bell, lit by the squeeze.
-    let freq = 46.0;
+    // The swimming muscle: a fine, broken striation in the outer bell, its
+    // fibres short and wavering, so it reads as tissue, not as rings. It
+    // brightens only a little on the squeeze (the stroke's light is the
+    // soft glow in bell_look); lit hoops looked like a grid.
+    let freq = 90.0;
+    let warp = (noise(vec2<f32>(L.th * 40.0, s * 6.0) + seed) - 0.5) * 0.012;
+    let fibres = smoothstep(0.35, 0.75, noise(vec2<f32>(L.th * 260.0, s * 30.0) + seed));
     let even = 0.4 + 1.2 * fbm(vec2<f32>(s * 25.0, L.th * 9.0) + seed, 2);
-    let bands = mix(pow(0.5 + 0.5 * cos(s * TAU * freq), 4.0) * even, 0.3, clamp(L.fs * freq * 1.5, 0.0, 1.0));
+    let bands = mix(pow(0.5 + 0.5 * cos((s + warp) * TAU * freq), 6.0) * even * fibres, 0.12, clamp(L.fs * freq * 1.5, 0.0, 1.0));
     let zone = smoothstep(0.4, 0.5, s) * smoothstep(0.92, 0.85, s);
-    c += shown(L_STROKE, body * bands * zone * (0.008 + 0.15 * max(L.squeeze, 0.0)));
+    c += shown(L_STROKE, body * bands * zone * (0.01 + 0.025 * max(L.squeeze, 0.0)));
     return c;
 }
 

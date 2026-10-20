@@ -35,6 +35,28 @@ fn glass(facing_amount: f32, thickness: f32) -> f32 {
     return min((thickness + 0.03) / max(facing_amount, 0.15), 2.5);
 }
 
+// The light a jelly scatters toward the eye, per colour, looking through a
+// skin `thickness` thick seen `facing_amount` face on: light scattered out
+// of the path the eye looks along (Beer-Lambert), so it grows with the path
+// and saturates. Blue scatters most: thin jelly is faintly blue, thick
+// jelly whitens. `density` is scattering per unit of jelly; a short path
+// gives about glass()'s value, a long one levels off at 1 / density.
+fn scatter(facing_amount: f32, thickness: f32, density: f32) -> vec3<f32> {
+    let path = (thickness + 0.03) / max(facing_amount, 0.12);
+    let k = density * vec3<f32>(0.78, 0.9, 1.0);
+    return (vec3<f32>(1.0) - exp(-k * path)) / density;
+}
+
+// What wet skin with normal n mirrors toward the eye (either side of the
+// skin), seen along `view`: the water above is bright toward its surface
+// and dark below, so a skin seen edge on shines where its reflection looks
+// up and stays dark where it looks down. 0..1.
+fn sky_reflection(n: vec3<f32>, view: vec3<f32>) -> f32 {
+    let m = n * select(1.0, -1.0, dot(n, view) > 0.0);
+    let r = reflect(view, m);
+    return 0.06 + 0.94 * pow(clamp(r.y * 0.5 + 0.5, 0.0, 1.0), 3.0);
+}
+
 // The light from the surface above, for a body seen from `view` (unit
 // direction from the eye to the point) with world normal `n`: x is how much
 // the surface faces the light (0..1, wrapped, so the underside is not black),

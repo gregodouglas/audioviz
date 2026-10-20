@@ -67,6 +67,7 @@ visuals/jellyfish/body.wgsl a2299f4e99e5eaf2
 visuals/jellyfish/body.wgsl ce4e0f0d83c1d58a
 visuals/jellyfish/body.wgsl cf779a5ebc77c16f
 visuals/jellyfish/looks.wgsl 357905f57ba16caf
+visuals/jellyfish/looks.wgsl 3ef545fdfd68a258
 visuals/jellyfish/looks.wgsl 70788d5c56314c11
 visuals/jellyfish/looks.wgsl a4507a3661fe2695
 visuals/jellyfish/looks.wgsl b434f8fb2610b62e
@@ -74,8 +75,10 @@ visuals/jellyfish/looks.wgsl c490541b7c47f1ed
 visuals/jellyfish/looks.wgsl fe276820936ba93d
 visuals/jellyfish/mesh.wgsl 56b75b037f67f5b1
 visuals/jellyfish/mesh.wgsl 74c2095b40ab00e1
+visuals/jellyfish/mesh.wgsl 91a84eb9987d7988
 visuals/jellyfish/mesh.wgsl c9fa78686a47b4a0
 visuals/jellyfish/mesh.wgsl f3f54eee7c8beddf
+visuals/jellyfish/species.wgsl 2f793cf95b556b82
 visuals/jellyfish/species.wgsl 7dc894337b5a84f8
 visuals/jellyfish/species.wgsl 971b37f49a88455a
 visuals/jellyfish/species.wgsl d620b86c65152f47

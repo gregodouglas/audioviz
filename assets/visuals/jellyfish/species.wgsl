@@ -23,11 +23,11 @@ struct Species {
 fn species_of(kind: u32) -> Species {
     var s: Species;
     switch (kind) {
-        case 1u: { s = Species(0.9, 24.0, 5.0, 1.4, 3.5, 0.2, 1.1, 1.0, 0.03, 1.2, 0.25, 0.35, 0.45, 1.2); }
+        case 1u: { s = Species(0.9, 24.0, 5.0, 1.4, 3.5, 0.3, 1.1, 1.0, 0.08, 1.8, 0.25, 0.35, 0.45, 1.2); }
         case 2u: { s = Species(0.95, 28.0, 3.0, 0.3, 0.25, 0.1, 2.0, 0.7, 0.01, 1.2, 0.35, 0.3, 0.45, 1.2); }
-        case 3u: { s = Species(0.7, 22.0, 0.8, 1.2, 0.0, 0.0, 0.9, 1.1, 0.05, 1.2, 0.2, 0.3, 0.3, 1.0); }
+        case 3u: { s = Species(0.7, 22.0, 0.8, 1.2, 0.0, 0.0, 0.9, 1.1, 0.16, 2.5, 0.2, 0.3, 0.7, 1.0); }
         case 4u: { s = Species(0.85, 2.0, 3.5, 0.9, 0.0, 0.0, 0.0, 0.6, 0.012, 1.2, 0.3, 0.0, 0.3, 0.0); }
-        case 5u: { s = Species(1.9, 120.0, 5.0, 0.55, 2.0, 0.4, 2.2, 0.6, 0.03, 1.2, 0.25, 0.3, 0.35, 1.2); }
+        case 5u: { s = Species(1.9, 120.0, 5.0, 0.55, 2.0, 0.4, 2.2, 0.6, 0.07, 1.6, 0.25, 0.3, 0.35, 1.2); }
         default: { s = Species(1.3, 160.0, 0.6, 0.32, 0.95, 0.22, 1.7, 0.8, 0.14, 2.2, 0.3, 0.5, 0.45, 1.5); }
     }
     return s;
@@ -38,12 +38,13 @@ fn species_of(kind: u32) -> Species {
 fn bell_of(kind: u32) -> Bell {
     var b: Bell;
     switch (kind) {
-        // A deep golden dome with a scalloped margin of thirty-two lappets.
-        case 1u: { b = Bell(1.8, 1.15, 1.0, 0.75, 1.0, 0.1, 0.26, 0.34, 0.12, 0.01, 32.0, 0.02, 0.035, 0.0, 0.0, 0.62); }
+        // A deep golden dome with a scalloped margin of thirty-two lappets
+        // (painted: see LAPPET_DEPTH).
+        case 1u: { b = Bell(1.8, 1.15, 1.0, 0.75, 1.0, 0.1, 0.26, 0.34, 0.12, 0.01, 32.0, 0.0, 0.0, 0.0, 0.0, 0.62); }
         // A wide, flat lens of clear jelly, slow and gentle.
         case 2u: { b = Bell(0.9, 1.5, 1.0, 0.9, 1.4, 0.12, 0.36, 0.5, 0.16, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.75); }
-        // A deep crown, thick jelly, twenty lappets, the coronal groove.
-        case 3u: { b = Bell(1.55, 1.1, 1.0, 0.7, 1.0, 0.08, 0.24, 0.32, 0.26, 0.015, 20.0, 0.03, 0.04, 0.07, 0.5, 0.62); }
+        // A deep crown, thick jelly, twenty lappets (painted), the coronal groove.
+        case 3u: { b = Bell(1.55, 1.1, 1.0, 0.7, 1.0, 0.08, 0.24, 0.32, 0.26, 0.015, 20.0, 0.0, 0.0, 0.07, 0.5, 0.62); }
         // An egg, pole to pole, that never pulses.
         case 4u: { b = Bell(3.0, 1.0, 0.55, 0.0, 0.0, 0.0, 0.0, 1.0, 0.06, 0.04, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5); }
         // A big bell in eight deep lobes, slow and heavy.

@@ -67,9 +67,9 @@ fn vertex(vi: u32) -> MeshVertex {
     // An oral arm: a sheet along a smooth curve through its links (ARM_SUB
     // rows a link, so its outline does not kink at each link), folded into
     // a V that opens away from the axis, its lips ruffled and the whole arm
-    // twisting a little down its length. A moon jelly's lips are frilled
-    // curtains: a row of frills along each edge, modelled; the finer
-    // crenulation is painted.
+    // twisting a little down its length. The lips of a moon jelly, a sea
+    // nettle and a lion's mane are frilled curtains: a row of frills along
+    // each edge, modelled; the finer crenulation is painted.
     let sp = species_of(k);
     if (sp.arm_len <= 0.0 || P.arms < 0.01) {
         return v;
@@ -111,11 +111,21 @@ fn vertex(vi: u32) -> MeshVertex {
     let ruffle = sin(u * 9.0 + f32(a) * 2.3 + sd + V.time * 0.9) * 0.6 + sin(u * 4.0 - V.time * 0.5 + f32(a) + sd * 2.0) * 0.4;
     // The frills: a row of waves along each edge, out of the sheet, each
     // lip its own, irregular in size and spacing, slowly moving.
+    // (Frills along an arm: about five a bell radius of it, as many as its
+    // rows can draw smoothly.)
+    var frills = 0.0;
+    var tall = 0.16;
+    switch (k) {
+        case 0u: { frills = 5.0; }
+        case 1u: { frills = 10.0; tall = 0.22; }
+        case 5u: { frills = 7.0; tall = 0.14; }
+        default: {}
+    }
     var frill = 0.0;
-    if (moon) {
+    if (frills > 0.0) {
         let edge = pow(smoothstep(0.5, 1.0, abs(x)), 2.0);
-        let ph = u * TAU * 5.0 + 1.0 * sin(u * TAU * 2.3 + f32(a) * 1.9 + sd) + sd * 2.1 + f32(a) * 1.3 + V.time * 0.6;
-        frill = sin(ph) * edge * (0.16 + 0.1 * sin(u * 17.0 + f32(a) + sd)) * min(tip * 2.0, 1.0);
+        let ph = u * TAU * frills + 1.0 * sin(u * TAU * 2.3 + f32(a) * 1.9 + sd) + sd * 2.1 + f32(a) * 1.3 + V.time * 0.6;
+        frill = sin(ph) * edge * (tall + 0.1 * sin(u * 17.0 + f32(a) + sd)) * select(1.0, min(tip * 2.0, 1.0), moon);
     }
     let wp = at + e_side * x * width + e_out * (abs(x) * fold + lip * ruffle * select(0.35, 0.4, moon) + frill) * width;
     let wn = normalize(cross(dir, e_side + e_out * fold * sign(x)) + vec3<f32>(0.0, 1e-6, 0.0));

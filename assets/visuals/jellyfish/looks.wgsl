@@ -13,6 +13,9 @@
 
 // How tight the wet glint on a bell is (glint_at).
 const GLINT_SHARP: f32 = 350.0;
+// How deep the lappets cut into the margin (in s) where they are painted:
+// a bell of sixteen or more, too many for the mesh's sectors to round.
+const LAPPET_DEPTH: f32 = 0.05;
 
 // What paint knows about a pixel of a bell.
 struct Look {
@@ -132,10 +135,24 @@ fn bell_look(J: Jelly, k: u32, L: Look) -> vec3<f32> {
     let sp = species_of(k);
     let b = bell_of(k);
     let hue = hue_of(J);
-    // A little dimmer through the thick middle, brighter toward the rim.
-    let body = tone(BODY, hue) * mix(0.85, 1.05, smoothstep(0.2, 1.0, L.s));
+    // A little dimmer through the thick middle, brighter toward the rim; a
+    // lion's mane deepens to red-brown toward its middle.
+    var body = tone(BODY, hue) * mix(0.85, 1.05, smoothstep(0.2, 1.0, L.s));
+    if (k == LION && params().colours > 0.5) {
+        body *= mix(vec3<f32>(0.9, 0.38, 0.25), vec3<f32>(1.0), smoothstep(0.05, 0.75, L.s));
+    }
     let lit = 0.55 + 0.45 * L.top;
     let seed = vec2<f32>(J.hue * 13.0, J.hue * 7.0);
+    // Lappets finer than the mesh can shape are cut here instead: rounded
+    // scallops meeting in notches, the pixels beyond them left out (with
+    // two or three sectors each the mesh drew them as saw teeth).
+    var rim_s = 1.0;
+    var cut = 1.0;
+    if (b.lobes >= 16.0) {
+        let x = fract(L.th * b.lobes) * 2.0 - 1.0;
+        rim_s = 1.0 - LAPPET_DEPTH * (1.0 - sqrt(max(1.0 - x * x, 0.0)));
+        cut = smoothstep(rim_s + L.fs, rim_s - L.fs, L.s);
+    }
     var c = vec3<f32>(0.0);
     if (!L.inner) {
         // The jelly is not quite even: a soft mottling through it, and faint
@@ -150,14 +167,22 @@ fn bell_look(J: Jelly, k: u32, L: Look) -> vec3<f32> {
         // mirrors the bright water above where the reflection looks up and
         // stays dark where it looks down.
         let edge = mix(body, vec3<f32>(1.0), 0.3 * L.sky) * sp.edge * fresnel(L.face, 4.0) * rimzone * (0.35 * lit + 0.9 * L.sky);
-        c = shown(L_GLASS, body * sp.glass * scatter(L.face, bell_thickness(b, L.s), sp.density) * tissue * lit) + shown(L_EDGES, edge);
+        // A sea nettle's stripes are pigment in the jelly: darker bands
+        // where less of its golden light comes through.
+        var pigment = 1.0;
+        if (k == NETTLE) {
+            pigment = 1.0 - 0.65 * nettle_stripes(J, L);
+        } else if (k == ATOLLA) {
+            pigment = atolla_pedalia(L, b);
+        }
+        c = shown(L_GLASS, body * sp.glass * scatter(L.face, bell_thickness(b, L.s), sp.density) * tissue * lit * pigment) + shown(L_EDGES, edge);
         // The light above on the wet skin: a glint sliding over the dome as it
         // turns, and the thin skin glowing when the eye looks up through it.
         c += shown(L_SHEEN, mix(body, vec3<f32>(1.0), 0.55) * L.sheen * 0.45);
         if (k != COMB) {
             // The thin margin glows, brightest on the lobes.
             let lobe = select(1.0, 0.5 - 0.5 * cos(fract(L.th * b.lobes) * TAU), b.lobes > 0.0);
-            c += shown(L_EDGES, body * thin_line(1.0 - L.s, 0.012, L.fs) * (0.5 + 0.5 * lobe) * 0.9);
+            c += shown(L_EDGES, body * thin_line(abs(rim_s - L.s), 0.012, L.fs) * (0.5 + 0.5 * lobe) * 0.9);
         }
     } else {
         c = shown(L_INNER, body * (0.012 + 0.08 * fresnel(L.face, 2.5) + 0.012 * fbm(L.plan * 10.0 + seed, 3)) * lit);
@@ -180,7 +205,7 @@ fn bell_look(J: Jelly, k: u32, L: Look) -> vec3<f32> {
         case 5u: { own = lion_light(J, L); }
         default: { own = moon_light(J, L); }
     }
-    return c * P.body + own * P.light;
+    return (c * P.body + own * P.light) * cut;
 }
 
 // An oral arm at u (root 0 to tip 1), x across (-1..1): clear jelly, the
@@ -353,21 +378,28 @@ fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
     return c;
 }
 
-// Sea nettle. Outer skin: sixteen dark stripes radiating from the crown
-// (they pulse with the mids and flash on its onsets), a speckle of
-// photophores, the scalloped lappets lit. Inner: four frilled gonads.
+// Sea nettle's sixteen stripes, 0..1: radiating from the crown, widening
+// toward the margin, wavering a little, faded to their average where they
+// would be finer than a pixel.
+fn nettle_stripes(J: Jelly, L: Look) -> f32 {
+    let s = L.s;
+    let a = L.th * TAU + 0.07 * (noise(vec2<f32>(s * 5.0, J.hue * 9.0 + L.th * 16.0)) - 0.5);
+    let width = mix(0.6, 1.0, s);
+    let stripes = pow(0.5 + 0.5 * cos(a * 16.0), 5.0 / width) * smoothstep(0.08, 0.35, s) * (0.6 + 0.4 * s);
+    let aa = mix(1.0, 0.35, clamp(L.fp * 16.0 * 1.5, 0.0, 1.0));
+    return mix(0.35, stripes, aa);
+}
+
+// Sea nettle. Outer skin: sixteen stripes of dark pigment radiating from
+// the crown (bell_look darkens the jelly under them), which glow with the
+// mids and flash on its onsets, and a speckle of photophores. Inner: four
+// frilled gonads.
 fn nettle_light(J: Jelly, L: Look) -> vec3<f32> {
     let hue = hue_of(J);
     let s = L.s;
     if (!L.inner) {
-        let a = L.th * TAU + 0.07 * (noise(vec2<f32>(s * 5.0, J.hue * 9.0 + L.th * 16.0)) - 0.5);
-        let width = mix(0.6, 1.0, s);
-        let stripes = pow(0.5 + 0.5 * cos(a * 16.0), 5.0 / width) * smoothstep(0.08, 0.35, s) * (0.6 + 0.4 * s);
-        let aa = mix(1.0, 0.35, clamp(L.fp * 16.0 * 1.5, 0.0, 1.0));
-        var c = diffuse(tone(ORGANS, hue) * mix(0.35, stripes, aa) * (0.4 + 1.6 * J.glow + 1.2 * J.flash), PATTERN_DIFFUSES, params().light);
+        var c = diffuse(tone(ORGANS, hue) * nettle_stripes(J, L) * (0.06 + 0.9 * J.glow + 1.2 * J.flash), PATTERN_DIFFUSES, params().light);
         c += diffuse(tone(LIGHT, hue) * photophores(L.plan, 70.0, 0.3, V.time, L.fp) * 0.3 * (0.5 + J.glow), POINTS_DIFFUSE, params().light);
-        let lappet = thin_line(1.0 - s, 0.02, L.fs) * (0.5 + 0.5 * cos(L.th * TAU * 32.0));
-        c += tone(BODY, hue) * lappet * 0.5;
         return c;
     }
     var g = 0.0;
@@ -399,6 +431,17 @@ fn crystal_light(J: Jelly, L: Look) -> vec3<f32> {
     return diffuse(tone(LIGHT, hue) * dots * (1.5 + 2.0 * J.glow + 8.0 * J.flash + 6.0 * run), POINTS_DIFFUSE, params().light);
 }
 
+// Atolla's jelly below the coronal groove: a ring of thick pedalia, one
+// to each lappet, ridges of thicker jelly with furrows between (a factor on
+// the light through it), evened out where they would be finer than a pixel.
+fn atolla_pedalia(L: Look, b: Bell) -> f32 {
+    let zone = smoothstep(b.groove_at + 0.04, b.groove_at + 0.12, L.s);
+    let x = fract(L.th * b.lobes) * 2.0 - 1.0;
+    let ridge = 1.0 - x * x;
+    let aa = keep_detail(L.fp * b.lobes);
+    return mix(1.0, mix(0.85, 0.45 + 0.8 * ridge, aa), zone);
+}
+
 // Atolla. Outer skin: the coronal groove's edges and twenty lappet dots; on
 // a drop the blue alarm pinwheel spins round the rim. Inner: the red cross
 // of the stomach.
@@ -412,7 +455,8 @@ fn atolla_light(J: Jelly, L: Look) -> vec3<f32> {
     }
     let groove = thin_line(abs(abs(s - b.groove_at) - 0.04), 0.008, L.fs) * 0.4;
     let rim = smoothstep(0.88, 0.99, s);
-    let dots = pow(0.5 + 0.5 * cos(L.th * TAU * 20.0), 8.0) * rim * 0.5;
+    // Its lights are dark until it is stirred: a faint glimmer at rest.
+    let dots = pow(0.5 + 0.5 * cos(L.th * TAU * 20.0), 8.0) * rim * 0.5 * (0.15 + 0.85 * J.glow);
     let wheel = exp(-fract(L.th - J.pa) * 8.0) * rim * J.flash * 8.0;
     return tone(BODY, hue) * groove + diffuse(tone(LIGHT, hue) * (dots + wheel), POINTS_DIFFUSE, params().light);
 }
@@ -445,6 +489,6 @@ fn lion_light(J: Jelly, L: Look) -> vec3<f32> {
         return diffuse(tone(ORGANS, hue) * heart * 0.6 * (0.5 + J.glow * 1.5), ORGANS_DIFFUSE, params().light);
     }
     let aa = mix(1.0, 0.25, clamp(L.fp * 32.0 * 1.5, 0.0, 1.0));
-    let folds = mix(0.25, pow(0.5 + 0.5 * cos(L.th * TAU * 32.0), 8.0), aa) * 0.5 * s;
+    let folds = mix(0.25, pow(0.5 + 0.5 * cos(L.th * TAU * 32.0), 8.0), aa) * 0.25 * s;
     return diffuse(tone(ORGANS, hue) * folds * (0.5 + J.glow * 1.5), PATTERN_DIFFUSES, params().light);
 }

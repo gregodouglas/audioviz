@@ -100,6 +100,27 @@ fn steady() -> f32 {
     return select(1.0, s.r, s.a > 0.5);
 }
 
+// Covering (ADR-0005). A visual with "covers": true draws its triangles
+// twice in a shared space: first the cover pass, with covering() true,
+// where what paint returns with alpha from a half is solid (it hides what
+// is behind it, and what comes later behind it is left out) and the rest
+// is dropped; then with everything else, covering() false, as light.
+// cover_pass() says whether the cover pass runs (a shared space and
+// "covers"); without it a visual draws its solid parts with the rest.
+var<private> covering_now: bool;
+
+fn covering() -> bool {
+    return covering_now;
+}
+
+fn cover_pass() -> bool {
+    return COVERS && in_space();
+}
+
+// The near plane of a shared space's depth (reversed Z: a point at view
+// depth d is at SPACE_NEAR / d, the far plane at 0).
+const SPACE_NEAR: f32 = 0.05;
+
 // 1 when the layer is in a shared space (with "space": true in visual.json).
 fn in_space() -> bool {
     return V.space.x > 0.5;

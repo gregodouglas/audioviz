@@ -438,6 +438,8 @@ impl Slot {
 /// space, dropped when not.
 struct SpaceTargets {
     ms: wgpu::TextureView,
+    /// Its depth (ADR-0005): what covers writes it, everything tests it.
+    depth: wgpu::TextureView,
     out: wgpu::TextureView,
     light_ms: wgpu::TextureView,
     light: wgpu::TextureView,
@@ -455,6 +457,7 @@ impl SpaceTargets {
         let (ew, eh) = ((width / 8).max(1), (height / 8).max(1));
         Self {
             ms: crate::shader_visual::msaa_target(device, width, height),
+            depth: crate::shader_visual::space_depth_target(device, width, height),
             out: hdr_texture(device, "space", width, height),
             light_ms: crate::shader_visual::msaa_target(device, width, height),
             light: hdr_texture(device, "space light", width, height),
@@ -1238,14 +1241,19 @@ impl Director {
                     Some(wgpu::RenderPassColorAttachment { view: &sp.ms, depth_slice: None, resolve_target: Some(&sp.out), ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Discard } }),
                     Some(wgpu::RenderPassColorAttachment { view: &sp.light_ms, depth_slice: None, resolve_target: Some(&sp.light), ops: wgpu::Operations { load: wgpu::LoadOp::Clear(far), store: wgpu::StoreOp::Discard } }),
                 ],
-                depth_stencil_attachment: None,
+                // Reversed Z: cleared to the far plane.
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &sp.depth, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(0.0), store: wgpu::StoreOp::Discard }), stencil_ops: None }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            // What covers first, writing depth; then everything, tested against it.
+            let visual = |out: bool, i: usize| -> &dyn Scene { if out { self.outgoing[i].as_ref().expect("outgoing entry").scene.as_ref() } else { self.layers[i].as_ref() } };
             for &(out, i, _) in members {
-                let v: &dyn Scene = if out { self.outgoing[i].as_ref().expect("outgoing entry").scene.as_ref() } else { self.layers[i].as_ref() };
-                v.space_draw(&mut pass);
+                visual(out, i).space_draw_cover(&mut pass);
+            }
+            for &(out, i, _) in members {
+                visual(out, i).space_draw(&mut pass);
             }
         }
         // The meter sees the light as drawn, the glow still sharp: spreading

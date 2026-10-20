@@ -74,6 +74,11 @@ fn vertex(vi: u32) -> MeshVertex {
         v.colour = vec4<f32>(to_camera(cam, wp).z, profile(j, n).w, plan);
         return v;
     }
+    // The cover pass (a variant that covers) draws the bells and the arms:
+    // the glow and what comes after it are light.
+    if (covering() && l >= HALO_AT) {
+        return v;
+    }
     if (l >= EXTRA_AT) {
         return extra_vertex(j, J, cam, l - EXTRA_AT, da, db, c6);
     }

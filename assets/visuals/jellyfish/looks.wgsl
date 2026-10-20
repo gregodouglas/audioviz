@@ -114,6 +114,11 @@ fn paint(f: MeshFragment) -> vec4<f32> {
     write_glow(water(diffused, f.colour.x, eye_near(), natural_bodies()) * P.glow);
     // What it covers fades into the water with distance, as its light does.
     cover *= water_keep(f.colour.x, eye_near());
+    // With a cover pass (a variant that covers, in a shared space) what is
+    // solid, from a half, was drawn there; drawn again here it would add.
+    if (cover_pass() && !covering() && cover >= 0.5) {
+        return vec4<f32>(0.0);
+    }
     return vec4<f32>(c * P.glow, cover);
 }
 

@@ -88,6 +88,9 @@ pub trait Scene {
     }
     /// Hand its camera to the space (the leading layer, after its update).
     fn space_camera(&self, _encoder: &mut wgpu::CommandEncoder) {}
+    /// Draw what covers into the space's pass, before anything else draws
+    /// (ADR-0005).
+    fn space_draw_cover(&self, _pass: &mut wgpu::RenderPass<'_>) {}
     /// Draw into the space's pass.
     fn space_draw(&self, _pass: &mut wgpu::RenderPass<'_>) {}
     /// Where the director writes what its light goes through on the way

@@ -187,6 +187,10 @@ struct Manifest {
     /// `layer_on(i)`: the lab shows them alone or together (ADR-0003).
     #[serde(default)]
     layers: Vec<String>,
+    /// Its triangles cover what is behind them, in a shared space (ADR-0005):
+    /// a cover pass draws first and writes depth.
+    #[serde(default)]
+    covers: bool,
     /// Its variants (read by `load`, which builds each).
     #[serde(default)]
     #[allow(dead_code)]
@@ -278,6 +282,8 @@ pub struct ShaderDef {
     pub variants: Vec<Variant>,
     /// Which variant this is, as built (empty: the visual itself).
     pub variant: String,
+    /// Its triangles cover what is behind them in a shared space ("covers").
+    pub covers: bool,
 }
 
 /// Libraries a visual may put in front of its code with "uses": (name,
@@ -375,7 +381,7 @@ fn load(json: &str, read: impl Fn(&str) -> Option<String>, dir: Option<PathBuf>)
         let mut merged = base.clone();
         let Some(m) = merged.as_object_mut() else { return Err("visual.json: not an object".into()) };
         m.remove("variants");
-        for key in ["items", "line", "line_count", "triangles", "layers"] {
+        for key in ["items", "line", "line_count", "triangles", "layers", "covers"] {
             if let Some(x) = v.get(key) {
                 m.insert(key.into(), x.clone());
             }
@@ -541,7 +547,10 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
         return Err(format!("visual.json: line_count \"{}\" is not a number param", m.line_count));
     }
     let short = if m.short.is_empty() { m.name.clone() } else { m.short };
-    Ok(ShaderDef { variant_by: String::new(), variants: Vec::new(), variant: String::new(), id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, uses: m.uses, level_bright: m.levelling == "bright", antialias: m.antialias && m.triangles > 0, space: m.space, camera: defines(wgsl, "camera"), glow: calls(wgsl, "write_glow"), layers: m.layers, wgsl: wgsl.to_string(), dir })
+    if m.covers && (m.triangles == 0 || !m.space) {
+        return Err("visual.json: \"covers\" needs triangles and \"space\": true (they cover in a shared space)".into());
+    }
+    Ok(ShaderDef { variant_by: String::new(), variants: Vec::new(), variant: String::new(), covers: m.covers, id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, uses: m.uses, level_bright: m.levelling == "bright", antialias: m.antialias && m.triangles > 0, space: m.space, camera: defines(wgsl, "camera"), glow: calls(wgsl, "write_glow"), layers: m.layers, wgsl: wgsl.to_string(), dir })
 }
 
 // ------------------------------------------------------------ values
@@ -617,7 +626,7 @@ impl ShaderDef {
 
     /// The WGSL the engine adds between the API and the visual's code.
     fn generated(&self) -> String {
-        let mut s = format!("// Generated from visual.json.\nconst ITEMS: u32 = {}u;\nconst LINE_POINTS: u32 = {}u;\n\nstruct Params {{\n", self.items, self.line);
+        let mut s = format!("// Generated from visual.json.\nconst ITEMS: u32 = {}u;\nconst LINE_POINTS: u32 = {}u;\nconst COVERS: bool = {};\n\nstruct Params {{\n", self.items, self.line, self.covers);
         for p in &self.params {
             s.push_str(&format!("    {}: f32,\n", field(&p.id)));
         }
@@ -659,7 +668,7 @@ impl ShaderDef {
         if self.triangles > 0 {
             let paint = if self.paint { "paint(f)" } else { "f.colour" };
             prepare.push_str(&format!(
-                "\nstruct MeshOut {{\n    @builtin(position) clip: vec4<f32>,\n    @location(0) colour: vec4<f32>,\n    @location(1) data: vec4<f32>,\n}};\n\nfn mesh_out(vi: u32) -> MeshOut {{\n    let v = vertex(vi);\n    let short = min(V.resolution.x, V.resolution.y);\n    var o: MeshOut;\n    o.clip = vec4<f32>(v.pos.x * short / V.resolution.x, v.pos.y * short / V.resolution.y, 0.0, v.pos.w);\n    o.colour = v.colour;\n    o.data = v.data;\n    return o;\n}}\n\n@vertex\nfn vs_mesh(@builtin(vertex_index) vi: u32) -> MeshOut {{\n    return mesh_out(vi);\n}}\n\n@fragment\nfn fs_mesh(m: MeshOut) -> @location(0) vec4<f32> {{\n    var f: MeshFragment;\n    f.colour = m.colour;\n    f.data = m.data;\n    f.pixel = m.clip.xy;\n    let c = {paint};\n    // A NaN must not reach the levelling.\n    if (!all(c == c)) {{\n        return vec4<f32>(0.0);\n    }}\n    return vec4<f32>(max(c.rgb, vec3<f32>(0.0)), clamp(c.a, 0.0, 1.0)) * V.space.y;\n}}\n"
+                "\nstruct MeshOut {{\n    @builtin(position) clip: vec4<f32>,\n    @location(0) colour: vec4<f32>,\n    @location(1) data: vec4<f32>,\n}};\n\nfn mesh_out(vi: u32) -> MeshOut {{\n    let v = vertex(vi);\n    let short = min(V.resolution.x, V.resolution.y);\n    var o: MeshOut;\n    o.clip = vec4<f32>(v.pos.x * short / V.resolution.x, v.pos.y * short / V.resolution.y, select(0.0, SPACE_NEAR, in_space()), v.pos.w);\n    o.colour = v.colour;\n    o.data = v.data;\n    return o;\n}}\n\n@vertex\nfn vs_mesh(@builtin(vertex_index) vi: u32) -> MeshOut {{\n    return mesh_out(vi);\n}}\n\n@fragment\nfn fs_mesh(m: MeshOut) -> @location(0) vec4<f32> {{\n    var f: MeshFragment;\n    f.colour = m.colour;\n    f.data = m.data;\n    f.pixel = m.clip.xy;\n    let c = {paint};\n    // A NaN must not reach the levelling.\n    if (!all(c == c)) {{\n        return vec4<f32>(0.0);\n    }}\n    return vec4<f32>(max(c.rgb, vec3<f32>(0.0)), clamp(c.a, 0.0, 1.0)) * V.space.y;\n}}\n"
             ));
         }
         // In a shared space every draw also writes the space's light target:
@@ -672,6 +681,14 @@ impl ShaderDef {
                 prepare.push_str(&format!(
                     "\nstruct MeshSpaceOut {{\n    @builtin(position) clip: vec4<f32>,\n    @location(0) colour: vec4<f32>,\n    @location(1) data: vec4<f32>,\n    @location(2) depth: f32,\n}};\n\n@vertex\nfn vs_mesh_space(@builtin(vertex_index) vi: u32) -> MeshSpaceOut {{\n    let m = mesh_out(vi);\n    return MeshSpaceOut(m.clip, m.colour, m.data, m.clip.w);\n}}\n\n@fragment\nfn fs_mesh_space(m: MeshSpaceOut) -> SpaceOut {{\n    var f: MeshFragment;\n    f.colour = m.colour;\n    f.data = m.data;\n    f.pixel = m.clip.xy;\n    let c = {paint};\n    var o: SpaceOut;\n    o.colour = select(vec4<f32>(0.0), vec4<f32>(max(c.rgb, vec3<f32>(0.0)), clamp(c.a, 0.0, 1.0)) * V.space.y, all(c == c));\n    o.light = space_light(o.colour.rgb, m.depth);\n    return o;\n}}\n"
                 ));
+                // The cover pass (ADR-0005): the same triangles with
+                // covering() true; what is solid (alpha from a half) writes
+                // depth, the rest is left out.
+                if self.covers {
+                    prepare.push_str(&format!(
+                        "\n@vertex\nfn vs_mesh_cover(@builtin(vertex_index) vi: u32) -> MeshSpaceOut {{\n    covering_now = true;\n    let m = mesh_out(vi);\n    return MeshSpaceOut(m.clip, m.colour, m.data, m.clip.w);\n}}\n\n@fragment\nfn fs_mesh_cover(m: MeshSpaceOut) -> SpaceOut {{\n    covering_now = true;\n    var f: MeshFragment;\n    f.colour = m.colour;\n    f.data = m.data;\n    f.pixel = m.clip.xy;\n    let c = {paint};\n    if (!(c.a >= 0.5)) {{\n        discard;\n    }}\n    var o: SpaceOut;\n    o.colour = select(vec4<f32>(0.0, 0.0, 0.0, 1.0), vec4<f32>(max(c.rgb, vec3<f32>(0.0)), 1.0) * V.space.y, all(c == c));\n    o.light = space_light(o.colour.rgb, m.depth);\n    return o;\n}}\n"
+                    ));
+                }
             }
         }
         // A line visual may leave out shade(): the line pass clears instead.
@@ -696,16 +713,16 @@ impl ShaderDef {
         let src = self.source(shaders, &self.wgsl);
         let (prepare, line, mesh, trail) = (self.items > 0, self.line > 0, self.triangles > 0, self.trail);
         let samples = if mesh && self.antialias { MESH_SAMPLES } else { 1 };
-        let (space, camera) = (self.space, self.camera);
+        let (space, camera, covers) = (self.space, self.camera, self.covers);
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        (&src, prepare, line, mesh, trail, samples, space, camera).hash(&mut h);
+        (&src, prepare, line, mesh, trail, samples, space, camera, covers).hash(&mut h);
         let line_src = line.then(|| {
             let text = shaders.source("visual_lines.wgsl");
             let mut h = std::collections::hash_map::DefaultHasher::new();
             text.hash(&mut h);
             (h.finish(), text)
         });
-        Job { key: h.finish(), id: self.id.clone(), src, prepare, line, mesh, trail, samples, space, camera, line_src }
+        Job { key: h.finish(), id: self.id.clone(), src, prepare, line, mesh, trail, samples, space, camera, covers, line_src }
     }
 }
 
@@ -1025,6 +1042,8 @@ struct Job {
     /// Build the shared-space pipelines too, and the camera pass.
     space: bool,
     camera: bool,
+    /// And the cover pass's pipeline ("covers").
+    covers: bool,
     line_src: Option<(u64, String)>,
 }
 
@@ -1047,6 +1066,8 @@ struct Built {
 struct SpaceBuilt {
     picture: wgpu::RenderPipeline,
     mesh: Option<wgpu::RenderPipeline>,
+    /// The cover pass ("covers"): writes depth.
+    cover: Option<wgpu::RenderPipeline>,
     line_draw: Option<wgpu::RenderPipeline>,
     camera: Option<wgpu::ComputePipeline>,
 }
@@ -1154,7 +1175,7 @@ impl Shared {
                 let p = scene::guarded(&self.device, || {
                     let m = self.device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("visual_lines.wgsl"), source: wgpu::ShaderSource::Wgsl(src.as_str().into()) });
                     if space {
-                        space_pipeline(&self.device, "loaded visual line in a shared space", &self.line_layout, &m, ("vs_main", "fs_space"), scene::ADDITIVE, LIGHT_NONE)
+                        space_pipeline(&self.device, "loaded visual line in a shared space", &self.line_layout, &m, ("vs_main", "fs_space"), scene::ADDITIVE, LIGHT_NONE, false)
                     } else {
                         scene::pipeline(&self.device, "loaded visual line", &self.line_layout, &m, HDR_FORMAT, Some(scene::ADDITIVE))
                     }
@@ -1197,8 +1218,9 @@ impl Shared {
             // In a shared space everything is multisampled, the picture adds,
             // and every draw writes the light target too.
             let space = job.space.then(|| SpaceBuilt {
-                picture: space_pipeline(device, &format!("{} in a shared space", job.id), layout, &m, ("vs_main", "fs_space"), scene::ADDITIVE, LIGHT_NONE),
-                mesh: job.mesh.then(|| space_pipeline(device, &format!("{} triangles in a shared space", job.id), layout, &m, ("vs_mesh_space", "fs_mesh_space"), PREMULTIPLIED_OVER, LIGHT_GLOW)),
+                picture: space_pipeline(device, &format!("{} in a shared space", job.id), layout, &m, ("vs_main", "fs_space"), scene::ADDITIVE, LIGHT_NONE, false),
+                mesh: job.mesh.then(|| space_pipeline(device, &format!("{} triangles in a shared space", job.id), layout, &m, ("vs_mesh_space", "fs_mesh_space"), PREMULTIPLIED_OVER, LIGHT_GLOW, false)),
+                cover: (job.mesh && job.covers).then(|| space_pipeline(device, &format!("{} covering in a shared space", job.id), layout, &m, ("vs_mesh_cover", "fs_mesh_cover"), PREMULTIPLIED_OVER, LIGHT_GLOW, true)),
                 line_draw: None,
                 camera: job.camera.then(|| compute("loaded visual camera", "cs_camera")),
             });
@@ -1468,7 +1490,30 @@ const LIGHT_NONE: wgpu::ColorWrites = wgpu::ColorWrites::empty();
 
 /// A pipeline drawing into a shared space: its picture target (blended by
 /// `blend`) and its light target (writing `light` of it), both multisampled.
-pub(crate) fn space_pipeline(device: &wgpu::Device, label: &str, layout: &wgpu::BindGroupLayout, module: &wgpu::ShaderModule, (vs, fs): (&str, &str), blend: wgpu::BlendState, light: wgpu::ColorWrites) -> wgpu::RenderPipeline {
+/// A shared space's depth (ADR-0005): reversed Z, 4x like its colour. What
+/// covers writes it; everything tests against it.
+pub const SPACE_DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+/// The depth target of a shared space.
+pub(crate) fn space_depth_target(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
+    device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: Some("space depth"),
+            size: wgpu::Extent3d { width: width.max(1), height: height.max(1), depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: MESH_SAMPLES,
+            dimension: wgpu::TextureDimension::D2,
+            format: SPACE_DEPTH,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        })
+        .create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// A pipeline drawing into a shared space: colour and light targets, 4x,
+/// tested against the space's depth (nearer or as near passes, reversed Z),
+/// and with `covers` writing it.
+pub(crate) fn space_pipeline(device: &wgpu::Device, label: &str, layout: &wgpu::BindGroupLayout, module: &wgpu::ShaderModule, (vs, fs): (&str, &str), blend: wgpu::BlendState, light: wgpu::ColorWrites, covers: bool) -> wgpu::RenderPipeline {
     let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some(label), bind_group_layouts: &[Some(layout)], immediate_size: 0 });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
@@ -1481,7 +1526,7 @@ pub(crate) fn space_pipeline(device: &wgpu::Device, label: &str, layout: &wgpu::
             compilation_options: Default::default(),
         }),
         primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
+        depth_stencil: Some(wgpu::DepthStencilState { format: SPACE_DEPTH, depth_write_enabled: Some(covers), depth_compare: Some(wgpu::CompareFunction::GreaterEqual), stencil: Default::default(), bias: Default::default() }),
         multisample: wgpu::MultisampleState { count: MESH_SAMPLES, ..Default::default() },
         multiview_mask: None,
         cache: None,
@@ -1873,6 +1918,14 @@ impl Scene for ShaderVisual {
             pass.dispatch_workgroups(1, 1, 1);
         }
         encoder.copy_buffer_to_buffer(&self.camera_out, 0, &shared(&self.device).camera, 0, CAMERA_BYTES);
+    }
+
+    fn space_draw_cover(&self, pass: &mut wgpu::RenderPass<'_>) {
+        let Some(sp) = self.space.as_ref().and_then(|b| b.space.as_ref()) else { return };
+        let Some(cover) = sp.cover.as_ref().filter(|_| self.live.triangles > 0 && self.live.covers) else { return };
+        pass.set_bind_group(0, &self.groups[self.icur], &[]);
+        pass.set_pipeline(cover);
+        pass.draw(0..self.live.triangles * 3, 0..1);
     }
 
     fn space_draw(&self, pass: &mut wgpu::RenderPass<'_>) {

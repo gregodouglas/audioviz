@@ -65,7 +65,7 @@ There are two kinds of depth, and they need different machinery:
   - lines: `LinePoint` gains a `depth`, stored in the points buffer's spare fourth component;
   - `shade`: writes the far plane unless it calls the new `write_depth(z)` (marine snow could, for its nearest layer).
   - A fragment that adds no light writes the far plane, so a black corner of a quad does not pull the focus forward.
-- **Surface depth**: the generated `vs_mesh` already gets view depth in `w`, so in a shared space it writes a proper `clip.z` (reversed Z, near 0.05, far 50). It costs nothing until there is a depth attachment. The attachment (Depth32Float, 4x, 59 MB at 1440p) and a manifest `"covers": true` (depth write on that visual's triangles) arrive together with the first covering visual.
+- **Surface depth**: the generated `vs_mesh` already gets view depth in `w`, so in a shared space it writes a proper `clip.z` (reversed Z, near 0.05, far 50). It costs nothing until there is a depth attachment. The attachment (Depth32Float, 4x, 59 MB at 1440p) and a manifest `"covers": true` (depth write on that visual's triangles) arrive together with the first covering visual. *Built in 0.4.23 (ADR-0005 step 3) for the lion's mane: the attachment is always there in a shared space (every pipeline in its pass must name a depth format, so one made only while something covers would need every pipeline twice; it measured at no cost), clip.z is SPACE_NEAR (0.05) over w with an infinite far plane, lines carry it from their light depth, a covering visual draws a cover pass first (alpha from a half writes depth, the rest is dropped) and everything tests GreaterEqual.*
 
 *Alternative:* a z-buffer from day one, with every bell writing depth. That is wrong for the jellies: the outer skin would hide the inner skin, and the gonads and canals live on the inner skin. Emissive bodies must test against depth, never write it.
 
@@ -149,7 +149,7 @@ All of this is opt-in. A visual that asks for none of it is unaffected:
 | `write_depth(z)` | `shade` | light depth for this pixel (default far) |
 | `refract(uv, offset)`, `behind(uv)`, `behind_depth(uv)` | `paint` | what the back phase drew (front phase only) |
 | `LinePoint.depth` | `point` | the line's view depth (0: far) |
-| `"covers": true` | visual.json | later: its triangles write surface depth |
+| `"covers": true` | visual.json | its triangles cover in a shared space: a cover pass writes surface depth (0.4.23, ADR-0005) |
 
 The generated wrappers grow a shared-space variant: MRT output, clip z, opacity. A visual's build key already hashes the source and flags, so the stacked and shared builds of one visual are two cache entries, both prewarmed for scenes that use them.
 

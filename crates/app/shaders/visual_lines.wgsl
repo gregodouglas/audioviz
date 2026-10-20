@@ -72,6 +72,9 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
     out.half_w = half_w;
     out.colour = select(pts[2u * ii + 3u].rgb, pts[2u * ii + 1u].rgb, along < len * 0.5);
     out.depth = select(b.w, a.w, along < len * 0.5);
+    // Its depth in a shared space, reversed Z (0, far, where it has none):
+    // what covers hides it.
+    out.pos.z = select(0.0, min(0.05 / out.depth, 1.0), out.depth > 0.0);
     return out;
 }
 

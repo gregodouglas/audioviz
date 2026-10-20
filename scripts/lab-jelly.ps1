@@ -8,9 +8,10 @@
 param(
     [ValidateSet("moon", "nettle", "crystal", "atolla", "comb", "lion")]
     [string]$Species = "moon",
-    [switch]$Png,
-    [Parameter(ValueFromRemainingArguments = $true)] [string[]]$Rest
+    [switch]$Png
 )
+# (The rest arrive in $args: a [Parameter()] attribute would make this an
+# advanced script, whose common parameters take "--out" for -OutVariable.)
 $root = Split-Path $PSScriptRoot -Parent
 $exe = "$root\target\release\audioviz-lab.exe"
 if (-not (Test-Path $exe)) { throw "build it first: cargo build --release -p audioviz" }
@@ -26,4 +27,4 @@ $where = @{
 $scene, $layer = $where[$Species]
 $labArgs = @("jellyfish", "--scene", $scene, "--layer", $layer, "--set", "count=1", "--set", "plankton=0", "--set", "view=close-up", "--pan", "0,0.15", "--name", $Species)
 if (-not $Png) { $labArgs += "--window" }
-& $exe @labArgs @Rest
+& $exe @labArgs @args

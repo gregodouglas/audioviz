@@ -299,10 +299,11 @@ fn settings(a: &Args) -> anyhow::Result<Settings> {
     Ok(s)
 }
 
-/// The visual's design layers' names (visual.json "layers").
-fn layer_names(visual: &str) -> Vec<String> {
+/// The visual's design layers' names (visual.json "layers"; with variants,
+/// those of the variant the layer's values pick).
+fn layer_names(visual: &str, s: &Settings) -> Vec<String> {
     match audioviz::visuals::get(visual).map(|v| &v.source) {
-        Some(audioviz::visuals::Source::Loaded(d)) => d.layers.clone(),
+        Some(audioviz::visuals::Source::Loaded(d)) => d.variant_for(s.layer(0).params.get(visual)).layers.clone(),
         None => Vec::new(),
     }
 }
@@ -517,7 +518,7 @@ fn shots(a: &Args, settings: Settings) -> anyhow::Result<()> {
     lab.settle(&view, a.at);
     std::fs::create_dir_all(&a.out)?;
     let name = a.name.clone().unwrap_or_else(|| a.visual.clone());
-    let names = layer_names(&a.visual);
+    let names = layer_names(&a.visual, &lab.settings);
     let sets: Vec<(String, u32)> = a.layers.iter().map(|set| layer_mask(&names, set).map(|m| (set.clone(), m))).collect::<anyhow::Result<_>>()?;
     if a.run > 0.0 {
         return run(a, &mut lab, &view, &target, &name, sets[0].1);
@@ -664,7 +665,7 @@ impl View {
         lab.settle(&scratch.create_view(&Default::default()), a.at);
         println!("{}: built in {:.1} s, held at {:.2} s", a.visual, built.as_secs_f32(), lab.time);
         lab.director.pass = a.passes.first().copied().unwrap_or_default();
-        let names = layer_names(&a.visual);
+        let names = layer_names(&a.visual, &lab.settings);
         audioviz::shader_visual::show_layers(layer_mask(&names, a.layers.first().map_or("all", String::as_str))?);
         Ok(Self { window, surface, config, lab, cam: [0.0, 0.0, 1.0, a.pan[0], a.pan[1]], drag: None, cursor: (0.0, 0.0), running: false, step: false, save: false, shown: Instant::now(), names, solo: None, without: false })
     }

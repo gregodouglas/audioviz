@@ -17,6 +17,11 @@
 //!
 //! Pipelines are compiled on a worker thread (see "building off the render
 //! thread" below), so picking a heavy visual never stalls the picture.
+//!
+//! A visual can have variants (ADR-0005): builds of itself, each in a
+//! folder of its own with its own budget, code, design layers and controls,
+//! picked by one of its choice controls. It stays one visual; a layer's
+//! program is the variant its values pick, swapped as they change.
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
@@ -182,6 +187,30 @@ struct Manifest {
     /// `layer_on(i)`: the lab shows them alone or together (ADR-0003).
     #[serde(default)]
     layers: Vec<String>,
+    /// Its variants (read by `load`, which builds each).
+    #[serde(default)]
+    #[allow(dead_code)]
+    variants: Option<Variants>,
+}
+
+/// "variants" in visual.json: the choice control that picks one, and their
+/// folders, in order (the first is the one picked when no value says).
+#[derive(Debug, Clone, Deserialize)]
+struct Variants {
+    by: String,
+    list: Vec<String>,
+}
+
+/// One variant of a visual, as built.
+#[derive(Debug, Clone)]
+pub struct Variant {
+    /// Its folder.
+    pub name: String,
+    /// The values of the visual's `variant_by` control it serves.
+    pub when: Vec<String>,
+    /// The visual as built for it: the visual's manifest and code with the
+    /// variant's put in.
+    pub def: Box<ShaderDef>,
 }
 
 /// Where a visual's pictures come from: a choice control whose second
@@ -241,6 +270,14 @@ pub struct ShaderDef {
     pub wgsl: String,
     /// The folder it came from, watched for changes (none for embedded copies).
     pub dir: Option<PathBuf>,
+    /// With variants: the choice control that picks one, and each of them.
+    /// The visual as registered is its first variant, with every control any
+    /// variant has (so a layer keeps each one's values while another is
+    /// picked). Empty without.
+    pub variant_by: String,
+    pub variants: Vec<Variant>,
+    /// Which variant this is, as built (empty: the visual itself).
+    pub variant: String,
 }
 
 /// Libraries a visual may put in front of its code with "uses": (name,
@@ -279,35 +316,105 @@ fn part_marker(name: &str) -> String {
     format!("// ==== part: {name} ====")
 }
 
-/// A visual's whole code: visual.wgsl, then each file its manifest lists in
-/// "parts" (plain .wgsl names in the same folder), each behind a marker line
-/// so errors can name the file. `read` gives a file's text by name.
-fn with_parts(json: &str, main: &str, read: impl Fn(&str) -> Option<String>) -> Result<String, String> {
+/// `main`, then each file the manifest `json` lists in "parts" (plain .wgsl
+/// names, in the visual's folder, or with `sub` in that subfolder: a
+/// variant's), each behind a marker line so errors can name the file.
+/// `read` gives a file's text by its path in the visual's folder.
+fn with_parts(json: &str, main: &str, sub: &str, read: &impl Fn(&str) -> Option<String>) -> Result<String, String> {
+    let manifest = if sub.is_empty() { "visual.json".to_string() } else { format!("{sub}/variant.json") };
     let parts: Vec<String> = serde_json::from_str::<Value>(json)
         .ok()
         .and_then(|v| v.get("parts").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()))
         .unwrap_or_default();
     if parts.len() > MAX_PARTS {
-        return Err(format!("visual.json: at most {MAX_PARTS} parts"));
+        return Err(format!("{manifest}: at most {MAX_PARTS} parts"));
     }
     let mut code = main.to_string();
     for name in &parts {
         if !name.ends_with(".wgsl") || name.contains(['/', '\\']) || name.starts_with('.') || name == "visual.wgsl" {
-            return Err(format!("visual.json: part \"{name}\" must be a .wgsl file in the visual's folder"));
+            return Err(format!("{manifest}: part \"{name}\" must be a .wgsl file in its folder"));
         }
-        let Some(text) = read(name) else { return Err(format!("visual.json: part \"{name}\" is not in the folder")) };
+        let path = if sub.is_empty() { name.clone() } else { format!("{sub}/{name}") };
+        let Some(text) = read(&path) else { return Err(format!("{manifest}: part \"{name}\" is not in its folder")) };
         code.push('\n');
-        code.push_str(&part_marker(name));
+        code.push_str(&part_marker(&path));
         code.push('\n');
         code.push_str(&text);
     }
     Ok(code)
 }
 
-/// The code of the visual in folder `d` (visual.wgsl and its parts).
-fn read_code(d: &Path, json: &str) -> Result<String, String> {
-    let main = std::fs::read_to_string(d.join("visual.wgsl")).map_err(|e| format!("visual.wgsl: {e}"))?;
-    with_parts(json, &main, |name| std::fs::read_to_string(d.join(name)).ok())
+/// Most variants a visual may have.
+const MAX_VARIANTS: usize = 8;
+
+/// A visual from its folder's files: `json` is its visual.json, and `read`
+/// gives a file's text by its path in the folder ("visual.wgsl",
+/// "lion/variant.json"). With "variants", each variant is the visual's
+/// manifest with the variant's budgets ("items", "line", "triangles"),
+/// design layers and controls put in, and its code after the visual's
+/// (ADR-0005).
+fn load(json: &str, read: impl Fn(&str) -> Option<String>, dir: Option<PathBuf>) -> Result<ShaderDef, String> {
+    let main = read("visual.wgsl").ok_or("visual.wgsl: missing")?;
+    let code = with_parts(json, &main, "", &read)?;
+    let base: Value = serde_json::from_str(json).map_err(|e| format!("visual.json: {e}"))?;
+    let Some(spec) = base.get("variants") else { return parse(json, &code, dir) };
+    let spec: Variants = serde_json::from_value(spec.clone()).map_err(|e| format!("visual.json: variants: {e}"))?;
+    if spec.list.is_empty() || spec.list.len() > MAX_VARIANTS {
+        return Err(format!("visual.json: variants: from 1 to {MAX_VARIANTS} in \"list\""));
+    }
+    let mut variants: Vec<Variant> = Vec::new();
+    for name in &spec.list {
+        if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_') {
+            return Err(format!("visual.json: variant \"{name}\" must be a folder name of lowercase letters, digits, - or _"));
+        }
+        if variants.iter().any(|v| v.name == *name) {
+            return Err(format!("visual.json: variant \"{name}\" twice"));
+        }
+        let vjson = read(&format!("{name}/variant.json")).ok_or_else(|| format!("variant {name}: {name}/variant.json is missing"))?;
+        let v: Value = serde_json::from_str(&vjson).map_err(|e| format!("{name}/variant.json: {e}"))?;
+        let mut merged = base.clone();
+        let Some(m) = merged.as_object_mut() else { return Err("visual.json: not an object".into()) };
+        m.remove("variants");
+        for key in ["items", "line", "line_count", "triangles", "layers"] {
+            if let Some(x) = v.get(key) {
+                m.insert(key.into(), x.clone());
+            }
+        }
+        if let Some(Value::Array(own)) = v.get("params") {
+            if let Value::Array(all) = m.entry("params").or_insert_with(|| Value::Array(Vec::new())) {
+                all.extend(own.iter().cloned());
+            }
+        }
+        let vcode = with_parts(&vjson, &code, name, &read)?;
+        let mut def = parse(&merged.to_string(), &vcode, dir.clone()).map_err(|e| format!("variant {name}: {e}"))?;
+        def.variant = name.clone();
+        let when: Vec<String> = v.get("when").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_lowercase)).collect()).unwrap_or_default();
+        variants.push(Variant { name: name.clone(), when, def: Box::new(def) });
+    }
+    let first = &variants[0].def;
+    let Some(by) = first.params.iter().find(|p| p.id == spec.by && p.kind == ParamKind::Choice) else {
+        return Err(format!("visual.json: variants.by \"{}\" is not a choice control of the visual", spec.by));
+    };
+    let values: Vec<String> = (0..by.options.len()).map(|i| by.choice_value(i).to_lowercase()).collect();
+    for v in &variants {
+        if let Some(w) = v.when.iter().find(|w| !values.contains(w)) {
+            return Err(format!("{}/variant.json: when \"{w}\" is not a value of {} (there are: {})", v.name, spec.by, values.join(", ")));
+        }
+        if let Some(w) = v.when.iter().find(|w| variants.iter().any(|o| o.name != v.name && o.when.contains(w))) {
+            return Err(format!("{}/variant.json: when \"{w}\" is served by another variant too", v.name));
+        }
+    }
+    let mut top = (**first).clone();
+    for v in &variants[1..] {
+        for p in &v.def.params {
+            if !top.params.iter().any(|q| q.id == p.id) {
+                top.params.push(p.clone());
+            }
+        }
+    }
+    top.variant_by = spec.by;
+    top.variants = variants;
+    Ok(top)
 }
 
 /// WGSL keywords and type names: never a control id.
@@ -434,7 +541,7 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
         return Err(format!("visual.json: line_count \"{}\" is not a number param", m.line_count));
     }
     let short = if m.short.is_empty() { m.name.clone() } else { m.short };
-    Ok(ShaderDef { id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, uses: m.uses, level_bright: m.levelling == "bright", antialias: m.antialias && m.triangles > 0, space: m.space, camera: defines(wgsl, "camera"), glow: calls(wgsl, "write_glow"), layers: m.layers, wgsl: wgsl.to_string(), dir })
+    Ok(ShaderDef { variant_by: String::new(), variants: Vec::new(), variant: String::new(), id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, uses: m.uses, level_bright: m.levelling == "bright", antialias: m.antialias && m.triangles > 0, space: m.space, camera: defines(wgsl, "camera"), glow: calls(wgsl, "write_glow"), layers: m.layers, wgsl: wgsl.to_string(), dir })
 }
 
 // ------------------------------------------------------------ values
@@ -479,6 +586,28 @@ impl ParamDef {
 }
 
 impl ShaderDef {
+    /// The variant a layer's stored values (`stored`, its values for this
+    /// visual) pick: the one serving the value of `variant_by`, or the first.
+    /// A visual without variants is itself.
+    pub fn variant_for(&self, stored: Option<&Value>) -> &ShaderDef {
+        let Some(first) = self.variants.first() else { return self };
+        let value = self.params.iter().find(|p| p.id == self.variant_by).map(|p| p.value(stored.and_then(Value::as_object).and_then(|o| o.get(&p.id))));
+        let value = value.as_ref().and_then(Value::as_str).map(str::to_lowercase).unwrap_or_default();
+        self.variants.iter().find(|v| v.when.contains(&value)).unwrap_or(first).def.as_ref()
+    }
+
+    /// Variant `name` (the first if there is none of that name), or the
+    /// visual itself without variants.
+    fn variant_named(&self, name: &str) -> &ShaderDef {
+        let Some(first) = self.variants.first() else { return self };
+        self.variants.iter().find(|v| v.name == name).unwrap_or(first).def.as_ref()
+    }
+
+    /// What gets compiled: each variant, or the visual itself.
+    fn builds(&self) -> Vec<&ShaderDef> {
+        if self.variants.is_empty() { vec![self] } else { self.variants.iter().map(|v| v.def.as_ref()).collect() }
+    }
+
     /// Full parameters from what a layer stores, defaults filled in.
     pub fn params_json(&self, stored: Option<&Value>) -> Value {
         let obj = stored.and_then(Value::as_object);
@@ -667,7 +796,7 @@ fn read_folder_except(root: &Path, watch: bool, skip: &[PathBuf]) -> Vec<ShaderD
         if !d.join("visual.wgsl").is_file() {
             continue;
         }
-        match read_code(&d, &json).and_then(|wgsl| parse(&json, &wgsl, watch.then(|| d.clone()))) {
+        match load(&json, |name| std::fs::read_to_string(d.join(name)).ok(), watch.then(|| d.clone())) {
             Ok(def) => out.push(def),
             Err(e) => tracing::warn!("visual {}: {e}", d.display()),
         }
@@ -687,17 +816,19 @@ pub fn is_factory(id: &str) -> bool {
 }
 
 pub fn embedded() -> Vec<ShaderDef> {
+    // (visuals/<folder>/<path in it>: a variant's files are a folder deeper.)
     let mut by_folder: BTreeMap<&str, BTreeMap<&str, &str>> = BTreeMap::new();
     for (rel, text) in factory::embedded("visuals/") {
-        let mut parts = rel.split('/');
-        let (_, Some(f), Some(file), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else { continue };
+        let mut parts = rel.splitn(3, '/');
+        let (_, Some(f), Some(file)) = (parts.next(), parts.next(), parts.next()) else { continue };
         by_folder.entry(f).or_default().insert(file, text);
     }
     by_folder
         .into_iter()
         .filter_map(|(f, files)| {
-            let (json, main) = (files.get("visual.json")?, files.get("visual.wgsl")?);
-            with_parts(json, main, |name| files.get(name).map(|t| t.to_string())).and_then(|wgsl| parse(json, &wgsl, None)).map_err(|e| tracing::warn!("factory visual {f}: {e}")).ok()
+            let json = files.get("visual.json")?;
+            files.get("visual.wgsl")?;
+            load(json, |name| files.get(name).map(|t| t.to_string()), None).map_err(|e| tracing::warn!("factory visual {f}: {e}")).ok()
         })
         .collect()
 }
@@ -1086,7 +1217,9 @@ pub fn prewarm<'a>(device: &wgpu::Device, shaders: &ShaderSet, ids: impl IntoIte
             continue;
         }
         if let Some(crate::visuals::Source::Loaded(d)) = crate::visuals::get(id).map(|v| &v.source) {
-            sh.request(d.job(shaders), false);
+            for b in d.builds() {
+                sh.request(b.job(shaders), false);
+            }
         }
     }
 }
@@ -1147,8 +1280,16 @@ impl CameraNudge {
 
 pub struct ShaderVisual {
     def: &'static ShaderDef,
-    /// The manifest and code in use (reloaded from the folder when it changes).
+    /// The visual as last read (reloaded from the folder when it changes),
+    /// with every variant.
+    top: ShaderDef,
+    /// The manifest and code of the pipelines drawing (the variant in use).
     live: ShaderDef,
+    /// The manifest and code being built, or that failed to build, to take
+    /// over from `live`: a reload, or another variant.
+    building: Option<ShaderDef>,
+    /// The variant the layer's values picked last frame (empty: none yet).
+    want: String,
     error: Option<String>,
     stamp: Option<(SystemTime, SystemTime)>,
     last_poll: Instant,
@@ -1386,18 +1527,27 @@ fn item_buffers(device: &wgpu::Device, n: u32) -> [wgpu::Buffer; 2] {
     [make("loaded visual items a"), make("loaded visual items b")]
 }
 
-/// When visual.json last changed, and the newest of the folder's .wgsl files
-/// (visual.wgsl and its parts).
+/// When the manifests last changed (visual.json and its variants'), and the
+/// newest of the .wgsl files (visual.wgsl, its parts, its variants').
 fn stamp(dir: &Path) -> Option<(SystemTime, SystemTime)> {
     let m = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
-    let mut code = m(&dir.join("visual.wgsl"))?;
+    let (mut json, mut code) = (m(&dir.join("visual.json"))?, m(&dir.join("visual.wgsl"))?);
     for e in std::fs::read_dir(dir).ok()?.flatten() {
         let p = e.path();
         if p.extension().is_some_and(|x| x == "wgsl") {
             code = code.max(m(&p).unwrap_or(code));
+        } else if p.is_dir() {
+            for f in std::fs::read_dir(&p).into_iter().flatten().flatten() {
+                let f = f.path();
+                match f.extension().and_then(|x| x.to_str()) {
+                    Some("wgsl") => code = code.max(m(&f).unwrap_or(code)),
+                    Some("json") => json = json.max(m(&f).unwrap_or(json)),
+                    _ => {}
+                }
+            }
         }
     }
-    Some((m(&dir.join("visual.json"))?, code))
+    Some((json, code))
 }
 
 /// A new layer's `V.instance`: random, or with AUDIOVIZ_SEED=n (dev) the
@@ -1416,14 +1566,15 @@ impl ShaderVisual {
         let (layout, out_layout, line_layout) = (sh.layout.clone(), sh.out_layout.clone(), sh.line_layout.clone());
         let art = art_texture(device);
         let line_uniform = scene::uniform_buffer(device, "loaded visual line", 16);
-        let line_points = line_buffer(device, def.line);
+        let live = def.variant_for(None).clone();
+        let line_points = line_buffer(device, live.line);
         let (line_out_group, line_group) = line_groups(device, &out_layout, &line_layout, &line_points, &line_uniform);
         let camera_out = device.create_buffer(&wgpu::BufferDescriptor { label: Some("loaded visual camera"), size: CAMERA_BYTES, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
         let camera_group = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("loaded visual camera out"), layout: &out_layout, entries: &[wgpu::BindGroupEntry { binding: 0, resource: camera_out.as_entire_binding() }] });
         let mut me = Self {
             line_cs: None,
             line_points,
-            line_len: def.line,
+            line_len: live.line,
             line_out_group,
             line_uniform,
             line_layout,
@@ -1436,7 +1587,9 @@ impl ShaderVisual {
             art,
             art_id: 0,
             has_art: false,
-            live: def.clone(),
+            top: def.clone(),
+            building: None,
+            want: String::new(),
             error: None,
             // None, so the first reload reads the files: they may have
             // changed since the registry read them at start.
@@ -1446,7 +1599,7 @@ impl ShaderVisual {
             wave_buf: device.create_buffer(&wgpu::BufferDescriptor { label: Some("loaded visual wave"), size: (WAVE * 8) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false }),
             sampler: scene::linear_sampler(device),
             out: [hdr_texture(device, &format!("{} a", def.id), width, height), hdr_texture(device, &format!("{} b", def.id), width, height)],
-            trail: def.trail.then(|| trail_textures(device, &def.id, width, height)),
+            trail: live.trail.then(|| trail_textures(device, &def.id, width, height)),
             size: (width, height),
             black: hdr_texture(device, "loaded visual black", 1, 1),
             seen: hdr_texture(device, "loaded visual seen", 1, 1),
@@ -1457,8 +1610,8 @@ impl ShaderVisual {
             prefix_lines: 0,
             out_layout,
             prepare: None,
-            items: item_buffers(device, def.items),
-            items_len: def.items,
+            items: item_buffers(device, live.items),
+            items_len: live.items,
             item_groups: Vec::new(),
             icur: 0,
             cur: 0,
@@ -1488,6 +1641,7 @@ impl ShaderVisual {
             camera_out,
             camera_group,
             line_now: 0,
+            live,
         };
         me.make_groups(device);
         me.reload(shaders);
@@ -1531,11 +1685,23 @@ impl ShaderVisual {
             .collect();
     }
 
-    /// Ask the worker for the live code's pipelines (`collect` picks them up);
-    /// meanwhile the old pipeline, if any, keeps drawing.
+    /// What the pipelines are being built for, or are: `building`, or `live`.
+    fn target(&self) -> &ShaderDef {
+        self.building.as_ref().unwrap_or(&self.live)
+    }
+
+    /// Ask the worker for the target's pipelines again (`collect` picks them up).
     fn build(&mut self, shaders: &ShaderSet) {
-        self.prefix_lines = self.live.prefix(shaders).lines().count();
-        self.waiting = Some(shared(&self.device).request(self.live.job(shaders), true));
+        let d = self.target().clone();
+        self.start(d, shaders);
+    }
+
+    /// Ask the worker for `d`'s pipelines; `d` takes over when they arrive,
+    /// and meanwhile the old pipeline, if any, keeps drawing.
+    fn start(&mut self, d: ShaderDef, shaders: &ShaderSet) {
+        self.prefix_lines = d.prefix(shaders).lines().count();
+        self.waiting = Some(shared(&self.device).request(d.job(shaders), true));
+        self.building = Some(d);
     }
 
     /// Take the pipelines the worker built for the live code, or its error
@@ -1547,6 +1713,9 @@ impl ShaderVisual {
         let device = self.device.clone();
         match built {
             Ok(b) => {
+                if let Some(d) = self.building.take() {
+                    self.live = d;
+                }
                 self.pipeline = Some(b.picture.clone());
                 self.prepare = b.prepare.clone();
                 self.line_cs = b.line.clone();
@@ -1576,7 +1745,9 @@ impl ShaderVisual {
                 }
             }
             Err(e) => {
-                let e = self::visual_lines(&e, self.prefix_lines, &self.live.wgsl);
+                // (`building` stays, so a variant that does not build is not
+                // asked for again every frame; a reload asks again.)
+                let e = self::visual_lines(&e, self.prefix_lines, &self.target().wgsl);
                 tracing::warn!("visual {}: {e}", self.live.id);
                 self.error = Some(e);
             }
@@ -1592,12 +1763,17 @@ impl ShaderVisual {
         }
         self.stamp = now;
         let Ok(json) = std::fs::read_to_string(dir.join("visual.json")) else { return };
-        match read_code(&dir, &json).and_then(|wgsl| parse(&json, &wgsl, Some(dir))) {
+        match load(&json, |name| std::fs::read_to_string(dir.join(name)).ok(), Some(dir.clone())) {
             Ok(mut d) => {
                 // The id is what saved files point at; it stays the registered one.
                 d.id = self.def.id.clone();
-                self.live = d;
-                self.build(shaders);
+                for v in &mut d.variants {
+                    v.def.id = self.def.id.clone();
+                }
+                let name = if self.want.is_empty() { self.target().variant.clone() } else { self.want.clone() };
+                let next = d.variant_named(&name).clone();
+                self.top = d;
+                self.start(next, shaders);
             }
             Err(e) => self.error = Some(e),
         }
@@ -1641,6 +1817,11 @@ impl Scene for ShaderVisual {
 
     fn poll(&mut self, _device: &wgpu::Device, shaders: &ShaderSet) {
         self.collect();
+        // The layer's values picked another variant: build it.
+        if !self.want.is_empty() && self.want != self.target().variant {
+            let next = self.top.variant_named(&self.want).clone();
+            self.start(next, shaders);
+        }
         if self.def.dir.is_some() && self.last_poll.elapsed().as_millis() > 400 {
             self.last_poll = Instant::now();
             self.reload(shaders);
@@ -1726,15 +1907,17 @@ impl Scene for ShaderVisual {
             Value::Object(m) => m,
             _ => Map::new(),
         };
+        // The controls of the variant the values pick (it may still be building).
+        let shown = self.top.variant_for(layer.params.get(&id)).params.clone();
         let mut groups: Vec<&str> = Vec::new();
-        for p in &self.live.params {
+        for p in &shown {
             if !groups.contains(&p.group.as_str()) {
                 groups.push(p.group.as_str());
             }
         }
         for g in groups {
             let title = if g.is_empty() { "Controls" } else { g };
-            let members: Vec<&ParamDef> = self.live.params.iter().filter(|p| p.group == g).collect();
+            let members: Vec<&ParamDef> = shown.iter().filter(|p| p.group == g).collect();
             group(ui, &format!("{id}.{title}"), title, true, members.len(), |ui| {
                 for p in members {
                     let v = values.get(&p.id).cloned().unwrap_or(Value::Null);
@@ -1851,6 +2034,9 @@ impl ShaderVisual {
             chroma[i / 4][i % 4] = *c;
         }
         let stored = layer.params.get(&self.def.id).and_then(Value::as_object);
+        if !self.top.variants.is_empty() {
+            self.want = self.top.variant_for(layer.params.get(&self.def.id)).variant.clone();
+        }
         let mut p = [[0.0f32; 4]; MAX_PARAMS / 4];
         for (i, d) in self.live.params.iter().enumerate().take(MAX_PARAMS) {
             p[i / 4][i % 4] = if d.kind == ParamKind::Button { self.presses.get(&d.id).copied().unwrap_or(0) as f32 } else { d.number(stored.and_then(|o| o.get(&d.id))) };
@@ -2083,8 +2269,9 @@ impl ShaderVisual {
         self.pic_fade = (self.pic_fade + dt / PICTURE_FADE_S).min(1.0);
     }
 
+    /// Every control's value, every variant's (a layer keeps them all).
     fn def_params(&self, layer: &Layer) -> Value {
-        self.live.params_json(layer.params.get(&self.def.id))
+        self.top.params_json(layer.params.get(&self.def.id))
     }
 }
 
@@ -2119,11 +2306,11 @@ mod tests {
         assert_eq!(visual_lines("x wgsl:593:5 y", 590, "a\nb\nc\n"), "x visual.wgsl line 3, col 5 y");
         assert_eq!(visual_lines("wgsl:12:1", 590, ""), "the engine's part, line 1");
         // A visual in parts: errors name the part and its own line.
-        let code = with_parts(r#"{"parts": ["b.wgsl"]}"#, "one\ntwo", |n| (n == "b.wgsl").then(|| "three\nfour".to_string())).unwrap();
+        let code = with_parts(r#"{"parts": ["b.wgsl"]}"#, "one\ntwo", "", &|n: &str| (n == "b.wgsl").then(|| "three\nfour".to_string())).unwrap();
         assert_eq!(visual_lines("wgsl:592:1", 590, &code), "visual.wgsl line 2, col 1");
         assert_eq!(visual_lines("wgsl:595:1", 590, &code), "b.wgsl line 2, col 1");
-        assert!(with_parts(r#"{"parts": ["../x.wgsl"]}"#, "", |_| Some(String::new())).is_err());
-        assert!(with_parts(r#"{"parts": ["gone.wgsl"]}"#, "", |_| None).is_err());
+        assert!(with_parts(r#"{"parts": ["../x.wgsl"]}"#, "", "", &|_: &str| Some(String::new())).is_err());
+        assert!(with_parts(r#"{"parts": ["gone.wgsl"]}"#, "", "", &|_: &str| None).is_err());
     }
 
     #[test]
@@ -2131,6 +2318,67 @@ mod tests {
         assert!(parse(r#"{"id": "Bad Id", "name": "x"}"#, "", None).is_err());
         assert!(parse(r#"{"id": "x", "name": "x", "params": [{"id": "let", "label": "x"}]}"#, "", None).is_err());
         assert!(parse(r#"{"id": "x", "name": "x", "params": [{"id": "a", "label": "x"}, {"id": "a", "label": "y"}]}"#, "", None).is_err());
+    }
+
+    /// A visual with two variants, from files in memory.
+    fn variants(files: &[(&str, &str)]) -> Result<ShaderDef, String> {
+        let json = r#"{"id": "fish", "name": "Fish", "params": [
+            {"id": "kind", "label": "Kind", "type": "choice", "options": ["Small", "Odd", "Big"]},
+            {"id": "speed", "label": "Speed"}],
+            "parts": ["swim.wgsl"], "layers": ["Body"],
+            "variants": {"by": "kind", "list": ["little", "big"]}}"#;
+        let mut all: Vec<(&str, &str)> = vec![
+            ("visual.wgsl", "fn shade(uv: vec2<f32>) -> vec3<f32> { return body(uv); }"),
+            ("swim.wgsl", "fn swim() -> f32 { return 1.0; }"),
+            ("little/variant.json", r#"{"when": ["small", "odd"], "parts": ["body.wgsl"]}"#),
+            ("little/body.wgsl", "fn body(uv: vec2<f32>) -> vec3<f32> { return vec3<f32>(uv, 0.0); }"),
+            ("big/variant.json", r#"{"when": ["big"], "parts": ["body.wgsl", "hair.wgsl"], "items": 8, "layers": ["Body", "Hair"],
+                "params": [{"id": "hair", "label": "Hair", "group": "Big"}]}"#),
+            ("big/body.wgsl", "fn body(uv: vec2<f32>) -> vec3<f32> { return item(0u).rgb; }"),
+            ("big/hair.wgsl", "fn prepare(i: u32) -> vec4<f32> { return vec4<f32>(swim()); }"),
+        ];
+        for (name, text) in files {
+            match all.iter_mut().find(|(n, _)| n == name) {
+                Some(f) => f.1 = text,
+                None => all.push((name, text)),
+            }
+        }
+        let read = |name: &str| all.iter().find(|(n, _)| *n == name).map(|(_, t)| t.to_string());
+        load(json, read, None)
+    }
+
+    #[test]
+    fn variants_build_on_the_visual_and_a_value_picks_one() {
+        let d = variants(&[]).expect("loads");
+        assert_eq!(d.variants.len(), 2);
+        // Registered as the first variant, with every variant's controls.
+        assert_eq!(d.variant, "little");
+        assert_eq!(d.params.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["kind", "speed", "hair"]);
+        let big = &d.variants[1].def;
+        // Its own budget, layers, controls and code, after the visual's.
+        assert_eq!((big.items, d.items), (8, 0));
+        assert_eq!(big.layers, ["Body", "Hair"]);
+        assert_eq!(big.params.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["kind", "speed", "hair"]);
+        assert_eq!(d.variants[0].def.params.len(), 2);
+        assert!(big.wgsl.contains("// ==== part: big/hair.wgsl ====") && big.wgsl.contains("fn swim()"));
+        assert!(!d.wgsl.contains("big/"));
+        // A layer's value picks; a value no variant serves, or none, gets the first.
+        let pick = |v: &str| d.variant_for(Some(&serde_json::json!({"kind": v}))).variant.clone();
+        assert_eq!((pick("big"), pick("odd"), pick("small")), ("big".into(), "little".into(), "little".into()));
+        assert_eq!(d.variant_for(None).variant, "little");
+        // An error names the variant's file.
+        assert_eq!(code_position(&big.wgsl, big.wgsl.lines().position(|l| l.contains("fn prepare")).unwrap() + 1).0, "big/hair.wgsl");
+    }
+
+    #[test]
+    fn bad_variants_are_refused() {
+        // A value served twice, a value the control does not have, a missing manifest or part.
+        let err = |files: &[(&str, &str)]| variants(files).expect_err("refused");
+        assert!(err(&[("big/variant.json", r#"{"when": ["big", "odd"], "items": 8, "parts": ["body.wgsl", "hair.wgsl"]}"#)]).contains("another variant"));
+        assert!(err(&[("big/variant.json", r#"{"when": ["huge"], "items": 8, "parts": ["body.wgsl", "hair.wgsl"]}"#)]).contains("not a value of kind"));
+        assert!(err(&[("big/variant.json", r#"{"when": ["big"], "items": 8, "parts": ["body.wgsl", "gone.wgsl"]}"#)]).contains("big/variant.json: part \"gone.wgsl\""));
+        // Each variant is checked as a visual: a prepare step with no items.
+        assert!(err(&[("big/variant.json", r#"{"when": ["big"], "parts": ["body.wgsl", "hair.wgsl"]}"#)]).starts_with("variant big:"));
     }
 
     #[test]

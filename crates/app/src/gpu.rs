@@ -27,23 +27,43 @@ impl Gpu {
         size.width = size.width.max(1);
         size.height = size.height.max(1);
 
-        let mut desc = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
-        // DX12 by default on Windows: it is the path we want for HDR output
-        // later and avoids third-party Vulkan overlay layers. Both backends
-        // work; WGPU_BACKEND=vulkan overrides.
-        if cfg!(windows) && std::env::var_os("WGPU_BACKEND").is_none() {
-            desc.backends = wgpu::Backends::DX12;
+        // Vulkan first on Windows, DX12 if no Vulkan adapter can show the
+        // window. The visuals' shaders build several times faster on Vulkan:
+        // the Jellyfish in about 3 s against 15 on DX12, whose FXC compiler
+        // left the screen black that long at every start (DXC would be fast
+        // too, but needs its DLLs shipped or Visual Studio's ATL to link it
+        // in). WGPU_BACKEND=dx12 (or vulkan) picks one.
+        let order: Vec<wgpu::Backends> = if cfg!(windows) && std::env::var_os("WGPU_BACKEND").is_none() {
+            vec![wgpu::Backends::VULKAN, wgpu::Backends::DX12]
+        } else {
+            vec![wgpu::InstanceDescriptor::new_without_display_handle_from_env().backends]
+        };
+        let mut found = None;
+        let mut why = String::new();
+        for backends in order {
+            let mut desc = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
+            desc.backends = backends;
+            let instance = wgpu::Instance::new(desc);
+            let surface = instance.create_surface(window.clone()).context("create surface")?;
+            match instance
+                .request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::HighPerformance,
+                    compatible_surface: Some(&surface),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(adapter) => {
+                    found = Some((instance, surface, adapter));
+                    break;
+                }
+                Err(e) => {
+                    tracing::info!("no {backends:?} adapter: {e}");
+                    why = e.to_string();
+                }
+            }
         }
-        let instance = wgpu::Instance::new(desc);
-        let surface = instance.create_surface(window.clone()).context("create surface")?;
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
-                ..Default::default()
-            })
-            .await
-            .map_err(|e| anyhow!("no suitable GPU adapter: {e}"))?;
+        let (instance, surface, adapter) = found.ok_or_else(|| anyhow!("no suitable GPU adapter: {why}"))?;
         let info = adapter.get_info();
         tracing::info!("adapter: {} ({:?}, {:?})", info.name, info.backend, info.device_type);
 

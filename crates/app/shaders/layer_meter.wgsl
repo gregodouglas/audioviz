@@ -6,7 +6,7 @@
 //       building, a visual drawing nothing) the gain is not touched: on an
 //       empty picture it would run up to its limit, and the first frames
 //       that came in were blown out for seconds while it came back down.
-// It brings an overbright layer down quickly (0.4 s, as an eye does) and
+// It brings an overbright layer down quickly (0.3 s, as an eye does) and
 // lifts a dim one slowly (1.5 s), so the music's swells stay swells.
 // The target is the mean over the *lit* part of the picture, not the whole
 // frame: a sparse layer (a few dots, a thin trace) has a tiny frame mean and
@@ -71,7 +71,7 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
         return vec4<f32>(prev.r, 0.0, 0.0, prev.a);
     }
     let want = clamp(LIT_TARGET / max(mean, 1e-7), 0.05, 10000.0);
-    let rate = 1.0 - exp(-L.dt / select(1.5, 0.4, want < prev.r));
+    let rate = 1.0 - exp(-L.dt / select(1.5, 0.3, want < prev.r));
     let gain = select(mix(prev.r, want, rate), want, prev.r <= 0.0 || prev.a < 0.5);
     return vec4<f32>(gain, mean, lit / 1024.0, 1.0);
 }

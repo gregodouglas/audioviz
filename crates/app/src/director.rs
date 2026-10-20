@@ -291,6 +291,11 @@ pub const FADE_AUTO: (f32, f32) = (4.0, 0.8);
 /// strength from their first frame and the levelling measures the real
 /// picture (fading the layer, the meters chased the fade and overshot).
 const FADE_ARRIVE_S: f32 = 2.0;
+/// The first scene's screen stays dark this long before fading up, while
+/// the levelling finds its level: the first lit frame is not the picture
+/// (a jelly scene's first frame is only its plankton, its bells come a frame
+/// later), so the level it gives is too high until the meters come down.
+const ARRIVE_HOLD_S: f32 = 0.6;
 /// Opacity changes that do not switch a layer on or off (slider drags) follow closely.
 const FADE_SLIDER_S: f32 = 0.08;
 const MIN_DWELL_S: f32 = 90.0;
@@ -1077,7 +1082,7 @@ impl Director {
 
         if !self.drawn && !entries.is_empty() {
             self.drawn = true;
-            self.screen.aim(1.0, FADE_ARRIVE_S, 0.0);
+            self.screen.aim(1.0, FADE_ARRIVE_S, ARRIVE_HOLD_S);
         }
         if self.drawn {
             self.screen.step(dt);

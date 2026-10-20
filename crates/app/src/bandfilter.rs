@@ -135,6 +135,7 @@ pub fn band_features(f: &FeatureFrame, lo: f32, hi: f32) -> FeatureFrame {
     out.onset_pulse[3] = f.onset_pulse[g];
     out.onset_strength[3] = f.onset_strength[g];
     out.onset_hit[3] = f.onset_hit[g];
+    out.onset_count[3] = f.onset_count[g];
     out
 }
 

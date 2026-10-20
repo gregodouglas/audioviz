@@ -52,6 +52,7 @@ impl Engine {
             mode: mode.clone(),
             onsets: onsets.clone(),
             last_onset: None,
+            onset_count: [0; 4],
             points_tx,
             cmd_rx,
         };
@@ -97,6 +98,7 @@ struct Worker {
     mode: Arc<Mutex<CaptureMode>>,
     onsets: OnsetLog,
     last_onset: Option<Instant>,
+    onset_count: [u32; 4],
     points_tx: Sender<Vec<[f32; 2]>>,
     cmd_rx: Receiver<Cmd>,
 }
@@ -144,9 +146,11 @@ impl Worker {
         let released: Vec<f32> = self.delay_line.drain(..releasable).collect();
         self.analyzer.push(&released);
         let frame = self.analyzer.frame();
-        // Log low-band and overall onsets (kicks, snares) for calibration; the
-        // hit flag lingers until the next hop, so debounce.
-        if (frame.onset_hit[0] || frame.onset_hit[3]) && self.last_onset.is_none_or(|t| t.elapsed() > Duration::from_millis(60)) {
+        // Log low-band and overall onsets (kicks, snares) for calibration;
+        // one release may span several hops, so compare counts, and debounce.
+        let new_onset = frame.onset_count[0] != self.onset_count[0] || frame.onset_count[3] != self.onset_count[3];
+        self.onset_count = frame.onset_count;
+        if new_onset && self.last_onset.is_none_or(|t| t.elapsed() > Duration::from_millis(60)) {
             let now = Instant::now();
             self.last_onset = Some(now);
             if let Ok(mut log) = self.onsets.lock() {

@@ -128,6 +128,8 @@ struct Running {
     applied_monitor: usize,
     start: Instant,
     last_frame: Instant,
+    /// Onset counts at the last frame: new ones become this frame's hits.
+    onset_count: [u32; 4],
     fps: f32,
     /// The longest frame since the last debug line, ms (stalls show here, not in fps).
     worst_ms: f32,
@@ -296,6 +298,7 @@ impl Running {
             settings,
             start: Instant::now(),
             last_frame: Instant::now(),
+            onset_count: [0; 4],
             fps: 0.0,
             worst_ms: 0.0,
             points_per_sec: 0.0,
@@ -622,7 +625,13 @@ impl Running {
             let drop = self.pending_points.len() - (MAX_POINTS - 1);
             self.pending_points.drain(..drop);
         }
-        let features = self.engine.features();
+        let mut features = self.engine.features();
+        // A hit lasts one analysis hop (10.7 ms), shorter than a frame: count
+        // them instead, so every onset is a hit on exactly one frame.
+        for g in 0..4 {
+            features.onset_hit[g] = features.onset_count[g] != self.onset_count[g];
+        }
+        self.onset_count = features.onset_count;
         let now_playing = self.metadata.latest();
         if tracing::enabled!(tracing::Level::DEBUG) && (time_floor(self.start.elapsed().as_secs_f32()) != time_floor(self.start.elapsed().as_secs_f32() - dt)) {
             tracing::debug!("peak {:.3} rms {:.3} auto_gain {:.2} points {} silent {} fps {:.0} worst {:.1} ms cpu {:.2} ms gpu {:.2} ms {:?} {:?}", features.peak, features.rms, self.auto_gain_value, self.pending_points.len(), features.silent, self.fps, self.worst_ms, self.cpu_ms, self.timer.frame_ms, crate::platform::usage(), self.timer.ms.iter().map(|(p, v)| format!("{p:?}={v:.2}")).collect::<Vec<_>>());

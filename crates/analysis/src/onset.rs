@@ -44,6 +44,9 @@ pub struct OnsetDetector {
     pub strength: [f32; GROUPS],
     /// Discrete onset this hop (one hop late: peak-picked).
     pub hit: [bool; GROUPS],
+    /// Onsets so far, per group. A reader that compares it with the last
+    /// value it saw never misses a hit or sees one twice (ADR-0006).
+    pub count: [u32; GROUPS],
     /// 1.0-ish at a hit, exponential decay. Use for visual pulses.
     pub pulse: [f32; GROUPS],
     /// Raw beat envelope (log-band flux), for the beat tracker.
@@ -88,6 +91,7 @@ impl OnsetDetector {
             prev_thr: [f32::MAX; GROUPS],
             strength: [0.0; GROUPS],
             hit: [false; GROUPS],
+            count: [0; GROUPS],
             pulse: [0.0; GROUPS],
             flux_total: 0.0,
         }
@@ -146,6 +150,7 @@ impl OnsetDetector {
             self.hit[g] = hit;
             if hit {
                 self.since_hit[g] = 0.0;
+                self.count[g] = self.count[g].wrapping_add(1);
                 self.pulse[g] = (p1 / self.norm[g]).clamp(0.5, 1.5);
             } else {
                 self.pulse[g] = follow(self.pulse[g], 0.0, dt, 0.0, 0.12);

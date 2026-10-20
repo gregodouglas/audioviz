@@ -1,6 +1,6 @@
 # audioviz: project rules
 
-Spotify-fed, Windows-first music visualizer (Rust, wgpu, WGSL). Start with `docs/model.md` (the words), `docs/visuals.md` (the visual format) and `docs/decisions/` (ADRs); the working log is `docs/phase6-ui.md`, open issues `docs/ROADMAP.md`.
+Spotify-fed, Windows-first music visualizer (Rust, wgpu, WGSL). Start with `docs/model.md` (the words), `docs/visuals.md` (the visual format) and `docs/decisions/` (ADRs); the working log is `docs/phase6-ui.md` (the audio engine, ADR-0006: `docs/phase8-audio.md`), open issues `docs/ROADMAP.md`.
 
 ## Versions and commits
 

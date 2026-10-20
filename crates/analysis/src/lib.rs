@@ -65,9 +65,12 @@ pub struct FeatureFrame {
     /// 0 = mono, 1 = wide.
     pub stereo_width: f32,
     /// Onsets per group [low, mid, high, total]: continuous strength,
-    /// discrete hit this hop, and a decaying pulse.
+    /// discrete hit this hop, and a decaying pulse. A hit lasts one hop, so
+    /// a reader slower than the hop rate should use `onset_count` instead.
     pub onset_strength: [f32; 4],
     pub onset_hit: [bool; 4],
+    /// Onsets so far per group; wraps.
+    pub onset_count: [u32; 4],
     pub onset_pulse: [f32; 4],
     /// Beat clock.
     pub bpm: f32,
@@ -105,6 +108,7 @@ impl Default for FeatureFrame {
             stereo_width: 0.0,
             onset_strength: [0.0; 4],
             onset_hit: [false; 4],
+            onset_count: [0; 4],
             onset_pulse: [0.0; 4],
             bpm: 120.0,
             beat_confidence: 0.0,
@@ -328,6 +332,7 @@ impl Analyzer {
         self.onsets.process(&self.short.mag, &self.mid.mag, dt, silent);
         f.onset_strength = self.onsets.strength;
         f.onset_hit = self.onsets.hit;
+        f.onset_count = self.onsets.count;
         f.onset_pulse = self.onsets.pulse;
 
         self.beat.process(self.onsets.flux_total, dt, silent);
@@ -431,6 +436,8 @@ mod tests {
         let f = a.frame();
         // 32 clicks in 16 s at 120 BPM; allow some misses and a few extras.
         assert!((24..=48).contains(&hits), "onset hits {hits}");
+        // One hop per push here, so the count saw every hit.
+        assert_eq!(f.onset_count[3] as usize, hits);
         assert!((f.bpm - bpm).abs() < 3.0, "bpm {} conf {}", f.bpm, f.beat_confidence);
         assert!(f.beat_confidence > 0.3, "confidence {}", f.beat_confidence);
     }

@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use audioviz_analysis::{Analyzer, AnalyzerConfig, FeatureFrame};
-use audioviz_audio::{CaptureHandle, CaptureMode, CaptureTarget};
+use audioviz_audio::{CaptureHandle, CaptureHealth, CaptureMode, CaptureTarget, SharedHealth};
 use crossbeam_channel::{Receiver, Sender};
 
 const CHUNK_FRAMES: usize = 256;
@@ -24,6 +24,7 @@ const ONSET_LOG_LEN: usize = 64;
 pub struct Engine {
     features: Arc<Mutex<FeatureFrame>>,
     mode: Arc<Mutex<CaptureMode>>,
+    health: SharedHealth,
     onsets: OnsetLog,
     points_rx: Receiver<Vec<[f32; 2]>>,
     cmd_tx: Sender<Cmd>,
@@ -34,6 +35,7 @@ impl Engine {
     pub fn start(target: CaptureTarget) -> anyhow::Result<Self> {
         let source = audioviz_audio::default_source();
         let capture = source.start(target, CHUNK_FRAMES)?;
+        let health = capture.shared_health();
         let sample_rate = 48_000;
 
         let features = Arc::new(Mutex::new(FeatureFrame::default()));
@@ -58,7 +60,7 @@ impl Engine {
         };
         std::thread::Builder::new().name("engine".into()).spawn(move || worker.run())?;
 
-        Ok(Self { features, mode, onsets, points_rx, cmd_tx, sample_rate })
+        Ok(Self { features, mode, health, onsets, points_rx, cmd_tx, sample_rate })
     }
 
     pub fn features(&self) -> FeatureFrame {
@@ -72,6 +74,11 @@ impl Engine {
 
     pub fn capture_mode(&self) -> CaptureMode {
         self.mode.lock().map(|m| m.clone()).unwrap_or(CaptureMode::Starting)
+    }
+
+    /// How the capture is going: running counts (ADR-0006).
+    pub fn capture_health(&self) -> CaptureHealth {
+        self.health.lock().map(|h| h.clone()).unwrap_or_default()
     }
 
     pub fn set_delay_ms(&self, ms: f32) {

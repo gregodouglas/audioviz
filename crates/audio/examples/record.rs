@@ -43,6 +43,7 @@ fn main() -> anyhow::Result<()> {
         }
     }
     writer.finalize()?;
+    eprintln!("health: {:?}", handle.health());
     eprintln!("wrote {out}: {:.1} s, {:.1}% synthetic silence, mode {:?}", frames as f64 / 48_000.0, 100.0 * synthetic as f64 / frames.max(1) as f64, mode);
     Ok(())
 }

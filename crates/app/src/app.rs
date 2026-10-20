@@ -635,6 +635,8 @@ impl Running {
         let now_playing = self.metadata.latest();
         if tracing::enabled!(tracing::Level::DEBUG) && (time_floor(self.start.elapsed().as_secs_f32()) != time_floor(self.start.elapsed().as_secs_f32() - dt)) {
             tracing::debug!("peak {:.3} rms {:.3} auto_gain {:.2} points {} silent {} fps {:.0} worst {:.1} ms cpu {:.2} ms gpu {:.2} ms {:?} {:?}", features.peak, features.rms, self.auto_gain_value, self.pending_points.len(), features.silent, self.fps, self.worst_ms, self.cpu_ms, self.timer.frame_ms, crate::platform::usage(), self.timer.ms.iter().map(|(p, v)| format!("{p:?}={v:.2}")).collect::<Vec<_>>());
+            let h = self.engine.capture_health();
+            tracing::debug!("capture {:.1} s real {:.1} s made up, glitches {} late {} clipped {} reopens {} device changes {} dropped {}", h.frames as f64 / 48_000.0, h.synthetic_frames as f64 / 48_000.0, h.discontinuities, h.late_packets, h.clipped_samples, h.reopens, h.device_changes, h.dropped_chunks);
             self.worst_ms = 0.0;
         }
         let target = if features.peak > 0.0005 { (0.9 / features.peak).clamp(0.3, 200.0) } else { self.auto_gain_value };

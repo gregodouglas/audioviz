@@ -87,6 +87,14 @@ On the reference rig with wired output: press **C**, tap along for ten beats, re
 
 Since diffusion (0.4.5) a visual with `"space"` compiles its triangles twice, stacked and shared, in one job: the Jellyfish builds in 10.0 s instead of 5.6, and a shared jelly scene shows nothing until both are done. Build them as two jobs, the variant in use first (the visual would need to know its scene's space mode when it asks), and prewarm the other.
 
+## Parked: the lion's mane (Greg, 2026-10-19: "done with this lion's mane for now")
+
+ADR-0005 steps 1 to 3 are done; step 4 (bell, mass) has had three passes and step 5 (the mane) its first part, all in 0.4.24 to 0.4.28. Where it stands and what is left, for when it comes back:
+- **The mass** (0.4.28, `lion/plume.wgsl`): 40 real lumps, the right form by Greg's direction (a billowing solid, like a rolling smoke plume or milky fluid). Next: brighter, glowing cream highlights (it reads orange-tan beside photo 42) and a denser veil of hair over it just under the bell.
+- **The hair** (0.4.26, `lion/hair.wgsl`): 1024 hairs a jelly following the 160 strands; Greg likes it. Left from step 5: ribbons through each lock that cover in the cover pass; then drop the stopgap dimming by `behind` in `lion/hair.wgsl` and `lion/mane.wgsl`. The curls kink a little at 16 links a hair.
+- **Step 6:** motion (slow weak pulses, arms bunch on the squeeze and lengthen as it relaxes, hair stretches and lags), colours through palettes (Palette and Palette light must reach the hair, lumps and core via `tone()`), the variant's own controls (mass size, mane density and length), and Giants' cost: 5.56 ms at 0.4.28 against a budget of about 5.
+- Comparison sheets and tools: `tmp/lab/l4/compare_*.png`, `tmp/tools/lion.sh`, `compare.ps1`; the photos in `tmp/ref/lions-mane/` (REFERENCE.md).
+
 ## Revisit: effects in a shared space (Greg, 2026-10-19)
 
 ADR-0002 bypasses a layer's effect chain while the layer is in a shared space (the layers share one picture, so a per-layer 2D chain has nothing of its own to work on). Greg agreed for now and asked that it be revisited. The likely answer is a **Space effects** chain: one 2D chain over the finished space, before it meets the flat layers, reusing `render_layer`'s chain code. Decide after the jellies' diffusion and refraction land.

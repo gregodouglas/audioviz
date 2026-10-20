@@ -2,6 +2,12 @@
 //   r = levelling gain, slewed over ~1.5 s, so each layer arrives at the mix
 //       at a comparable brightness and opacity is the actual mix ratio.
 //   g = the measured lit-area mean, for diagnostics.
+//   a = 1 once something lit has been measured. Until then (a layer still
+//       building, a visual drawing nothing) the gain is not touched: on an
+//       empty picture it would run up to its limit, and the first frames
+//       that came in were blown out for seconds while it came back down.
+// It brings an overbright layer down quickly (0.4 s, as an eye does) and
+// lifts a dim one slowly (1.5 s), so the music's swells stay swells.
 // The target is the mean over the *lit* part of the picture, not the whole
 // frame: a sparse layer (a few dots, a thin trace) has a tiny frame mean and
 // a mean-based gain would either blow it out or never reach it.
@@ -60,8 +66,12 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
     // gain does not run away on a single pixel.
     let mean = sum / max(lit, 4.0);
     let prev = textureSampleLevel(prev_state, samp, vec2<f32>(0.5), 0.0);
+    if (sum <= 1e-6) {
+        // Nothing lit: hold (and stay unmeasured until something is).
+        return vec4<f32>(prev.r, 0.0, 0.0, prev.a);
+    }
     let want = clamp(LIT_TARGET / max(mean, 1e-7), 0.05, 10000.0);
-    let rate = 1.0 - exp(-L.dt / 1.5);
-    let gain = select(mix(prev.r, want, rate), want, prev.r <= 0.0);
+    let rate = 1.0 - exp(-L.dt / select(1.5, 0.4, want < prev.r));
+    let gain = select(mix(prev.r, want, rate), want, prev.r <= 0.0 || prev.a < 0.5);
     return vec4<f32>(gain, mean, lit / 1024.0, 1.0);
 }

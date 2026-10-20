@@ -284,6 +284,13 @@ pub const FADE_MANUAL_S: f32 = 0.5;
 pub const FADE_MANUAL: (f32, f32) = (FADE_MANUAL_S, 0.0);
 /// (seconds, stagger per slot) for the auto director.
 pub const FADE_AUTO: (f32, f32) = (4.0, 0.8);
+/// A layer whose visual had to be built first (at start, or a visual
+/// switched to) fades up out of the dark this slowly: after seconds of
+/// black, a scene snapping in all at once is a jolt. The very first scene
+/// fades on the screen instead (`screen`), so its layers draw at full
+/// strength from their first frame and the levelling measures the real
+/// picture (fading the layer, the meters chased the fade and overshot).
+const FADE_ARRIVE_S: f32 = 2.0;
 /// Opacity changes that do not switch a layer on or off (slider drags) follow closely.
 const FADE_SLIDER_S: f32 = 0.08;
 const MIN_DWELL_S: f32 = 90.0;
@@ -525,6 +532,10 @@ pub struct Director {
     pub camera_nudge: [f32; 5],
     pub pass: SpacePass,
     nudge: Option<crate::shader_visual::CameraNudge>,
+    /// The screen fading up when the first scene arrives (see FADE_ARRIVE_S),
+    /// and whether anything has drawn yet.
+    screen: Fade,
+    drawn: bool,
 }
 
 /// The camera nudge that leaves the camera as the visual put it.
@@ -806,6 +817,8 @@ impl Director {
             camera_nudge: LAB_CAMERA,
             pass: SpacePass::All,
             nudge: None,
+            screen: Fade::at(0.0),
+            drawn: false,
         })
     }
 
@@ -1000,6 +1013,12 @@ impl Director {
         self.last_error = (!errors.is_empty()).then(|| errors.join("\n"));
     }
 
+    /// How far the finished picture is dimmed this frame (PostParams::dark):
+    /// the screen fading up as the first scene arrives.
+    pub fn screen_dark(&self) -> f32 {
+        1.0 - self.screen.level()
+    }
+
     /// Render every visible layer (and any visual still fading out) and
     /// composite into `target`.
     #[allow(clippy::too_many_arguments)]
@@ -1032,9 +1051,16 @@ impl Director {
             if !ready {
                 if let Some((secs, stagger)) = pending {
                     slot.held = Some((secs, stagger_delay(stagger, i)));
+                } else if slot.held.is_none() {
+                    slot.held = Some((FADE_ARRIVE_S, 0.0));
                 }
                 slot.fade = Fade::at(0.0);
                 continue;
+            }
+            if !self.drawn {
+                // The first scene: in at full strength, the screen fades.
+                slot.held = None;
+                slot.fade = Fade::at(to);
             }
             let (secs, delay) = match (pending, slot.held.take()) {
                 (Some((secs, stagger)), _) => (secs, stagger_delay(stagger, i)),
@@ -1047,6 +1073,14 @@ impl Director {
             if level > 0.0 {
                 entries.push((false, i, level));
             }
+        }
+
+        if !self.drawn && !entries.is_empty() {
+            self.drawn = true;
+            self.screen.aim(1.0, FADE_ARRIVE_S, 0.0);
+        }
+        if self.drawn {
+            self.screen.step(dt);
         }
 
         // In a shared space, the layers whose visual can join draw as one

@@ -731,7 +731,7 @@ impl Running {
             flags |= 2;
         }
         self.timer.mark(&mut encoder, crate::gpu_timer::Part::Picture);
-        self.post.render(&self.gpu.queue, &mut encoder, &view, PostParams { exposure: post.exposure, bloom: post.bloom, grain: post.grain, time, dt, flags, flash_rise: self.settings.flash_rise, saturation: post.saturation, look: (post.look == crate::settings::Look::Neon) as u32, ..Default::default() });
+        self.post.render(&self.gpu.queue, &mut encoder, &view, PostParams { exposure: post.exposure, bloom: post.bloom, grain: post.grain, time, dt, flags, flash_rise: self.settings.flash_rise, dark: self.director.screen_dark(), saturation: post.saturation, look: (post.look == crate::settings::Look::Neon) as u32, ..Default::default() });
 
         let t_scene = t_scene0.elapsed();
         let t_ui0 = Instant::now();

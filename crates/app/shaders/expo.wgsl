@@ -6,6 +6,11 @@
 //       level that enters AgX; 0.18 is mid grey, ~0.08 is 10% of peak output.
 //   b = flash-limiter gain in (0, 1], 1.0 unless the limiter is biting.
 //       present.wgsl multiplies the picture by it.
+//   a = 1 once a lit picture has been measured. On a black picture (the
+//       scene still building) e holds: it ran up to its limit there, and the
+//       scene arrived overexposed. The first lit picture sets e at once.
+// e comes down quickly when the picture is too bright (0.5 s, as an eye
+// adapts) and rises slowly when it is dim (2 s).
 // Bindings: 0 = smallest bloom level, 3 = previous state.
 //
 // Reduce flashing (P.flags bit1): L may rise by at most a factor of
@@ -56,11 +61,18 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
 
     let prev = textureSampleLevel(prev_expo, samp, vec2<f32>(0.5), 0.0);
     var e = 1.0;
+    var measured = prev.a;
     if ((P.flags & 1u) != 0u) {
-        // Aim the pre-tonemap mean at a dark-field level; lines still clip white.
-        let want = clamp(aim / max(mean, 1e-5), 0.25, 6.0);
-        let rate = 1.0 - exp(-P.dt / 2.0);
-        e = select(mix(prev.r, want, rate), want, prev.r <= 0.0);
+        if (mean <= 1e-4) {
+            // Nothing to see yet: hold.
+            e = select(prev.r, 1.0, prev.r <= 0.0);
+        } else {
+            // Aim the pre-tonemap mean at a dark-field level; lines still clip white.
+            let want = clamp(aim / max(mean, 1e-5), 0.25, 6.0);
+            let rate = 1.0 - exp(-P.dt / select(2.0, 0.5, want < prev.r));
+            e = select(mix(prev.r, want, rate), want, prev.r <= 0.0 || prev.a < 0.5);
+            measured = 1.0;
+        }
     }
 
     // Intended displayed mean this frame: the raw mean through the exposure
@@ -74,5 +86,5 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
             gain = allowed / l_cur;
         }
     }
-    return vec4<f32>(e, l_cur * gain, gain, 1.0);
+    return vec4<f32>(e, l_cur * gain, gain, measured);
 }

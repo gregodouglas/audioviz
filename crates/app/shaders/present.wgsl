@@ -78,5 +78,5 @@ fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
     col += n_grain * P.grain * 0.12 * col;
     col += (ign(in.pos.xy) - 0.5) * (1.0 / 255.0);
 
-    return vec4<f32>(max(col, vec3<f32>(0.0)), 1.0);
+    return vec4<f32>(max(col, vec3<f32>(0.0)) * (1.0 - clamp(P.dark, 0.0, 1.0)), 1.0);
 }

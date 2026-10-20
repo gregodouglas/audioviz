@@ -25,7 +25,9 @@ pub struct PostParams {
     /// applied per frame as `pow(1 + flash_rise, dt)`. Decreases are never
     /// limited. Only read when `flags` bit1 is set.
     pub flash_rise: f32,
-    pub _pad: u32,
+    /// How far the finished picture is dimmed toward black, 0..1 (0: not
+    /// at all): the screen fading up when a scene first arrives.
+    pub dark: f32,
     /// Saturation before the tonemapper.
     pub saturation: f32,
     /// 0 = film (AgX), 1 = neon (hue-preserving).
@@ -174,6 +176,6 @@ mod tests {
         assert_eq!(offset_of!(PostParams, dt), 16);
         assert_eq!(offset_of!(PostParams, flags), 20);
         assert_eq!(offset_of!(PostParams, flash_rise), 24);
-        assert_eq!(offset_of!(PostParams, _pad), 28);
+        assert_eq!(offset_of!(PostParams, dark), 28);
     }
 }

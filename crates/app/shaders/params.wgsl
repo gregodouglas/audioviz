@@ -41,7 +41,7 @@ struct PostParams {
     dt: f32,
     flags: u32,       // bit0 (1): auto exposure, bit1 (2): reduce flashing
     flash_rise: f32,  // reduce flashing: max brightness rise factor per second is 1 + flash_rise
-    _pad0: u32,
+    dark: f32,        // the finished picture dimmed toward black, 0..1 (a scene arriving)
     saturation: f32,  // before the tonemapper, 1 = as rendered
     look: u32,        // 0 film (AgX), 1 neon (hue-preserving)
     _pad1a: u32,

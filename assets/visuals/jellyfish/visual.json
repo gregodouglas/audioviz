@@ -28,11 +28,15 @@
     { "id": "arms", "label": "Oral arms", "group": "Body", "min": 0.0, "max": 2.0, "default": 1.0 },
     { "id": "glow", "label": "Glow", "group": "Light", "min": 0.0, "max": 3.0, "default": 1.0, "decimals": 2 },
     { "id": "light", "label": "Bioluminescence", "group": "Light", "min": 0.0, "max": 2.0, "default": 1.0, "help": "The species' own light: gonads, stripes, rim lights, pinwheel, comb rows, hair." },
-    { "id": "halo", "label": "Glow in the water", "group": "Light", "min": 0.0, "max": 2.0, "default": 0.6, "help": "Their light in the water round them, and on the plankton." },
+    { "id": "halo", "label": "Glow in the water", "group": "Light", "min": 0.0, "max": 2.0, "default": 0.6, "help": "Their light in the water round them." },
     { "id": "body", "label": "Translucency", "group": "Light", "min": 0.0, "max": 2.0, "default": 1.0, "help": "The glassy bell: edges glow, faces stay clear." },
     { "id": "water", "label": "Water", "group": "Tank", "min": 0.0, "max": 1.0, "default": 0.0, "help": "Deep water and light shafts behind them, for an aquarium look. Auto exposure lifts water that fills the frame, so keep it low (0: black, best for stacking layers)." },
-    { "id": "plankton", "label": "Plankton", "group": "Tank", "min": 0.0, "max": 1.0, "default": 0.35 },
     { "id": "view", "label": "View", "type": "choice", "group": "Tank", "options": ["Tank", "Close-up"], "default": "tank", "help": "Tank: the whole swarm. Close-up: the camera follows one jelly and slowly circles it." },
-    { "id": "camera", "label": "Camera drift", "group": "Tank", "min": 0.0, "max": 1.0, "default": 0.35 }
+    { "id": "camera", "label": "Camera drift", "group": "Tank", "min": 0.0, "max": 1.0, "default": 0.35 },
+    { "id": "plankton", "label": "Amount", "group": "Plankton", "min": 0.0, "max": 1.0, "default": 0.35, "help": "Marine snow and plankton drifting in the water. 0 turns them off." },
+    { "id": "plankton_density", "label": "Density", "group": "Plankton", "min": 0.0, "max": 1.0, "default": 1.0, "help": "How many specks." },
+    { "id": "plankton_lit", "label": "Lit by jellies", "group": "Plankton", "min": 0.0, "max": 2.0, "default": 0.6, "help": "How much the jellies' glow lights the specks near them." },
+    { "id": "sparkle", "label": "Sparkle", "group": "Plankton", "min": 0.0, "max": 2.0, "default": 1.0, "help": "The living ones spark blue-green on the hi-hats and round a jelly that has just stroked." },
+    { "id": "plankton_blur", "label": "Blur", "group": "Plankton", "min": 0.0, "max": 1.0, "default": 0.5, "help": "Depth of field: specks nearer or further than the jellies are soft." }
   ]
 }

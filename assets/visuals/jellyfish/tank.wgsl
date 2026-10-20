@@ -50,8 +50,10 @@ fn jelly_light(p: vec2<f32>) -> vec4<f32> {
     return vec4<f32>(glow, stir);
 }
 
-// One layer of marine snow at screen point p: one speck per cell, a soft
-// flake at its own angle, lit a little from above and more by a jelly near.
+// One layer of marine snow at screen point p: at most one speck per cell
+// (Density keeps some), a soft flake at its own angle (soft by Blur away
+// from the jellies' distance), lit a little from above and more by a jelly
+// near (Lit by jellies).
 fn snow_layer(p: vec2<f32>, l: u32, natural: bool) -> vec3<f32> {
     let P = params();
     let at_l = item(SNOW0 + l);
@@ -60,9 +62,9 @@ fn snow_layer(p: vec2<f32>, l: u32, natural: bool) -> vec3<f32> {
     let h2 = hash22(base + f32(l) * 37.0 + 11.0);
     let e = q - (base + 0.25 + 0.5 * h2);
     let size = 0.045 * (0.5 + h2.x);
-    let blur = size + at_l.w;
+    let blur = size + at_l.w * P.plankton_blur;
     // Most pixels are nowhere near their cell's speck.
-    if (dot(e, e) > blur * blur * 9.0) {
+    if (dot(e, e) > blur * blur * 9.0 || hash21(base + f32(l) * 53.0 + 5.0) > P.plankton_density) {
         return vec3<f32>(0.0);
     }
     let h = hash22(base + f32(l) * 37.0);
@@ -74,13 +76,13 @@ fn snow_layer(p: vec2<f32>, l: u32, natural: bool) -> vec3<f32> {
         pale = colour(h.y);
     }
     let lit = jelly_light(p);
-    var c = (pale * (0.012 + 0.03 * h.y) + lit.rgb * P.halo * 0.5) * flake;
+    var c = (pale * (0.012 + 0.03 * h.y) + lit.rgb * P.plankton_lit * 0.5) * flake;
     // The living ones (one in eight, in the middle and far layers) spark as
     // sharp points: some on each high onset, and round a stroke.
     if (l > 0u && h2.y < 0.125) {
         let ck = item(0u);
         let pick = select(0.0, 1.0, hash21(base + vec2<f32>(ck.z * 1.37, f32(l))) < 0.25);
-        let spark = exp(-ck.y / 0.35) * music() * pick + lit.a;
+        let spark = (exp(-ck.y / 0.35) * music() * pick + lit.a) * P.sparkle;
         var blue = vec3<f32>(0.25, 1.0, 0.8);
         if (!natural) {
             blue = colour(0.5);

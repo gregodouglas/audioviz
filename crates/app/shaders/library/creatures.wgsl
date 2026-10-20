@@ -42,6 +42,20 @@ fn to_camera(c: Camera, p: vec3<f32>) -> vec3<f32> {
     return camera_dir(c, p - c.look) + vec3<f32>(0.0, 0.0, c.dist);
 }
 
+// The direction (world space, unit) from the eye through the pixel at
+// `pixel` (in pixels, as MeshFragment.pixel gives it).
+fn pixel_ray(c: Camera, pixel: vec2<f32>) -> vec3<f32> {
+    let p = centred(pixel / V.resolution);
+    let d = normalize(vec3<f32>(p / c.focal, 1.0));
+    // camera_dir, undone: the pitch, then the yaw.
+    let cp = cos(c.pitch);
+    let sp = sin(c.pitch);
+    let q = vec3<f32>(d.x, cp * d.y + sp * d.z, -sp * d.y + cp * d.z);
+    let cy = cos(c.yaw);
+    let sy = sin(c.yaw);
+    return vec3<f32>(cy * q.x + sy * q.z, q.y, -sy * q.x + cy * q.z);
+}
+
 // Where the camera is, in world space.
 fn camera_position(c: Camera) -> vec3<f32> {
     // The inverse of camera_dir applied to (0, 0, -dist).

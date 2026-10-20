@@ -11,6 +11,9 @@
 // diffuses: it spreads softly through the body round where it is, instead
 // of all of it sitting sharp on the skin.
 
+// How tight the wet glint on a bell is (glint_at).
+const GLINT_SHARP: f32 = 150.0;
+
 // What paint knows about a pixel of a bell.
 struct Look {
     s: f32,          // crown 0 to margin 1
@@ -68,7 +71,9 @@ fn paint(f: MeshFragment) -> vec4<f32> {
         L.plan = f.colour.zw;
         L.face = f.data.z;
         L.top = f.data.x;
-        L.sheen = f.data.y;
+        // The glint sharpened here, per pixel, and the light above seen
+        // through thin skin, from this pixel's own ray.
+        L.sheen = glint_at(f.data.y, GLINT_SHARP) + through_light(pixel_ray(the_camera(), f.pixel)) * fresnel(L.face, 1.5) * 0.6;
         L.inner = id > PART_INNER;
         L.squeeze = f.colour.y;
         L.fs = fs;
@@ -109,7 +114,7 @@ fn bell_look(J: Jelly, k: u32, L: Look) -> vec3<f32> {
         c = shown(L_GLASS, body * sp.glass * glass(L.face, bell_thickness(b, L.s)) * tissue * lit) + shown(L_EDGES, body * sp.edge * fresnel(L.face, 3.0) * rimzone * lit);
         // The light above on the wet skin: a glint sliding over the dome as it
         // turns, and the thin skin glowing when the eye looks up through it.
-        c += shown(L_SHEEN, mix(body, vec3<f32>(1.0), 0.55) * L.sheen * 0.22);
+        c += shown(L_SHEEN, mix(body, vec3<f32>(1.0), 0.55) * L.sheen * 0.45);
         if (k != COMB) {
             // The thin margin glows, brightest on the lobes.
             let lobe = select(1.0, 0.5 - 0.5 * cos(fract(L.th * b.lobes) * TAU), b.lobes > 0.0);
@@ -146,13 +151,22 @@ fn arm_look(J: Jelly, k: u32, u: f32, x: f32, face: f32, top: f32, fu: f32) -> v
     let hue = hue_of(J);
     let c = mix(tone(ARMS_C, hue), tone(ORGANS, hue), 0.15 * (1.0 - u));
     let rim = fresnel(face, 2.0);
-    // The lips: a fine scallop with tiny tentacle-like processes.
+    // The lips: crinkled, irregular edges (each side its own), catching the
+    // light where they fold; a lace of fine folds in from them; a milky
+    // groove down the middle where the arm folds.
     let side = select(0.0, 9.0, x > 0.0);
-    let scallop = 0.5 + 0.5 * sin(u * 150.0 + 7.0 * noise(vec2<f32>(u * 9.0, side)) + side);
-    let lipline = 1.0 - 0.12 * scallop - abs(x);
-    let lip = smoothstep(0.14, 0.0, lipline) * (0.6 + 0.4 * scallop);
-    let beads = 0.5 + 0.5 * noise(vec2<f32>(u * 120.0, side));
-    let groove = thin_line(abs(x), 0.05, fu * 4.0) * 0.2;
+    let fine = keep_detail(fu * 8.0);
+    let crinkle = 0.65 * noise(vec2<f32>(u * 55.0, side + J.hue * 5.0)) + 0.35 * noise(vec2<f32>(u * 130.0, side + 3.0));
+    let edge = 1.0 - abs(x) - 0.1 * crinkle * fine;
+    let lip = smoothstep(0.13, 0.0, edge) * (0.45 + 0.8 * crinkle);
+    let beads = mix(1.0, 0.6 + 0.6 * noise(vec2<f32>(u * 110.0, side + x * 3.0)), fine);
+    // (The lace only on the moon jelly: a lion's mane's curtains overlap
+    // many times over, and every arm pixel pays for it.)
+    var lace = 0.0;
+    if (k == MOON) {
+        lace = smoothstep(0.55, 0.05, edge) * (0.5 + 0.5 * noise(vec2<f32>(u * 70.0, x * 9.0 + side))) * 0.18 * fine;
+    }
+    let groove = thin_line(abs(x), 0.08, fu * 4.0) * 0.22 + lace;
     let tissue = 0.7 + 0.6 * fbm(vec2<f32>(u * 14.0, x * 2.5 + J.hue * 9.0), 3);
     var lips = 0.4;
     switch (k) {
@@ -198,6 +212,11 @@ fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
         let x = fract(L.th * 8.0);
         let d = vec2<f32>(min(x, 1.0 - x) / 8.0 * TAU * s, 1.0 - s - 0.02);
         let rh = max(exp(-dot(d, d) / (0.012 * 0.012)) - 0.02, 0.0);
+        // Each rhopalium's pigment spot (warm, small) and the hood of jelly
+        // over its notch, a faint arc just inside it.
+        let spot = exp(-dot(d - vec2<f32>(0.0, 0.006), d - vec2<f32>(0.0, 0.006)) / (0.004 * 0.004));
+        c += shown(L_MARKS, vec3<f32>(1.0, 0.55, 0.25) * spot * 0.25 * (1.0 + glow));
+        c += shown(L_MARKS, body * thin_line(abs(length(d) - 0.03), 0.003, L.fp) * smoothstep(0.0, 0.01, d.y + 0.01) * 0.12);
         c += diffuse(shown(L_MARKS, mix(tone(LIGHT, hue), vec3<f32>(1.0), 0.5) * rh * (1.0 + 1.2 * glow + 2.5 * flash)), POINTS_DIFFUSE, params().light);
         return c;
     }
@@ -206,9 +225,11 @@ fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
     let q = L.plan;
     let fq = L.fp;
     var c = vec3<f32>(0.0);
-    // The stomach in the middle, a four-cornered mouth.
-    let st = smoothstep(0.15, 0.05, s * (1.0 + 0.3 * cos(ang * 4.0)));
-    c += shown(L_ORGANS, mix(body, gon, 0.4) * st * 0.07);
+    // The stomach in the middle: four lobes (the gastric pouches) reaching
+    // toward the gonads, a faint milky fill inside a clearer outline.
+    let lobe = 0.13 * (1.0 + 0.35 * cos(ang * 4.0 - 3.14159));
+    let sd = s - lobe;
+    c += shown(L_ORGANS, mix(body, gon, 0.4) * (smoothstep(0.0, -0.06, sd) * 0.05 + thin_line(abs(sd), 0.004, fq) * 0.16));
     // The gonads: four horseshoes round the stomach, open toward the middle.
     // Each is a thick ribbon of milky tissue folded on itself: a soft tube
     // across (fullest along its middle, a fine rim at each edge), its inner
@@ -216,6 +237,7 @@ fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
     // round mouth of its subgenital pit.
     var g = 0.0;
     var rims = 0.0;
+    var fil = 0.0;
     var pits = 0.0;
     for (var n = 0u; n < 4u; n++) {
         let a = (f32(n) + 0.5) * 1.5708;
@@ -232,6 +254,8 @@ fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
         let band = smoothstep(1.0 + aa, 1.0 - aa, abs(t));
         let tube = sqrt(max(1.0 - t * t, 0.0));
         g += band * (0.3 + 0.7 * tube) * open;
+        // The gastric filaments: a row of fine beads along the inner side.
+        fil += smoothstep(0.3, 0.0, abs(t + 0.55)) * pow(0.5 + 0.5 * sin(round * 44.0 + f32(n) * 2.0), 6.0) * open * keep_detail(fq * 120.0);
         rims += thin_line(abs(abs(t) - 0.9) * half, 0.003, fq) * open;
         pits += thin_line(abs(length(off) - 0.05), 0.004, fq);
     }
@@ -240,7 +264,7 @@ fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
     let lumpy = mix(0.65, 1.15, smoothstep(0.0, 0.18, lumps.y - lumps.x));
     let grain = mix(1.0, lumpy * (0.75 + 0.5 * fbm(q * 40.0, 3)), keep_detail(fq * 70.0));
     let milky = mix(gon, vec3<f32>(1.0), 0.35);
-    c += diffuse(shown(L_ORGANS, (milky * g * grain * 0.5 + gon * rims * 0.4) * (0.55 + glow * 1.3)), ORGANS_DIFFUSE, params().light);
+    c += diffuse(shown(L_ORGANS, (milky * g * grain * 0.5 + gon * rims * 0.4 + mix(gon, vec3<f32>(1.0), 0.6) * fil * 0.35) * (0.55 + glow * 1.3)), ORGANS_DIFFUSE, params().light);
     // Sixteen radial canals from the stomach out to the ring canal. The
     // eight under the rhopalia and between them (per- and interradial)
     // branch again and again on the way out, each branch wandering its own

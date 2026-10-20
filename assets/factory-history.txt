@@ -64,11 +64,15 @@ visuals/harmonograph/visual.wgsl cdfe8fe68fcd9536
 visuals/jellyfish/body.wgsl 6e891ea366dd8f69
 visuals/jellyfish/body.wgsl 7ce437eddad4fc36
 visuals/jellyfish/body.wgsl a2299f4e99e5eaf2
+visuals/jellyfish/body.wgsl ce4e0f0d83c1d58a
 visuals/jellyfish/looks.wgsl 357905f57ba16caf
 visuals/jellyfish/looks.wgsl b434f8fb2610b62e
+visuals/jellyfish/looks.wgsl c490541b7c47f1ed
 visuals/jellyfish/looks.wgsl fe276820936ba93d
+visuals/jellyfish/mesh.wgsl c9fa78686a47b4a0
 visuals/jellyfish/mesh.wgsl f3f54eee7c8beddf
 visuals/jellyfish/species.wgsl 971b37f49a88455a
+visuals/jellyfish/species.wgsl d620b86c65152f47
 visuals/jellyfish/species.wgsl db4b784bd9526a88
 visuals/jellyfish/swim.wgsl b966ed0e1fde2bec
 visuals/jellyfish/swim.wgsl dafc2147e57a4802

@@ -307,6 +307,9 @@ impl Lab {
         if let Some(e) = &self.director.last_error {
             bail!("{e}");
         }
+        if let Some(e) = self.director.layers[0].error() {
+            bail!("{visual}: {e}");
+        }
         Ok(start.elapsed())
     }
 
@@ -587,7 +590,7 @@ impl View {
             self.shown = Instant::now();
             let [y, p, z, ..] = self.cam;
             let state = if self.running { "running" } else { "held" };
-            let error = if self.lab.director.last_error.is_some() { " | shader error (see the console)" } else { "" };
+            let error = if self.lab.director.last_error.is_some() || self.lab.director.layers[0].error().is_some() { " | shader error (see the console; showing the last good one)" } else { "" };
             self.window.set_title(&format!("audioviz-lab: {} | {} | {} | {state} at {:.2} s | yaw {y:.0} pitch {p:.0} zoom {z:.2} | {:.2} ms{error} | drag orbit, right-drag pan, wheel zoom, 1 2 3 pass, Tab layer, X without, A all, Space run, . step, R reset, S save", a.visual, pass_name(self.lab.director.pass), self.layers_label(), self.lab.time, self.lab.timer.frame_ms));
         }
     }

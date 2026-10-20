@@ -3,7 +3,7 @@
 // quads on the bell's profile), then its oral arms (V-folded sheets along
 // their links). What paint gets per corner:
 //   bell  colour (distance from the eye, the stroke there, plan x, plan y)
-//         data   (light from above, its sheen: glint and glow through, face on, id)
+//         data   (light from above, its glint's cosine (glint_cos), face on, id)
 //   arm   colour (distance from the eye, along 0..1, across -1..1, 0)
 //         data   (light from above, light through it, face on, id)
 //   glow  data   (x, y from its centre in sizes, 0, id)
@@ -47,7 +47,7 @@ fn vertex(vi: u32) -> MeshVertex {
         let view = normalize(wp - eye);
         let face = facing(cam, wp, wn);
         v.pos = clip_pos(cam, wp);
-        v.data = vec4<f32>(key_light(wn, view).x, sheen(wn, view, face), face, f32(j) + 0.5 + PART_INNER * f32(shell));
+        v.data = vec4<f32>(key_light(wn, view).x, glint_cos(wn, view), face, f32(j) + 0.5 + PART_INNER * f32(shell));
         let plan = f32(n) / f32(RINGS) * vec2<f32>(cos(th * TAU), sin(th * TAU));
         v.colour = vec4<f32>(to_camera(cam, wp).z, profile(j, n).w, plan);
         return v;
@@ -90,12 +90,14 @@ fn vertex(vi: u32) -> MeshVertex {
     let radial = dir_to_world(J, vec3<f32>(cos(tha), 0.0, sin(tha)));
     let e_out = normalize(radial - dir * dot(radial, dir) + vec3<f32>(0.0, 1e-6, 0.0));
     let e_side = cross(dir, e_out);
-    let width = sp.arm_w * radius(J) * P.arms * select(mix(1.0, 0.45, u), mix(1.0, 0.25, u * u), moon);
+    let width = sp.arm_w * radius(J) * P.arms * select(mix(1.0, 0.45, u), mix(1.0, 0.04, pow(u, 1.6)), moon);
     let fold = select(0.25, 0.55, moon);
     // The lips: a slow ruffle and a slower, irregular wave, strongest at the edges.
     let lip = x * x;
-    let ruffle = sin(u * 9.0 + f32(a) * 2.3 + V.time * 0.9) * 0.6 + sin(u * 4.0 - V.time * 0.5 + f32(a)) * 0.4;
-    let wp = at + e_side * x * width + e_out * (abs(x) * fold + lip * ruffle * 0.35) * width;
+    // Each lip its own ruffle, so the two edges of an arm are not mirrors.
+    let sd = select(0.0, 1.7, x > 0.0);
+    let ruffle = sin(u * 9.0 + f32(a) * 2.3 + sd + V.time * 0.9) * 0.6 + sin(u * 4.0 - V.time * 0.5 + f32(a) + sd * 2.0) * 0.4;
+    let wp = at + e_side * x * width + e_out * (abs(x) * fold + lip * ruffle * select(0.35, 0.6, moon)) * width;
     let wn = normalize(cross(dir, e_side + e_out * fold * sign(x)) + vec3<f32>(0.0, 1e-6, 0.0));
     let lit = key_light(wn, normalize(wp - eye));
     v.pos = clip_pos(cam, wp);

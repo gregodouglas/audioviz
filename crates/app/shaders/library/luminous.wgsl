@@ -49,11 +49,31 @@ fn key_light(n: vec3<f32>, view: vec3<f32>) -> vec2<f32> {
 // The glint of the light above on wet skin: a soft highlight where the
 // skin mirrors the light toward the eye, either side of the skin. 0..1.
 fn glint(n: vec3<f32>, view: vec3<f32>) -> f32 {
+    return glint_at(glint_cos(n, view), 28.0);
+}
+
+// How near the skin with normal n mirrors the light above into the eye
+// (either side of the skin), -1..1. It is smooth, so a mesh can work it out
+// at its corners and glint_at sharpen it per pixel: a highlight worked out
+// at the corners would smear across the triangles.
+fn glint_cos(n: vec3<f32>, view: vec3<f32>) -> f32 {
     let l = normalize(vec3<f32>(0.25, 1.0, 0.15));
     let m = n * select(1.0, -1.0, dot(n, view) > 0.0);
-    let r = reflect(view, m);
-    let d = max(dot(r, l), 0.0);
-    return pow(d, 28.0) + 0.15 * pow(d, 5.0);
+    return dot(reflect(view, m), l);
+}
+
+// The glint from glint_cos: a highlight `sharp` tight (28 soft, 150 a wet
+// pinpoint), over a faint wide sheen.
+fn glint_at(d: f32, sharp: f32) -> f32 {
+    let x = max(d, 0.0);
+    return pow(x, sharp) + 0.15 * pow(x, min(sharp * 0.18, 5.0)) * select(1.0, 0.3, sharp > 60.0);
+}
+
+// The glow of the light above seen through a thin body when the eye looks
+// up toward it along `view` (key_light's y, from the view alone).
+fn through_light(view: vec3<f32>) -> f32 {
+    let l = normalize(vec3<f32>(0.25, 1.0, 0.15));
+    return pow(max(dot(view, l), 0.0), 3.0);
 }
 
 // The light above as a jelly's skin shows it, for a pixel facing the eye

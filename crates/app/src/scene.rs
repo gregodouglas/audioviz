@@ -74,6 +74,11 @@ pub trait Scene {
     /// layer's `opacity`, which it applies inside its draws), prepare step,
     /// line points.
     fn space_update(&mut self, _queue: &wgpu::Queue, _encoder: &mut wgpu::CommandEncoder, _ctx: &FrameCtx, _layer: &Layer, _opacity: f32) {}
+    /// Its shader's error, when the code it was given does not build (it
+    /// keeps drawing the last version that did, if any).
+    fn error(&self) -> Option<&str> {
+        None
+    }
     /// Whether it writes light that diffuses through the space (`write_glow`).
     fn space_glows(&self) -> bool {
         false

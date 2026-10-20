@@ -1655,6 +1655,10 @@ impl Scene for ShaderVisual {
         self.joins_space() && self.space.as_ref().and_then(|b| b.space.as_ref()).is_some_and(|s| s.camera.is_some())
     }
 
+    fn error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+
     fn space_glows(&self) -> bool {
         self.joins_space() && self.live.glow
     }

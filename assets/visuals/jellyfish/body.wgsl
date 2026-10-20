@@ -50,7 +50,7 @@ fn strand_length(s: u32) -> f32 {
     // The atolla trails one long tentacle.
     let long = kind() == ATOLLA && s == 0u;
     // Each strand its own length, so the ends are ragged, not a cut edge.
-    let ragged = select(mix(0.55, 1.0, fract(f32(s) * 0.618 + 0.3)), 1.0, kind() == COMB);
+    let ragged = select(mix(select(0.55, 0.35, kind() == MOON), 1.0, fract(f32(s) * 0.618 + 0.3)), 1.0, kind() == COMB);
     return sp.strand_len * select(1.0, 7.0, long) * ragged * params().reach;
 }
 
@@ -91,6 +91,13 @@ fn strand_step(i: u32) -> vec4<f32> {
     let follow = sp.follow * mix(1.0, 0.13, u);
     let h = vec3<f32>(creature_hash(f32(s), 21.0 + f32(j)), creature_hash(f32(s), 22.0 + f32(j)), creature_hash(f32(s), 23.0 + f32(j))) - 0.5;
     rest = normalize(out_dir * follow + rest * (1.0 - 0.4 * follow) + h * select(0.2, 0.45, kd == MOON));
+    if (kd == MOON) {
+        // The fringe curls: each fine tentacle its own wave along it, more
+        // toward the tip, drifting slowly, so the fringe is not a comb.
+        let ph = creature_hash(f32(s), 25.0 + f32(j)) * TAU;
+        let wave = sin(f32(k) * 0.85 + ph + V.time * 0.4) * side + cos(f32(k) * 0.6 + ph * 1.3 - V.time * 0.3) * out_dir;
+        rest = normalize(rest + wave * (2.0 + 4.0 * u));
+    }
     if (J.age < 1.5) {
         return vec4<f32>(anchor + rest * len * f32(k), 0.0);
     }
@@ -182,8 +189,8 @@ fn point(i: u32) -> LinePoint {
             light *= 0.4;
         }
         case 0u: {
-            // A fringe of a hundred and sixty: each one faint.
-            light *= 0.45;
+            // A fringe of a hundred and sixty: each one faint, some fainter.
+            light *= 0.45 * (0.55 + 0.9 * creature_hash(f32(s), 26.0 + f32(j)));
         }
         default: {}
     }

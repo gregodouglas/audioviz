@@ -110,6 +110,11 @@ impl Post {
         Ok(())
     }
 
+    /// The auto exposure state as of the last frame (expo.wgsl).
+    pub fn exposure(&self) -> &wgpu::TextureView {
+        &self.expo[self.expo_cur]
+    }
+
     pub fn render(&mut self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, params: PostParams) {
         queue.write_buffer(&self.params_buf, 0, bytemuck::bytes_of(&params));
         let prev = self.expo_cur;

@@ -27,6 +27,7 @@ shader_table!(
     "layer_blend.wgsl",
     "layer_down.wgsl",
     "layer_meter.wgsl",
+    "layer_seen.wgsl",
     "fold.wgsl",
     "feedback.wgsl",
     "polar.wgsl",

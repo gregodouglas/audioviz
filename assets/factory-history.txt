@@ -94,6 +94,7 @@ visuals/jellyfish/swim.wgsl 4d1c34c4faa03498
 visuals/jellyfish/swim.wgsl 5acfed623db94743
 visuals/jellyfish/swim.wgsl b966ed0e1fde2bec
 visuals/jellyfish/swim.wgsl dafc2147e57a4802
+visuals/jellyfish/tank.wgsl 5ac1745f4ed984da
 visuals/jellyfish/tank.wgsl 92296970a092fb83
 visuals/jellyfish/tank.wgsl ac8fa45963941546
 visuals/jellyfish/tank.wgsl bd7dcdb5ddf7702e
@@ -105,6 +106,7 @@ visuals/jellyfish/visual.json 850a70520b88014f
 visuals/jellyfish/visual.json aed7919e047bb97e
 visuals/jellyfish/visual.json bc9ecd1c17008fdb
 visuals/jellyfish/visual.json c015f5b23cf4d721
+visuals/jellyfish/visual.json cce3f70f06a2a64e
 visuals/jellyfish/visual.json ff539e84884582cc
 visuals/jellyfish/visual.wgsl 2bc6ef9f29298f71
 visuals/jellyfish/visual.wgsl 2c5ccee4c4862f6e

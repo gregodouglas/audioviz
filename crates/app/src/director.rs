@@ -34,16 +34,43 @@ struct LayerParams {
     blend: u32,
 }
 
-/// Per-layer meter state: a 1/8 downsample and a ping-ponged 1x1 gain texture.
+/// Per-layer meter state: a 1/8 downsample and a ping-ponged 1x1 gain
+/// texture, and what the layer's light goes through to the screen
+/// (layer_seen.wgsl), ping-ponged too.
 struct Meter {
     down: wgpu::TextureView,
     state: [wgpu::TextureView; 2],
     cur: usize,
+    seen: [wgpu::TextureView; 2],
+    seen_cur: usize,
 }
 
 impl Meter {
     fn new(device: &wgpu::Device, i: usize, width: u32, height: u32) -> Self {
-        Self { down: hdr_texture(device, &format!("layer {i} down"), width / 8, height / 8), state: [hdr_texture(device, &format!("layer {i} meter a"), 1, 1), hdr_texture(device, &format!("layer {i} meter b"), 1, 1)], cur: 0 }
+        Self {
+            down: hdr_texture(device, &format!("layer {i} down"), width / 8, height / 8),
+            state: [hdr_texture(device, &format!("layer {i} meter a"), 1, 1), hdr_texture(device, &format!("layer {i} meter b"), 1, 1)],
+            cur: 0,
+            seen: [hdr_texture(device, &format!("layer {i} seen a"), 1, 1), hdr_texture(device, &format!("layer {i} seen b"), 1, 1)],
+            seen_cur: 0,
+        }
+    }
+
+    /// Before its visuals draw: work out what their light goes through to
+    /// the screen (the levelling gain as of last frame, by the flags in
+    /// `buf`, and auto exposure) and copy it into each visual that reads it.
+    fn see(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder, pipes: &Pipes, buf: &wgpu::Buffer, exposure: &wgpu::TextureView, visuals: &[&wgpu::TextureView]) {
+        if visuals.is_empty() {
+            return;
+        }
+        let (prev, cur) = (self.seen_cur, 1 - self.seen_cur);
+        let g = scene::tex_group(device, &pipes.blend_layout, &[&self.state[self.cur], exposure, &self.seen[prev]], &pipes.sampler, buf);
+        // Each pass works from the previous state alone, so writing the
+        // state again with every visual gives the same state.
+        for v in visuals {
+            fullscreen_pass2(encoder, "layer seen", &self.seen[cur], v, &pipes.seen, &g);
+        }
+        self.seen_cur = cur;
     }
 }
 
@@ -481,6 +508,8 @@ struct Pipes {
     mix_layout: wgpu::BindGroupLayout,
     mix_pipeline: wgpu::RenderPipeline,
     blend_layout: wgpu::BindGroupLayout,
+    /// What a layer's light goes through to the screen (layer_seen.wgsl), on the blend layout.
+    seen: wgpu::RenderPipeline,
 }
 
 /// Per-frame inputs every layer pass reads.
@@ -496,6 +525,8 @@ struct Frame<'a> {
     dt: f32,
     time: f32,
     auto_gain: f32,
+    /// The Picture's auto exposure state as of last frame (expo.wgsl).
+    exposure: &'a wgpu::TextureView,
     width: u32,
     height: u32,
     /// Levelling on (auto exposure).
@@ -788,6 +819,7 @@ impl Director {
         let mod_layout = scene::tex_layout(device, "mod", 1);
         let mod_pipelines = build_mods(device, shaders, &mod_layout)?;
         let blit = build_blit(device, shaders, &mod_layout)?;
+        let seen = build_seen(device, shaders, &blend_layout)?;
         let glow_blur = build_glow_blur(device, shaders, &mod_layout)?;
         let light = build_light(device, shaders, &mod_layout)?;
         let mirror_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -805,7 +837,7 @@ impl Director {
             slots,
             outgoing: (0..MAX_LAYERS).map(|_| None).collect(),
             last_layers: (0..MAX_LAYERS).map(|i| settings.layer(i)).collect(),
-            pipes: Pipes { mod_layout, mod_pipelines, blit, glow_blur, light, mirror_sampler, sampler, layer_layout, layer_pipelines, mix_layout, mix_pipeline, blend_layout },
+            pipes: Pipes { mod_layout, mod_pipelines, blit, glow_blur, light, mirror_sampler, sampler, layer_layout, layer_pipelines, mix_layout, mix_pipeline, blend_layout, seen },
             one_buf,
             composite: hdr_texture(device, "composite", width, height),
             composite_b: hdr_texture(device, "composite b", width, height),
@@ -995,6 +1027,10 @@ impl Director {
             Ok(p) => self.pipes.mod_pipelines = p,
             Err(e) => errors.push(format!("modifiers: {e}")),
         }
+        match build_seen(device, shaders, &self.pipes.blend_layout) {
+            Ok(p) => self.pipes.seen = p,
+            Err(e) => errors.push(format!("seen: {e}")),
+        }
         match build_blit(device, shaders, &self.pipes.mod_layout) {
             Ok(p) => self.pipes.blit = p,
             Err(e) => errors.push(format!("blit: {e}")),
@@ -1027,12 +1063,12 @@ impl Director {
     /// Render every visible layer (and any visual still fading out) and
     /// composite into `target`.
     #[allow(clippy::too_many_arguments)]
-    pub fn render(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, settings: &Settings, features: &FeatureFrame, points: &[[f32; 2]], sample_rate: u32, tint: [f32; 3], art: Option<[f32; 3]>, art_image: Option<&ArtImage>, art_id: u64, dt: f32, time: f32, auto_gain: f32, target: &wgpu::TextureView, timer: &mut GpuTimer) {
+    pub fn render(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, settings: &Settings, features: &FeatureFrame, points: &[[f32; 2]], sample_rate: u32, tint: [f32; 3], art: Option<[f32; 3]>, art_image: Option<&ArtImage>, art_id: u64, dt: f32, time: f32, auto_gain: f32, target: &wgpu::TextureView, exposure: &wgpu::TextureView, timer: &mut GpuTimer) {
         queue.write_buffer(&self.one_buf, 0, bytemuck::bytes_of(&LayerParams { opacity: 1.0, dt, flags: 0, blend: 0 }));
         // Levelling: with auto exposure on, each layer is brought to its own
         // dark-field mean before mixing, so opacity is the mix ratio and a dim
         // layer is not lost under a bright one.
-        let frame = Frame { features, points, sample_rate, tint, art, art_image, art_id, photos_folder: &settings.photos_folder, dt, time, auto_gain, width: self.width, height: self.height, level: settings.post.auto_exposure, scene_changed: self.pending.is_some() };
+        let frame = Frame { features, points, sample_rate, tint, art, art_image, art_id, photos_folder: &settings.photos_folder, dt, time, auto_gain, exposure, width: self.width, height: self.height, level: settings.post.auto_exposure, scene_changed: self.pending.is_some() };
 
         // Aim every slot's ramp at its target and advance it. A scene switch
         // fades over its own time (staggered for the auto director); a layer
@@ -1155,6 +1191,11 @@ impl Director {
     fn render_space(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, settings: &Settings, fr: &Frame, members: &[(bool, usize, f32)], first: bool, dst_read: &wgpu::TextureView, dst_write: &wgpu::TextureView, timer: &mut GpuTimer) {
         let lead = members.iter().rposition(|&(out, i, _)| self.visual(out, i).leads_space());
         let order: Vec<usize> = lead.into_iter().chain((0..members.len()).filter(|&k| Some(k) != lead)).collect();
+        if let Some(sp) = self.space.as_mut() {
+            let (layers, outgoing) = (&self.layers, &self.outgoing);
+            let seen: Vec<&wgpu::TextureView> = members.iter().filter_map(|&(out, i, _)| if out { outgoing[i].as_ref().expect("outgoing entry").scene.seen() } else { layers[i].seen() }).collect();
+            sp.meter.see(device, encoder, &self.pipes, &sp.buf, fr.exposure, &seen);
+        }
         for k in order {
             let (out, i, level) = members[k];
             timer.mark(encoder, Part::Visual(i as u8));
@@ -1350,6 +1391,9 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
     let si = slot.chain.index as u8;
     let input = layer_input(fr, slot, layer);
     timer.mark(encoder, Part::Visual(si));
+    if let Some(seen) = visual.seen() {
+        slot.meter.see(device, encoder, pipes, &slot.buf, fr.exposure, &[seen]);
+    }
     visual.render(queue, encoder, &input.ctx(fr, slot, layer), layer);
     let feats: &FeatureFrame = input.features.as_ref().unwrap_or(fr.features);
     let (pal_table, pal_shift) = (&slot.palette.table, slot.palette.shift);
@@ -1568,6 +1612,13 @@ fn build_layer(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGr
             down_add: scene::pipeline(device, "layer down added", layout, &d, HDR_FORMAT, Some(scene::ADDITIVE)),
             meter: scene::pipeline(device, "layer meter", layout, &g, HDR_FORMAT, None),
         }
+    })
+}
+
+fn build_seen(device: &wgpu::Device, shaders: &ShaderSet, layout: &wgpu::BindGroupLayout) -> Result<wgpu::RenderPipeline, String> {
+    scene::guarded(device, || {
+        let m = scene::shader(device, shaders, "layer_seen.wgsl");
+        scene::pipeline2(device, "layer seen", layout, &m, HDR_FORMAT)
     })
 }
 

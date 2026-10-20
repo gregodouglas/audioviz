@@ -29,7 +29,7 @@ struct VisualIn {
     palette_shift: f32, // the palette's moving offset, 0..1
     quiet: f32,         // 1 in a quiet passage
     has_art: f32,       // 1 when the playing track has album art (art() is black otherwise)
-    p: array<vec4<f32>, 6>,        // parameters 0..23 (use params())
+    p: array<vec4<f32>, 8>,        // parameters 0..31 (use params())
     bands: array<vec4<f32>, 8>,    // 32 bands, low to high, smoothed (30 ms attack, 200 ms release)
     raw: array<vec4<f32>, 8>,      // the same, unsmoothed
     chroma_v: array<vec4<f32>, 3>, // 12 pitch classes, C first
@@ -66,6 +66,8 @@ struct VisualIn {
 @group(0) @binding(9) var trail_tex: texture_2d<f32>;
 // The shared space's camera (see scene_camera()): (yaw, pitch, dist, focal), (look, 0).
 @group(0) @binding(10) var<storage, read> scene_cam: array<vec4<f32>, 2>;
+// What the layer's light goes through on its way to the screen (see steady()).
+@group(0) @binding(11) var seen_tex: texture_2d<f32>;
 
 const TAU: f32 = 6.2831853;
 
@@ -86,6 +88,16 @@ struct Camera {
 // shown. Always true in the app; the lab shows them alone or together.
 fn layer_on(i: u32) -> bool {
     return ((u32(V.space.z) >> min(i, 15u)) & 1u) == 1u;
+}
+
+// Multiply light that should hold still on screen by it (a backdrop, say,
+// that the bright things' levelling would otherwise pump as they flash): it
+// undoes the swings of the layer's levelling and the Picture's auto
+// exposure over the last ~8 s, leaving their slow drift. 1 when neither
+// applies, and in the first frame.
+fn steady() -> f32 {
+    let s = textureLoad(seen_tex, vec2<i32>(0, 0), 0);
+    return select(1.0, s.r, s.a > 0.5);
 }
 
 // 1 when the layer is in a shared space (with "space": true in visual.json).

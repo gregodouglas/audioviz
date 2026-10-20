@@ -410,7 +410,7 @@ impl Lab {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("lab") });
         self.timer.begin(&self.device);
         let s = &self.settings;
-        self.director.render(&self.device, &self.queue, &mut encoder, s, &self.features, &[], 48000, s.tint, None, None, 0, dt, self.time, 1.0, self.post.input(), &mut self.timer);
+        self.director.render(&self.device, &self.queue, &mut encoder, s, &self.features, &[], 48000, s.tint, None, None, 0, dt, self.time, 1.0, self.post.input(), self.post.exposure(), &mut self.timer);
         let p = s.post;
         self.post.render(&self.queue, &mut encoder, view, PostParams { exposure: p.exposure, bloom: p.bloom, grain: p.grain, time: self.time, dt, flags: p.auto_exposure as u32, flash_rise: 2.0, saturation: p.saturation, look: (p.look == Look::Neon) as u32, ..Default::default() });
         self.timer.finish(&mut encoder);

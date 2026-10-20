@@ -87,6 +87,11 @@ pub trait Scene {
     fn space_camera(&self, _encoder: &mut wgpu::CommandEncoder) {}
     /// Draw into the space's pass.
     fn space_draw(&self, _pass: &mut wgpu::RenderPass<'_>) {}
+    /// Where the director writes what its light goes through on the way
+    /// to the screen this frame (layer_seen.wgsl), if it reads that.
+    fn seen(&self) -> Option<&wgpu::TextureView> {
+        None
+    }
     /// Visual-specific controls in the panel.
     fn ui(&mut self, _ui: &mut egui::Ui, _layer: &mut Layer) {}
 }

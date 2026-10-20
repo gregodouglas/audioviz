@@ -1,5 +1,5 @@
 //! Visuals loaded from a folder: a `visual.json` manifest (names, credit,
-//! up to 24 parameters) and a `visual.wgsl` holding one function,
+//! up to 32 parameters) and a `visual.wgsl` holding one function,
 //! `fn shade(uv: vec2<f32>) -> vec3<f32>`, written against the API in
 //! `shaders/visual_api.wgsl` (time, a music clock, bands, pitch classes,
 //! beats, onsets, the waveform, the layer's palette and tint, the
@@ -33,7 +33,7 @@ use crate::scene::{self, FrameCtx, HDR_FORMAT, Scene, fullscreen_pass, hdr_textu
 use crate::settings::Layer;
 use crate::shaders::ShaderSet;
 
-pub const MAX_PARAMS: usize = 24;
+pub const MAX_PARAMS: usize = 32;
 /// Most design layers a visual may name (bits of a float, exactly).
 pub const MAX_LAYERS_DESIGN: usize = 16;
 
@@ -823,7 +823,7 @@ struct Uniform {
     palette_shift: f32,
     quiet: f32,
     has_art: f32,
-    p: [[f32; 4]; 6],
+    p: [[f32; 4]; 8],
     bands: [[f32; 4]; 8],
     raw: [[f32; 4]; 8],
     chroma: [[f32; 4]; 3],
@@ -943,6 +943,7 @@ fn shared(device: &wgpu::Device) -> Arc<Shared> {
                     entry(8, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
                     entry(9, texture),
                     entry(10, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }),
+                    entry(11, texture),
                 ],
             });
             let out_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1189,6 +1190,9 @@ pub struct ShaderVisual {
     trail: Option<[wgpu::TextureView; 2]>,
     size: (u32, u32),
     black: wgpu::TextureView,
+    /// What its light goes through to the screen (binding 11; the director
+    /// writes it before each frame, see Scene::seen).
+    seen: wgpu::TextureView,
     /// The album art, and the track id it was last filled for.
     art: wgpu::Texture,
     art_view: wgpu::TextureView,
@@ -1445,6 +1449,7 @@ impl ShaderVisual {
             trail: def.trail.then(|| trail_textures(device, &def.id, width, height)),
             size: (width, height),
             black: hdr_texture(device, "loaded visual black", 1, 1),
+            seen: hdr_texture(device, "loaded visual seen", 1, 1),
             groups: Vec::new(),
             layout,
             pipeline: None,
@@ -1512,6 +1517,7 @@ impl ShaderVisual {
                     wgpu::BindGroupEntry { binding: 8, resource: wgpu::BindingResource::Sampler(&self.mirror) },
                     wgpu::BindGroupEntry { binding: 9, resource: wgpu::BindingResource::TextureView(trail) },
                     wgpu::BindGroupEntry { binding: 10, resource: sh.camera.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 11, resource: wgpu::BindingResource::TextureView(&self.seen) },
                 ],
             })
         };
@@ -1703,6 +1709,10 @@ impl Scene for ShaderVisual {
 
     fn output(&self) -> &wgpu::TextureView {
         &self.out[self.cur]
+    }
+
+    fn seen(&self) -> Option<&wgpu::TextureView> {
+        Some(&self.seen)
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
@@ -2127,14 +2137,14 @@ mod tests {
     fn uniform_layout_matches_wgsl() {
         assert_eq!(std::mem::offset_of!(Uniform, onsets), 64);
         assert_eq!(std::mem::offset_of!(Uniform, p), 112);
-        assert_eq!(std::mem::offset_of!(Uniform, bands), 208);
-        assert_eq!(std::mem::offset_of!(Uniform, chroma), 464);
-        assert_eq!(std::mem::offset_of!(Uniform, palette), 512);
-        assert_eq!(std::mem::offset_of!(Uniform, wave_new), 512 + 512);
-        assert_eq!(std::mem::offset_of!(Uniform, hits), 512 + 512 + 48);
-        assert_eq!(std::mem::offset_of!(Uniform, chroma_slow), 512 + 512 + 80);
-        assert_eq!(std::mem::offset_of!(Uniform, space), 512 + 512 + 128);
-        assert_eq!(std::mem::size_of::<Uniform>(), 512 + 512 + 144);
+        assert_eq!(std::mem::offset_of!(Uniform, bands), 240);
+        assert_eq!(std::mem::offset_of!(Uniform, chroma), 496);
+        assert_eq!(std::mem::offset_of!(Uniform, palette), 544);
+        assert_eq!(std::mem::offset_of!(Uniform, wave_new), 544 + 512);
+        assert_eq!(std::mem::offset_of!(Uniform, hits), 544 + 512 + 48);
+        assert_eq!(std::mem::offset_of!(Uniform, chroma_slow), 544 + 512 + 80);
+        assert_eq!(std::mem::offset_of!(Uniform, space), 544 + 512 + 128);
+        assert_eq!(std::mem::size_of::<Uniform>(), 544 + 512 + 144);
     }
 
     #[test]

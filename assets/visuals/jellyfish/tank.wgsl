@@ -1,5 +1,7 @@
 // The tank behind the jellies (shade, per pixel): deep water when asked
-// for, and marine snow, the drifting specks of the deep sea, lit by the
+// for (held steady on screen while the levelling follows the jellies'
+// light, swelling with the music only as much as Moves with music asks),
+// and marine snow, the drifting specks of the deep sea, lit by the
 // jellies' glow (the glow itself is drawn round each jelly as a sprite, in
 // mesh.wgsl). A share of the specks are living plankton that spark
 // blue-green: on the hi-hats, and round a jelly that has just stroked (it
@@ -99,6 +101,9 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
     var c = vec3<f32>(0.0);
     if (P.water > 0.001) {
         let cam = the_camera();
+        // The sustained energy, eased over a second or so: a swell, never a pulse.
+        let swell = 1.0 + 1.2 * item(1u).w * P.water_music * music();
+        let w = P.water * steady() * swell;
         var deep = vec3<f32>(0.0, 0.012, 0.03);
         var near = vec3<f32>(0.0, 0.035, 0.065);
         if (!natural) {
@@ -106,10 +111,10 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
             near = colour(0.55) * 0.045;
         }
         // Kept faint: water filling the frame would be lifted by the levelling.
-        c += mix(deep, near, smoothstep(-1.0, 1.0, p.y)) * P.water * 0.12;
+        c += mix(deep, near, smoothstep(-1.0, 1.0, p.y)) * w * 0.12;
         let sx = p.x + p.y * 0.35 + cam.yaw * 0.8;
         let shafts = pow(noise(vec2<f32>(sx * 2.5, V.time * 0.04)), 5.0) * smoothstep(-0.3, 1.0, p.y);
-        c += near * shafts * 0.3 * P.water;
+        c += near * shafts * 0.3 * w * swell;
     }
     if (P.plankton > 0.001) {
         var s = vec3<f32>(0.0);

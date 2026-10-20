@@ -83,12 +83,16 @@ visuals/jellyfish/lion/looks.wgsl 8d8381f360edfe3e
 visuals/jellyfish/lion/looks.wgsl fb9034acf1659281
 visuals/jellyfish/lion/mane.wgsl 21765b9a868f5d9f
 visuals/jellyfish/lion/mane.wgsl 67a0af2af1a5f0cc
+visuals/jellyfish/lion/mane.wgsl 92a49226783cb49c
+visuals/jellyfish/lion/mass.wgsl 08bbac73516daa7c
 visuals/jellyfish/lion/mass.wgsl 1250cfed96034f97
 visuals/jellyfish/lion/mass.wgsl 189031d788916d0d
 visuals/jellyfish/lion/mass.wgsl 96bcdcab8d7f5ba7
+visuals/jellyfish/lion/plume.wgsl cdb9315299ba0410
 visuals/jellyfish/lion/variant.json 0b76de7a281183a9
 visuals/jellyfish/lion/variant.json 47d29b41f7245d3f
 visuals/jellyfish/lion/variant.json 7d76ec470148ed33
+visuals/jellyfish/lion/variant.json eeff051b3d7e2974
 visuals/jellyfish/looks.wgsl 15da5cb8d2416ecb
 visuals/jellyfish/looks.wgsl 280fc6c321796d71
 visuals/jellyfish/looks.wgsl 34fac7b061503772
@@ -106,6 +110,7 @@ visuals/jellyfish/looks.wgsl fe276820936ba93d
 visuals/jellyfish/mesh.wgsl 56b75b037f67f5b1
 visuals/jellyfish/mesh.wgsl 6c537712c0e03fe5
 visuals/jellyfish/mesh.wgsl 74c2095b40ab00e1
+visuals/jellyfish/mesh.wgsl 7589d8ed6e35062f
 visuals/jellyfish/mesh.wgsl 8a06491a9b9f8fa6
 visuals/jellyfish/mesh.wgsl 91a84eb9987d7988
 visuals/jellyfish/mesh.wgsl 9c3b587eca3dadbf

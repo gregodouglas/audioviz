@@ -9,6 +9,7 @@
 const MASS_AROUND: u32 = 64u;
 const MASS_ALONG: u32 = 22u;        // MASS_AROUND * MASS_ALONG <= ARM_CORNERS / 6
 const MASS_REACH: f32 = 0.45;       // how much of the arms' length it hangs: most of a bell across
+const MASS_CORE: f32 = 0.35;        // the column's share of the mass's width: the billows are the rest
 
 // The middle of the arms at u (0 the mouth, 1 their ends).
 fn mass_spine(j: u32, u: f32) -> vec3<f32> {
@@ -85,7 +86,7 @@ fn mass_point(j: u32, J: Jelly, u: f32, th: f32) -> vec3<f32> {
     let ex = normalize(fx - dir * dot(fx, dir) + vec3<f32>(0.0, 1e-5, 0.0));
     let ez = cross(dir, ex);
     let a = th * TAU;
-    let r = mass_radius(u, th, J.hue * 5.0).x * radius(J) * params().arms;
+    let r = mass_radius(u, th, J.hue * 5.0).x * radius(J) * params().arms * MASS_CORE;
     return at + (ex * cos(a) + ez * sin(a)) * r;
 }
 
@@ -152,7 +153,8 @@ fn mass_look(J: Jelly, u: f32, th: f32, pleat: f32, top: f32, through: f32, face
     // (Light passes through it: in the photos the mass glows cream under the bell.)
     let lit = 0.26 + 0.22 * top + 0.14 * through + 0.1 * fresnel(face, 2.5);
     let inner = tone(ORGANS, hue) * 0.015 * (0.5 + soft(J.glow) * 1.5) * (1.0 - ridge);
-    let c = (col * lit * (0.7 + 0.6 * crinkle) + inner) * (1.0 - 0.4 * u) * P.body;
+    // (The core, deep in the billows: darker.)
+    let c = (col * lit * (0.7 + 0.6 * crinkle) + inner) * (1.0 - 0.4 * u) * P.body * 0.85;
     let cover = 0.85 * (1.0 - 0.5 * smoothstep(0.75, 1.0, u)) * smoothstep(0.0, 0.04, u);
     return vec4<f32>(c, cover);
 }

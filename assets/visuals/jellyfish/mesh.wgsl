@@ -4,7 +4,7 @@
 // water, then whatever more its variant draws (from EXTRA_AT to CORNERS_J).
 // The arms and the rest are the variant's (arms_vertex, extra_vertex: the
 // glass species' V-folded sheets; a lion's mane's mass's core, its mane's
-// sheets and its mass's billows). What paint gets per corner:
+// sheets and its mass's lumps). What paint gets per corner:
 //   bell  colour (distance from the eye, the stroke there, plan x, plan y)
 //         data   (0, 0, 0, id): paint works the skin's light out per pixel
 //                from the profile (skin_frame) and its own ray
@@ -15,12 +15,13 @@
 //   mane  colour (distance from the eye, along 0..1, across its gap 0..1,
 //                how far behind the body it hangs, in radii)
 //         data   (which gap: cluster * 8 + row * 4 + gap, 0, 0, id)
-//   billow colour (distance from the eye, its seed, down the mass 0..1, 0)
-//         data   (x, y from its middle in its sizes, where in its cycle, id)
+//   lump  colour (distance from the eye, light from above, light through
+//                it, crease)
+//         data   (where on it, for its finer relief: 3D; id)
 // The plan position (crown in the middle, margin 1 out) interpolates cleanly
 // where an angle round would kink across a quad's diagonal. The id is
 // j + 0.5, plus 16 for the inner skin, 32 for an arm, 48 for the glow, 64
-// for what the variant draws past it (a lion's mane's mane; 80 its billows).
+// for what the variant draws past it (a lion's mane's mane; 80 its mass's lumps).
 
 const PART_INNER: f32 = 16.0;
 const PART_ARM: f32 = 32.0;

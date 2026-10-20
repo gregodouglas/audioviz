@@ -1,10 +1,10 @@
 // The lion's mane's mane: sheets of hair past its glow in the water, then
-// the billows of its mass (plume.wgsl).
+// the lumps of its mass (plume.wgsl).
 
 const MANE_GAPS: u32 = 4u;          // sheets along a row of a cluster (between its five hairs)
 const MANE_CORNERS: u32 = 5760u;    // 8 clusters * 2 rows * MANE_GAPS * (SEG - 1) * 2 * 3
 const PLUME_AT: u32 = 32838u;       // EXTRA_AT + MANE_CORNERS
-const CORNERS_J: u32 = 35910u;      // PLUME_AT + PLUME_CORNERS
+const CORNERS_J: u32 = 126918u;     // PLUME_AT + PLUME_CORNERS
 
 // A lion's mane's sheet of hair, corner l of the sheets (a quad a link,
 // across the gap between two neighbouring hairs of a cluster's outer or
@@ -39,7 +39,7 @@ fn mane_vertex(j: u32, J: Jelly, cam: Camera, l: u32, da: array<u32, 6>, db: arr
 
 fn extra_vertex(j: u32, J: Jelly, cam: Camera, l: u32, da: array<u32, 6>, db: array<u32, 6>, c6: u32) -> MeshVertex {
     if (l >= PLUME_AT - EXTRA_AT) {
-        return puff_vertex(j, J, cam, l - (PLUME_AT - EXTRA_AT));
+        return lump_vertex(j, J, cam, l - (PLUME_AT - EXTRA_AT), da, db, c6);
     }
     return mane_vertex(j, J, cam, l, da, db, c6);
 }
@@ -47,8 +47,8 @@ fn extra_vertex(j: u32, J: Jelly, cam: Camera, l: u32, da: array<u32, 6>, db: ar
 fn extra_paint(f: MeshFragment) -> vec4<f32> {
     let P = params();
     let id = f.data.w;
-    if (id > PART_PUFF) {
-        return puff_paint(f);
+    if (id > PART_LUMP) {
+        return lump_paint(f);
     }
     let J = jelly_at(u32(id) % 16u);
     let m = mane_look(J, f.colour.y, f.colour.z, f.colour.w, f.data.x, fwidth(f.colour.z));

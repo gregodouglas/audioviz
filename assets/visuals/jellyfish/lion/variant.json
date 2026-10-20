@@ -2,6 +2,6 @@
   "when": ["lion"],
   "parts": ["mass.wgsl", "plume.wgsl", "mane.wgsl", "hair.wgsl", "looks.wgsl"],
   "line": 65536,
-  "triangles": 143640,
+  "triangles": 507672,
   "covers": true
 }

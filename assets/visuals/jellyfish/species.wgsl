@@ -47,10 +47,11 @@ fn bell_of(kind: u32) -> Bell {
         case 3u: { b = Bell(1.55, 1.1, 1.0, 0.7, 1.0, 0.08, 0.24, 0.32, 0.26, 0.015, 20.0, 0.0, 0.0, 0.07, 0.5, 0.62); }
         // An egg, pole to pole (a turn of pi closes it at both), that never pulses.
         case 4u: { b = Bell(3.1416, 1.0, 0.55, 0.0, 0.0, 0.0, 0.0, 1.0, 0.06, 0.04, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5); }
-        // A broad saucer, thick in the middle and thin at the margin, cut by
-        // deep clefts into eight lobes (each scalloped into four lappets,
-        // painted); slow and heavy.
-        case 5u: { b = Bell(1.05, 1.3, 1.0, 0.75, 1.0, 0.18, 0.5, 0.65, 0.26, 0.01, 8.0, 0.07, 0.13, 0.0, 0.0, 0.7); }
+        // A broad, flat-topped disc, thick in the middle, its margin
+        // turning down into a skirt of lobes round the mass (the photos'
+        // side view), cut by deep clefts into eight pairs of lobes (the
+        // notch within each pair painted); slow and heavy.
+        case 5u: { b = Bell(1.35, 1.9, 1.0, 0.65, 0.95, 0.18, 0.5, 0.65, 0.26, 0.01, 8.0, 0.07, 0.13, 0.0, 0.0, 0.7); }
         // The moon jelly: a saucer, thick in the middle, eight lobes with a
         // rhopalium in each notch, a margin that whips and flares.
         default: { b = Bell(1.05, 1.7, 1.0, 1.1, 1.8, 0.12, 0.32, 0.4, 0.22, 0.012, 8.0, 0.035, 0.05, 0.0, 0.0, 0.73); }

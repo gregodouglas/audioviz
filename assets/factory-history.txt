@@ -107,6 +107,7 @@ visuals/jellyfish/mesh.wgsl b20560b3d3aa2332
 visuals/jellyfish/mesh.wgsl c9fa78686a47b4a0
 visuals/jellyfish/mesh.wgsl d96d81f70e5eee56
 visuals/jellyfish/mesh.wgsl f3f54eee7c8beddf
+visuals/jellyfish/species.wgsl 2bae2918f98593fa
 visuals/jellyfish/species.wgsl 2f793cf95b556b82
 visuals/jellyfish/species.wgsl 5757b06ab752d5a0
 visuals/jellyfish/species.wgsl 7dc894337b5a84f8

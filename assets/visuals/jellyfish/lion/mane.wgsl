@@ -64,7 +64,8 @@ fn mane_look(J: Jelly, u: f32, x: f32, behind: f32, gap: f32, fx: f32) -> vec4<f
     let line = pow(0.5 + 0.5 * cos(w * TAU * hairs), 6.0);
     let fine = keep_detail(fx * hairs * 2.0);
     let fibres = mix(0.35, 0.3 + 0.9 * line, fine);
-    let fade = (1.0 - u) * smoothstep(0.0, 0.08, u);
+    // (Thin near the bell, where the mass glows through the hair.)
+    let fade = (1.0 - u) * smoothstep(0.05, 0.35, u);
     let hidden = mix(1.0, 0.3, smoothstep(-0.2, 0.7, behind) * (1.0 - 0.5 * u));
     let light = 0.05 * fibres * fade * hidden * (0.5 + 0.5 * soft(J.glow));
     return vec4<f32>(hair * light, 0.22 * fibres * fade * hidden);

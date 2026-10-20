@@ -1,8 +1,87 @@
-// The glass species' own light, organs and pigment: what the shared bell
-// look asks of a variant. The glass is clear: it covers nothing.
+// The glass species' bells (the luminous model): light from the jelly
+// itself, more where the eye looks through more of it (glass) and where the
+// skin is seen edge on, shaped by the light from above and glowing when the
+// eye looks up through it; the inner skin lights as the swimming muscle
+// squeezes, the light rising from the crown to the margin with the stroke.
+// On top, each species' own organs and light. The glass is clear: it covers
+// nothing.
 
-fn bell_cover(k: u32, L: Look) -> f32 {
-    return 0.0;
+fn bell_shade(J: Jelly, k: u32, L: Look) -> vec4<f32> {
+    return vec4<f32>(bell_look(J, k, L), 0.0);
+}
+
+// How deep the lappets cut into the margin (in s) where they are painted:
+// a bell of sixteen or more, too many for the mesh's sectors to round.
+const LAPPET_DEPTH: f32 = 0.05;
+
+// The painted lappets of species k: how many round the margin, and how deep
+// (0: none).
+fn lappets(k: u32) -> vec2<f32> {
+    let b = bell_of(k);
+    return select(vec2<f32>(0.0), vec2<f32>(b.lobes, LAPPET_DEPTH), b.lobes >= 16.0);
+}
+
+fn bell_look(J: Jelly, k: u32, L: Look) -> vec3<f32> {
+    let P = params();
+    let sp = species_of(k);
+    let b = bell_of(k);
+    let hue = hue_of(J);
+    // A little dimmer through the thick middle, brighter toward the rim.
+    let body = body_colour(k, L, tone(BODY, hue) * mix(0.85, 1.05, smoothstep(0.2, 1.0, L.s)));
+    let lit = 0.55 + 0.45 * L.top;
+    let seed = vec2<f32>(J.hue * 13.0, J.hue * 7.0);
+    // Lappets finer than the mesh can shape are cut here instead: rounded
+    // scallops meeting in notches, the pixels beyond them left out (with
+    // two or three sectors each the mesh drew them as saw teeth).
+    var rim_s = 1.0;
+    var cut = 1.0;
+    let lp = lappets(k);
+    if (lp.y > 0.0) {
+        let x = fract(L.th * lp.x) * 2.0 - 1.0;
+        rim_s = 1.0 - lp.y * (1.0 - sqrt(max(1.0 - x * x, 0.0)));
+        cut = smoothstep(rim_s + L.fs, rim_s - L.fs, L.s);
+    }
+    var c = vec3<f32>(0.0);
+    if (!L.inner) {
+        // The jelly is not quite even: a soft mottling through it, and faint
+        // fibres running out from the crown (noise of the direction out, so
+        // it has no seam).
+        let out = L.plan / max(L.s, 1e-3);
+        let fibres = 0.9 + 0.15 * noise(out * 26.0 + vec2<f32>(L.s * 3.0, J.hue * 11.0)) * keep_detail(L.fp * 26.0 / max(L.s, 0.05));
+        let tissue = (0.75 + 0.5 * fbm(L.plan * 6.0 + seed, 3)) * fibres;
+        let rimzone = select(smoothstep(0.1, 0.7, L.s), 1.0, k == COMB);
+        // The jelly scatters the light through it (more, and whiter, where
+        // the eye looks through more of it); its wet skin, seen edge on,
+        // mirrors the bright water above where the reflection looks up and
+        // stays dark where it looks down.
+        let edge = mix(body, vec3<f32>(1.0), 0.3 * L.sky) * sp.edge * fresnel(L.face, 4.0) * rimzone * (0.35 * lit + 0.9 * L.sky);
+        // Pigment in the jelly: less of its light comes through there.
+        let pigment = bell_pigment(J, k, L, b);
+        c = shown(L_GLASS, body * sp.glass * scatter(L.face, bell_thickness(b, L.s), sp.density) * tissue * lit * pigment) + shown(L_EDGES, edge);
+        // The light above on the wet skin: a glint sliding over the dome as it
+        // turns, and the thin skin glowing when the eye looks up through it.
+        c += shown(L_SHEEN, mix(body, vec3<f32>(1.0), 0.55) * L.sheen * 0.45);
+        if (k != COMB) {
+            // The thin margin glows, brightest on the lobes.
+            let lobe = select(1.0, 0.5 - 0.5 * cos(fract(L.th * b.lobes) * TAU), b.lobes > 0.0);
+            c += shown(L_EDGES, body * thin_line(abs(rim_s - L.s), 0.012, L.fs) * (0.5 + 0.5 * lobe) * 0.9);
+        }
+    } else {
+        c = shown(L_INNER, body * (0.012 + 0.08 * fresnel(L.face, 2.5) + 0.012 * fbm(L.plan * 10.0 + seed, 3)) * lit);
+        c += shown(L_SHEEN, mix(body, vec3<f32>(1.0), 0.4) * L.sheen * 0.06);
+        // The stroke's light: the swimming muscle in the outer bell glows as it squeezes.
+        let zone = smoothstep(0.3, 0.45, L.s) * smoothstep(0.97, 0.88, L.s);
+        let stroke = shown(L_STROKE, tone(LIGHT, hue) * zone * pow(max(L.squeeze, 0.0), 1.5) * sp.stroke_light * 0.22);
+        c += diffuse(stroke, STROKE_DIFFUSES, P.body);
+    }
+    // Each species' own light (own_light). The moon jelly
+    // splits its own over several layers itself; the others' is their organs
+    // inside and their marks outside.
+    var own = vec3<f32>(0.0);
+    if (k == MOON || layer_on(select(L_MARKS, L_ORGANS, L.inner))) {
+        own = own_light(J, k, L);
+    }
+    return (c * P.body + own * P.light) * cut;
 }
 
 fn body_colour(k: u32, L: Look, body: vec3<f32>) -> vec3<f32> {

@@ -1,78 +1,80 @@
-// The lion's mane's bell: its pigment, what it covers, its own light.
+// The lion's mane's bell (ADR-0005; the photos in tmp/ref/lions-mane): solid,
+// pigmented tissue over the middle two thirds, amber deepening to red-brown
+// toward the crown, with a web of polygon canals across it; fading into a
+// broad band of clear, milky, bluish jelly, the lobes: sixteen in eight
+// pairs (the mesh cuts the deep clefts between the pairs, paint the shallow
+// notch between the two of a pair), a rhopalium in each shallow notch. The
+// tissue covers what is behind it; the band is light.
 
-// A lion's mane's pigment: sixteen rounded gastric pouches round the middle,
-// red-brown, their scalloped edge about halfway out (0..1 where they are).
-fn lion_pouches(L: Look) -> f32 {
-    let v = 0.5 + 0.5 * cos(L.th * TAU * 16.0);
-    let edge = 0.42 + 0.14 * sqrt(v);
-    return smoothstep(edge + 0.06 + L.fs, edge - 0.04 - L.fs, L.s);
+// Where the tissue gives way to the clear band, in s (it reaches a little
+// into each lobe).
+const CORE: f32 = 0.56;
+
+// How far out the margin is at th (1 the lobes' tips): each pair of the
+// mesh's eight lobes rounded into two, a shallow notch between them.
+fn lion_margin(th: f32) -> f32 {
+    let x = fract(th * 16.0) * 2.0 - 1.0;
+    return 1.0 - 0.045 * (1.0 - sqrt(max(1.0 - x * x, 0.0)));
 }
 
-fn body_colour(k: u32, L: Look, body: vec3<f32>) -> vec3<f32> {
-    if (params().colours <= 0.5) {
-        return body;
-    }
-    // Red-brown in the pouches, amber on the lobes.
-    return body * mix(vec3<f32>(1.0), vec3<f32>(0.72, 0.36, 0.3), lion_pouches(L));
+// How much tissue there is at (s, th): 1 in the middle, 0 in the clear band.
+fn lion_tissue(L: Look) -> f32 {
+    let edge = CORE + 0.05 * cos(L.th * TAU * 16.0) + 0.03 * (noise(vec2<f32>(L.th * 40.0, 3.0)) - 0.5);
+    return smoothstep(edge + 0.07 + L.fs, edge - 0.05 - L.fs, L.s);
 }
 
-fn bell_pigment(J: Jelly, k: u32, L: Look, b: Bell) -> f32 {
-    return 1.0;
-}
-
-// How much of what is behind its bell it covers. The glass species' cover
-// nothing (their light adds); a lion's mane is thick, coloured jelly, far
-// less see-through, and its inner skin carries the folded tissue.
-fn bell_cover(k: u32, L: Look) -> f32 {
-    let lp = lappets(k);
-    let x = fract(L.th * lp.x) * 2.0 - 1.0;
-    let rim_s = 1.0 - lp.y * (1.0 - sqrt(max(1.0 - x * x, 0.0)));
-    let inside = smoothstep(rim_s + L.fs, rim_s - L.fs, L.s);
-    // Thick in the middle, thinning to the margin.
-    let thick = mix(0.6, 0.35, smoothstep(0.3, 1.0, L.s));
-    return select(thick, 0.3 * (1.0 - 0.6 * smoothstep(0.4, 1.0, L.s)), L.inner) * inside;
-}
-
-fn own_light(J: Jelly, k: u32, L: Look) -> vec3<f32> {
-    return lion_light(J, L);
-}
-
-// Lion's mane. Outer skin: the edge of the sixteen pouches, fine muscle
-// fibres running out over the lobes, the clefts between them, and a
-// rhopalium in each. Inner: the folded tissue of the stomach and gonads in
-// a four-lobed mass in the middle, glowing.
-fn lion_light(J: Jelly, L: Look) -> vec3<f32> {
+fn bell_shade(J: Jelly, k: u32, L: Look) -> vec4<f32> {
+    let P = params();
     let hue = hue_of(J);
     let s = L.s;
     let glow = soft(J.glow);
-    let org = tone(ORGANS, hue);
+    let natural = natural_bodies() > 0.5;
+    let rim = lion_margin(L.th);
+    let cut = smoothstep(rim + L.fs, rim - L.fs, s);
+    let t = lion_tissue(L);
+    let lit = 0.35 + 0.65 * L.top;
+    // The tissue: amber, deepening toward the crown, mottled; the canals a
+    // web of polygons across it, finer toward the middle, darker and redder.
+    let seed = vec2<f32>(J.hue * 13.0, J.hue * 7.0);
+    let amber = tone(BODY, hue);
+    let red = tone(ORGANS, hue);
+    var tissue = mix(amber, red, 0.6 * (1.0 - smoothstep(0.05, CORE, s)));
+    tissue *= 0.8 + 0.4 * fbm(L.plan * 7.0 + seed, 3);
+    // (Cells larger toward the band: the plan shrunk as it goes out.)
+    // (Warped, so they wander as canals do, not ruled like tiles.)
+    let q = L.plan * (7.0 / (0.45 + s)) + seed;
+    let w = cells(q + 0.35 * vec2<f32>(noise(q * 1.7), noise(q * 1.7 + 5.0)), 1.0, 0.0);
+    let web = smoothstep(0.06, 0.0, w.y - w.x) * keep_detail(L.fp * 8.0) * smoothstep(0.06, 0.16, s);
+    tissue = mix(tissue, red * 0.55, web * 0.5);
+    // Lit as a body, not glass: from above, a little light scattered up
+    // through it where it thins toward the band, the wet skin's sheen.
+    // (Light passes through it: the photos show the whole body glowing.)
+    var c = tissue * (0.11 + 0.2 * lit * L.top + 0.14 * smoothstep(0.2, CORE, s) + 0.06 * fresnel(L.face, 2.0));
+    // The middle, thickest, is the deeper and darker (bright, its red would
+    // bleach toward yellow in the tonemap).
+    c *= mix(0.55, 1.0, smoothstep(0.0, CORE, s));
+    c += mix(amber, vec3<f32>(1.0), 0.5) * L.sheen * 0.35;
+    // Its own light, faint, from the pouches inside, swelling with the music.
+    c += diffuse(red * (0.012 + 0.03 * glow) * (1.0 - web), ORGANS_DIFFUSE, P.light);
     if (L.inner) {
-        // The sixteen pouches, red tissue seen through the jelly, and in the
-        // middle the folded mass of stomach and gonads, four-lobed.
-        let ang = L.th * TAU;
-        let reach = 0.3 * (1.0 + 0.35 * cos(ang * 4.0));
-        let mass = smoothstep(reach + 0.08, reach - 0.1, s);
-        let folds = 0.55 + 0.9 * abs(fbm(L.plan * 14.0 + J.hue * 5.0, 3) - 0.5) * 2.0;
-        let pouch = lion_pouches(L) * (0.6 + 0.4 * fbm(L.plan * 7.0 + J.hue * 3.0, 2));
-        return diffuse(org * (mass * folds * 0.4 + pouch * 0.1) * (0.5 + glow * 1.5), ORGANS_DIFFUSE, params().light);
+        // Seen from below, through the mass: darker, the folds of the
+        // stomach and gonads in the middle.
+        c *= 0.55 + 0.3 * fbm(L.plan * 12.0 + seed * 1.7, 3);
     }
-    let body = tone(BODY, hue);
-    // The lobes' own amber, warm through the thin jelly.
-    var c = body * smoothstep(0.35, 0.95, s) * (0.05 + 0.02 * fbm(L.plan * 5.0 + J.hue * 3.0, 2));
-    // The pouches' scalloped edge, a faint darker line.
-    let v = 0.5 + 0.5 * cos(L.th * TAU * 16.0);
-    let edge = 0.42 + 0.14 * sqrt(v);
-    c += org * thin_line(abs(s - edge), 0.006, L.fs) * 0.05;
-    // Fibres over the lobes: many, fine, uneven, fading out as they get too
-    // fine to draw.
-    let fib = pow(0.5 + 0.5 * cos(L.th * TAU * 96.0 + 0.6 * noise(vec2<f32>(L.th * 40.0, s * 4.0))), 6.0);
-    let fine = keep_detail(L.fp * 96.0 / max(s, 0.1));
-    c += body * fib * fine * smoothstep(0.45, 0.75, s) * 0.035;
-    // The clefts between the lobes, and a rhopalium at the head of each.
-    let x = fract(L.th * 8.0);
-    let d = min(x, 1.0 - x) * TAU / 8.0 * s;
-    c += org * thin_line(d, 0.004, L.fp) * smoothstep(0.7, 0.95, s) * 0.12;
-    let rh = vec2<f32>(d, s - 0.9);
-    c += diffuse(tone(LIGHT, hue) * exp(-dot(rh, rh) / (0.012 * 0.012)) * (0.2 + 0.8 * glow), POINTS_DIFFUSE, params().light);
-    return diffuse(c * (0.6 + glow), PATTERN_DIFFUSES, params().light);
+    // The clear band: milky, faintly blue, its light where the eye looks
+    // through more of it and at its edges, lit by the sheen; a thin bright rim.
+    // Cream-white next to the tissue, bluish toward the edge.
+    let edge_blue = smoothstep(CORE + 0.05, 1.0, s);
+    let milky = select(mix(amber, vec3<f32>(1.0), 0.6), mix(vec3<f32>(1.0, 0.92, 0.8), vec3<f32>(0.7, 0.83, 1.0), edge_blue), natural);
+    var g = milky * (0.05 + 0.08 * (1.0 - edge_blue) + 0.1 * fresnel(L.face, 3.0) * (0.4 + 0.6 * L.sky)) * lit;
+    g += milky * L.sheen * 0.3;
+    g += milky * thin_line(abs(rim - s), 0.01, L.fs) * 0.25;
+    // A rhopalium in each shallow notch, a small warm bead.
+    let x = fract(L.th * 8.0 + 0.5) - 0.5;
+    let d = vec2<f32>(x / 8.0 * TAU * s, s - rim + 0.035);
+    g += diffuse(tone(LIGHT, hue) * exp(-dot(d, d) / (0.01 * 0.01)) * (0.15 + 0.6 * glow), POINTS_DIFFUSE, P.light);
+    // (The band at the inner skin is fainter: the outer one has its light.)
+    g *= select(1.0, 0.4, L.inner);
+    let rgb = mix(shown(L_EDGES, g), shown(L_GLASS, c), t);
+    return vec4<f32>(rgb * P.body * cut, t * cut);
 }

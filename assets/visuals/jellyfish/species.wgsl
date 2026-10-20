@@ -93,9 +93,10 @@ fn tone(part: u32, hue: f32) -> vec3<f32> {
         case 2u: { c = array<vec3<f32>, 5>(vec3<f32>(0.7, 0.85, 1.0), vec3<f32>(0.8, 0.9, 1.0), vec3<f32>(0.75, 0.9, 1.0), vec3<f32>(0.6, 1.0, 0.7), vec3<f32>(0.2, 1.0, 0.4)); }
         case 3u: { c = array<vec3<f32>, 5>(vec3<f32>(0.75, 0.03, 0.06), vec3<f32>(0.9, 0.08, 0.12), vec3<f32>(0.8, 0.1, 0.12), vec3<f32>(0.8, 0.1, 0.1), vec3<f32>(0.15, 0.45, 1.0)); }
         case 4u: { c = array<vec3<f32>, 5>(vec3<f32>(0.6, 0.75, 1.0), vec3<f32>(0.9, 0.9, 1.0), vec3<f32>(0.85, 0.85, 1.0), vec3<f32>(1.0, 1.0, 1.0), vec3<f32>(0.8, 0.9, 1.0)); }
-        // Amber lobes round a red-brown middle; deep red organs; hair from
-        // orange to pale (looks.wgsl and body.wgsl vary them).
-        case 5u: { c = array<vec3<f32>, 5>(vec3<f32>(1.0, 0.56, 0.2), vec3<f32>(0.95, 0.22, 0.08), vec3<f32>(1.0, 0.42, 0.14), vec3<f32>(1.0, 0.4, 0.2), vec3<f32>(1.0, 0.7, 0.3)); }
+        // An amber bell round a red-orange middle; deep red organs; pale
+        // hair; a cream mass. (Redder than they look: the water between
+        // takes red first, and amber arrived as mustard.)
+        case 5u: { c = array<vec3<f32>, 5>(vec3<f32>(1.0, 0.42, 0.12), vec3<f32>(0.9, 0.14, 0.05), vec3<f32>(1.0, 0.86, 0.72), vec3<f32>(1.0, 0.68, 0.36), vec3<f32>(1.0, 0.7, 0.3)); }
         default: {}
     }
     return c[part];

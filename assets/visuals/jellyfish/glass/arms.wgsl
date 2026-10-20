@@ -96,7 +96,7 @@ fn extra_paint(f: MeshFragment) -> vec4<f32> {
 }
 
 // An arm's light; clear jelly covers nothing.
-fn arm_paint(J: Jelly, k: u32, f: MeshFragment, fp: f32) -> vec4<f32> {
+fn arm_paint(J: Jelly, k: u32, f: MeshFragment, fp: f32, fy: f32) -> vec4<f32> {
     return vec4<f32>(arm_look(J, k, f.colour.y, f.colour.z, f.data.z, f.data.x, fp), 0.0);
 }
 

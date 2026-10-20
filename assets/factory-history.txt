@@ -63,6 +63,7 @@ visuals/harmonograph/visual.wgsl 3ea8bf81525e9a66
 visuals/harmonograph/visual.wgsl cdfe8fe68fcd9536
 visuals/jellyfish/body.wgsl 42e352a93fd1b6ed
 visuals/jellyfish/body.wgsl 5493443cc8cc6a6c
+visuals/jellyfish/body.wgsl 5b4ade7db98c8380
 visuals/jellyfish/body.wgsl 6be0c6dacde68e15
 visuals/jellyfish/body.wgsl 6e891ea366dd8f69
 visuals/jellyfish/body.wgsl 7ce437eddad4fc36
@@ -70,11 +71,16 @@ visuals/jellyfish/body.wgsl a2299f4e99e5eaf2
 visuals/jellyfish/body.wgsl ce4e0f0d83c1d58a
 visuals/jellyfish/body.wgsl cf779a5ebc77c16f
 visuals/jellyfish/glass/arms.wgsl 8940031a16c7ceea
+visuals/jellyfish/glass/arms.wgsl 8ae77a971077a74e
+visuals/jellyfish/glass/lights.wgsl cbafb42a371b8eff
 visuals/jellyfish/glass/lights.wgsl e44ee33bde44cd78
 visuals/jellyfish/glass/variant.json 1f0b1abe244417d4
 visuals/jellyfish/lion/looks.wgsl 7fe332d5d48d4f26
+visuals/jellyfish/lion/looks.wgsl 8d8381f360edfe3e
+visuals/jellyfish/lion/mane.wgsl 21765b9a868f5d9f
 visuals/jellyfish/lion/mane.wgsl 67a0af2af1a5f0cc
 visuals/jellyfish/lion/mass.wgsl 1250cfed96034f97
+visuals/jellyfish/lion/mass.wgsl 96bcdcab8d7f5ba7
 visuals/jellyfish/lion/variant.json 47d29b41f7245d3f
 visuals/jellyfish/lion/variant.json 7d76ec470148ed33
 visuals/jellyfish/looks.wgsl 15da5cb8d2416ecb
@@ -88,6 +94,7 @@ visuals/jellyfish/looks.wgsl 70788d5c56314c11
 visuals/jellyfish/looks.wgsl a4507a3661fe2695
 visuals/jellyfish/looks.wgsl b434f8fb2610b62e
 visuals/jellyfish/looks.wgsl c490541b7c47f1ed
+visuals/jellyfish/looks.wgsl d208c8e839e6d8fb
 visuals/jellyfish/looks.wgsl e3c471ff6937556e
 visuals/jellyfish/looks.wgsl fe276820936ba93d
 visuals/jellyfish/mesh.wgsl 56b75b037f67f5b1
@@ -103,6 +110,7 @@ visuals/jellyfish/mesh.wgsl f3f54eee7c8beddf
 visuals/jellyfish/species.wgsl 2f793cf95b556b82
 visuals/jellyfish/species.wgsl 5757b06ab752d5a0
 visuals/jellyfish/species.wgsl 7dc894337b5a84f8
+visuals/jellyfish/species.wgsl 89b4175cf03ec1ef
 visuals/jellyfish/species.wgsl 91de6075d05d8e04
 visuals/jellyfish/species.wgsl 971b37f49a88455a
 visuals/jellyfish/species.wgsl ae379328cb6a31b5

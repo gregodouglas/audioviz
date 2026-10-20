@@ -229,6 +229,8 @@ fn point(i: u32) -> LinePoint {
             // how far behind it hangs, less so toward the tips, below the mass.
             let behind = (to_camera(cam, p3).z - to_camera(cam, J.pos).z) / radius(J);
             light *= mix(1.0, 0.3, smoothstep(-0.2, 0.7, behind) * (1.0 - 0.5 * u));
+            // A fine veil near the bell, where the mass glows through it.
+            light *= mix(0.45, 1.0, smoothstep(0.08, 0.35, u));
         }
         case 3u: {
             light *= select(0.7, 1.0, s == 0u);

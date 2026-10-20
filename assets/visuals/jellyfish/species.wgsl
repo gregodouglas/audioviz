@@ -63,6 +63,18 @@ const STRANDS_C: u32 = 2u; // tentacles and hair
 const ARMS_C: u32 = 3u;    // oral arms
 const LIGHT: u32 = 4u;     // its own light: the stroke, photophores, its glow
 
+// A palette's colour lifted to be seen: most palettes start near black,
+// and a jelly whose place on it is there would vanish. Below a floor of
+// brightness it is brightened keeping its hue, and black becomes a grey.
+fn lifted(c: vec3<f32>) -> vec3<f32> {
+    let floor_ = 0.3;
+    let l = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    if (l >= floor_) {
+        return c;
+    }
+    return mix(vec3<f32>(floor_), min(c * floor_ / max(l, 1e-3), vec3<f32>(1.0)), smoothstep(0.0, 0.04, l));
+}
+
 // The colour of a part. Natural: the species' own. Palette: the layer's
 // palette, each part a step along it from the jelly's hue (drifting with
 // the music). Palette light: natural bodies, glowing in the palette's
@@ -71,7 +83,7 @@ fn tone(part: u32, hue: f32) -> vec3<f32> {
     let m = params().colours;
     let lit = part == ORGANS || part == LIGHT;
     if (m < 0.5 || (m > 1.5 && lit)) {
-        return colour(hue + f32(part) * 0.17);
+        return lifted(colour(hue + f32(part) * 0.17));
     }
     var c = array<vec3<f32>, 5>(vec3<f32>(0.5, 0.7, 1.0), vec3<f32>(0.95, 0.42, 1.0), vec3<f32>(0.62, 0.8, 1.0), vec3<f32>(0.68, 0.78, 1.0), vec3<f32>(0.55, 0.85, 1.0));
     switch (kind()) {

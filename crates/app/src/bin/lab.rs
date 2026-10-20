@@ -2,7 +2,8 @@
 //! the engine, in a window to turn it round or off-screen into PNGs and a
 //! contact sheet, for design work. It reads the visuals and engine shaders
 //! from this checkout, so a shader edit needs no rebuild (the window reloads
-//! on save); time is its own and the music is silence, so the same arguments
+//! on save); time is its own and the music is silence (or a made-up groove,
+//! --groove), so the same arguments
 //! give the same pixels.
 
 use std::path::PathBuf;
@@ -34,6 +35,19 @@ usage: audioviz-lab <visual> [options]
                       showing <visual>)
   --set id=value      a param of the visual (repeatable; e.g. count=1)
   --at <seconds>      run this long from the start, then hold (default 4)
+  --run <seconds>     after --at, keep time running this long at 60 Hz in
+                      the first shot and set, and measure how much each
+                      frame changes from the last: prints the median and
+                      the worst steps (a snap or a strobe is a spike) and
+                      how far the light swings, and
+                      writes <name>_run.csv and a strip of eight frames,
+                      <name>_run.png
+  --palette <name>    the layer's palette: a preset (phosphor, techno, neon,
+                      rave, 80s pop, galaxy, fire, ice, sunset, mono) or none
+  --groove <bpm>      play a made-up groove instead of silence: a kick on
+                      every beat, a snare on two and four, hi-hats on the
+                      eighths, the mids swelling over four bars, a drop
+                      every sixteen bars (the same every run)
   --shots a,b,...     views: front side back above below close, or
                       yaw:pitch:zoom (degrees, degrees, distance factor);
                       default front,side,below
@@ -82,6 +96,9 @@ struct Args {
     seed: u64,
     exposure: Option<f32>,
     bloom: f32,
+    groove: Option<f32>,
+    run: f32,
+    palette: Option<String>,
 }
 
 fn shot(name: &str) -> anyhow::Result<[f32; 3]> {
@@ -122,7 +139,7 @@ fn pass_name(p: SpacePass) -> &'static str {
 
 fn parse_args() -> anyhow::Result<Option<Args>> {
     let mut args = std::env::args().skip(1);
-    let mut a = Args { visual: String::new(), window: false, scene: None, layer: None, sets: Vec::new(), at: 4.0, shots: Vec::new(), pan: [0.0, 0.0], passes: vec![SpacePass::All], layers: vec!["all".into()], size: (1600, 1000), out: PathBuf::from("tmp/lab"), name: None, dx12: false, seed: 1, exposure: Some(1.0), bloom: 0.0 };
+    let mut a = Args { visual: String::new(), window: false, scene: None, layer: None, sets: Vec::new(), at: 4.0, shots: Vec::new(), pan: [0.0, 0.0], passes: vec![SpacePass::All], layers: vec!["all".into()], size: (1600, 1000), out: PathBuf::from("tmp/lab"), name: None, dx12: false, seed: 1, exposure: Some(1.0), bloom: 0.0, groove: None, run: 0.0, palette: None };
     let mut shots = "front,side,below".to_string();
     while let Some(arg) = args.next() {
         let mut value = |what: &str| args.next().with_context(|| format!("{arg} needs {what}"));
@@ -162,6 +179,9 @@ fn parse_args() -> anyhow::Result<Option<Args>> {
                 a.exposure = if v == "auto" { None } else { Some(v.parse()?) };
             }
             "--bloom" => a.bloom = value("a number")?.parse()?,
+            "--groove" => a.groove = Some(value("beats a minute")?.parse()?),
+            "--run" => a.run = value("seconds")?.parse()?,
+            "--palette" => a.palette = Some(value("a palette's name")?),
             other if !other.starts_with('-') && a.visual.is_empty() => a.visual = other.to_string(),
             other => bail!("unknown option {other} (see --help)"),
         }
@@ -172,6 +192,58 @@ fn parse_args() -> anyhow::Result<Option<Args>> {
     }
     a.shots = shots.split(',').map(|s| shot(s).map(|v| (s.replace(':', "_"), v))).collect::<anyhow::Result<_>>()?;
     Ok(Some(a))
+}
+
+/// A made-up groove at `bpm`, `t` seconds in (`dt` since the last frame,
+/// so each hit lands on one frame): a kick on every beat, a snare on two
+/// and four, hi-hats on the eighths, the mids swelling over four bars, and
+/// every sixteen bars a drop (a harder kick on a building swell). Shaped
+/// like the analysis's output: levels about 1 at average, onsets as
+/// strength, hit and decaying pulse, a sure beat clock.
+fn groove(bpm: f32, t: f32, dt: f32) -> FeatureFrame {
+    let beats = t * bpm / 60.0;
+    let before = (t - dt).max(0.0) * bpm / 60.0;
+    let phase = beats.fract();
+    let count = beats.floor() as u32;
+    let on_beat = beats.floor() > before.floor();
+    let on_eighth = (beats * 2.0).floor() > (before * 2.0).floor();
+    let drop_beat = count % 64 == 0 && count > 0;
+    let kick = (-phase * 7.0).exp() * if drop_beat { 1.0 } else { 0.8 };
+    let snare = if count % 2 == 1 { (-phase * 9.0).exp() } else { 0.0 };
+    let hat = (-(beats * 2.0).fract() * 12.0).exp() * 0.8;
+    let swell = 0.5 - 0.5 * (beats / 16.0 * std::f32::consts::TAU).cos();
+    let mut f = FeatureFrame::default();
+    f.time_s = t as f64;
+    f.rms = 0.15 + 0.1 * kick;
+    f.rms_slow = 0.18;
+    f.peak = 0.6;
+    f.lufs_m = -14.0;
+    f.lufs_s = -14.0;
+    f.bass = 0.8 + kick * if drop_beat { 1.2 } else { 0.6 };
+    f.bass_att = 0.85 + kick * if drop_beat { 0.9 } else { 0.35 };
+    f.mid = 0.8 + 0.4 * swell + 0.5 * snare;
+    f.mid_att = 0.8 + 0.4 * swell + 0.25 * snare;
+    f.treb = 0.85 + 0.6 * hat;
+    f.treb_att = 0.85 + 0.35 * hat;
+    f.bands = (0..32).map(|i| {
+        let x = i as f32 / 31.0;
+        (0.35 + 0.5 * kick * (1.0 - x).powi(3) + 0.3 * swell * (1.0 - (x - 0.45).abs() * 2.0).max(0.0) + 0.4 * hat * x * x).min(1.0)
+    }).collect();
+    f.centroid_hz = 1200.0 + 2500.0 * hat;
+    f.stereo_width = 0.4;
+    f.onset_strength = [kick, snare, hat, kick.max(snare).max(hat)];
+    f.onset_hit = [on_beat, on_beat && count % 2 == 1, on_eighth, on_beat || on_eighth];
+    f.onset_pulse = [kick, snare, hat, kick.max(snare).max(hat)];
+    f.bpm = bpm;
+    f.beat_confidence = 0.9;
+    f.beat_phase = phase;
+    f.beat_count = count;
+    f.beat_pulse = (-phase * 7.0).exp();
+    f.chroma[((count / 8) * 7 % 12) as usize] = 1.0;
+    f.chroma_slow = f.chroma;
+    f.key_class = ((count / 8) * 7 % 12) as u8;
+    f.energy_trend = swell * 2.0 - 1.0;
+    f
 }
 
 /// The checkout this lab was built from (the visuals and shaders it reads).
@@ -199,6 +271,12 @@ fn settings(a: &Args) -> anyhow::Result<Settings> {
         layer.opacity = 1.0;
         s.post = scene.post;
         s.tint = scene.tint;
+    }
+    if let Some(name) = &a.palette {
+        if name != "none" && audioviz::color::preset(name).is_none() {
+            bail!("no palette {name} (see --help)");
+        }
+        layer.palette.name = name.to_lowercase();
     }
     let params = layer.params.entry(a.visual.clone()).or_insert_with(|| serde_json::Value::Object(Default::default()));
     if let Some(obj) = params.as_object_mut() {
@@ -283,6 +361,7 @@ struct Lab {
     settings: Settings,
     features: FeatureFrame,
     time: f32,
+    groove: Option<f32>,
 }
 
 impl Lab {
@@ -291,7 +370,7 @@ impl Lab {
         let director = Director::new(&device, &shaders, size.0, size.1, &settings).map_err(|e| anyhow::anyhow!("director: {e}"))?;
         let post = Post::new(&device, format, size.0, size.1, &shaders).map_err(|e| anyhow::anyhow!("post: {e}"))?;
         let timer = GpuTimer::new(&device, &queue);
-        Ok(Self { device, queue, shaders, director, post, timer, settings, features: FeatureFrame::default(), time: 0.0 })
+        Ok(Self { device, queue, shaders, director, post, timer, settings, features: FeatureFrame::default(), time: 0.0, groove: None })
     }
 
     /// Wait for the visual's build (on the engine's worker); how long it took.
@@ -325,6 +404,9 @@ impl Lab {
     /// after it (a read back) to the same submission.
     fn frame(&mut self, view: &wgpu::TextureView, dt: f32, then: Option<&dyn Fn(&mut wgpu::CommandEncoder)>) {
         self.time += dt;
+        if let Some(bpm) = self.groove {
+            self.features = groove(bpm, self.time, dt);
+        }
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("lab") });
         self.timer.begin(&self.device);
         let s = &self.settings;
@@ -430,12 +512,16 @@ fn shots(a: &Args, settings: Settings) -> anyhow::Result<()> {
     });
     let view = target.create_view(&Default::default());
     let mut lab = Lab::new(device, queue, settings, a.size, FORMAT)?;
+    lab.groove = a.groove;
     let built = lab.built(&a.visual)?;
     lab.settle(&view, a.at);
     std::fs::create_dir_all(&a.out)?;
     let name = a.name.clone().unwrap_or_else(|| a.visual.clone());
     let names = layer_names(&a.visual);
     let sets: Vec<(String, u32)> = a.layers.iter().map(|set| layer_mask(&names, set).map(|m| (set.clone(), m))).collect::<anyhow::Result<_>>()?;
+    if a.run > 0.0 {
+        return run(a, &mut lab, &view, &target, &name, sets[0].1);
+    }
     let mut tiles = Vec::new();
     let mut gpu = Vec::new();
     for (set, mask) in &sets {
@@ -463,6 +549,53 @@ fn shots(a: &Args, settings: Settings) -> anyhow::Result<()> {
     gpu.sort_by(f32::total_cmp);
     println!("{}: built in {:.1} s, held at {:.2} s, {} shots, frame {:.2} ms on the GPU, {:.1} s in all", a.visual, built.as_secs_f32(), lab.time, tiles.len(), gpu.get(gpu.len() / 2).copied().unwrap_or(0.0), started.elapsed().as_secs_f32());
     println!("{}", sheet.display());
+    Ok(())
+}
+
+/// The lab running (--run): time goes on from `at` at 60 Hz in the first
+/// shot, and each frame is compared with the one before it (the mean
+/// absolute change of its pixels, 0..255). Motion that eases changes the
+/// picture a little every frame; a snap, a strobe or a jump in phase is a
+/// spike well above the median.
+fn run(a: &Args, lab: &mut Lab, view: &wgpu::TextureView, target: &wgpu::Texture, name: &str, mask: u32) -> anyhow::Result<()> {
+    audioviz::shader_visual::show_layers(mask);
+    let (sname, [yaw, pitch, zoom]) = &a.shots[0];
+    lab.director.camera_nudge = [*yaw, *pitch, *zoom, a.pan[0], a.pan[1]];
+    lab.director.pass = a.passes[0];
+    // A few frames, so whatever reads last frame's camera has it.
+    for _ in 0..3 {
+        lab.frame(view, 0.0, None);
+    }
+    let frames = (a.run * 60.0).round().max(2.0) as usize;
+    let mut last = read_back(lab, view, target, 1.0 / 60.0)?;
+    let mut changes = Vec::with_capacity(frames);
+    let mut light = Vec::with_capacity(frames);
+    let mut strip = Vec::new();
+    for f in 1..=frames {
+        let img = read_back(lab, view, target, 1.0 / 60.0)?;
+        let sum: u64 = img.as_raw().chunks_exact(4).zip(last.as_raw().chunks_exact(4)).map(|(p, q)| (0..3).map(|c| (p[c] as i32 - q[c] as i32).unsigned_abs() as u64).sum::<u64>()).sum();
+        changes.push((lab.time, sum as f32 / (img.width() * img.height() * 3) as f32));
+        light.push(img.as_raw().chunks_exact(4).map(|p| p[0] as u64 + p[1] as u64 + p[2] as u64).sum::<u64>() as f32 / (img.width() * img.height() * 3) as f32);
+        if (f - 1) % (frames / 8).max(1) == 0 && strip.len() < 8 {
+            strip.push((format!("{:.2} s", lab.time), img.clone()));
+        }
+        last = img;
+    }
+    let csv: String = changes.iter().zip(&light).map(|((t, c), l)| format!("{t:.4},{c:.4},{l:.4}\n")).collect();
+    std::fs::write(a.out.join(format!("{name}_run.csv")), format!("time,change,light\n{csv}"))?;
+    let png = a.out.join(format!("{name}_run.png"));
+    contact_sheet(&strip, 4).save(&png)?;
+    let mut sorted: Vec<f32> = changes.iter().map(|c| c.1).collect();
+    sorted.sort_by(f32::total_cmp);
+    let median = sorted[sorted.len() / 2].max(1e-4);
+    let mut worst = changes.clone();
+    worst.sort_by(|x, y| y.1.total_cmp(&x.1));
+    let spikes = changes.iter().filter(|c| c.1 > median * 4.0).count();
+    println!("{}: ran {:.2} s in {sname} from {:.2} s: change per frame median {:.3}, p95 {:.3}, max {:.3} ({:.1}x the median); {} frames over 4x the median", a.visual, a.run, a.at, median, sorted[sorted.len() * 95 / 100], sorted[sorted.len() - 1], sorted[sorted.len() - 1] / median, spikes);
+    let (lo, hi) = light.iter().fold((f32::MAX, 0.0f32), |(lo, hi), &l| (lo.min(l), hi.max(l)));
+    println!("light (mean of the frame, 0..255): {:.2} to {:.2}, swinging {:.0}%", lo, hi, (hi - lo) / lo.max(1e-3) * 100.0);
+    println!("worst: {}", worst.iter().take(5).map(|(t, c)| format!("{t:.2} s {c:.3}")).collect::<Vec<_>>().join(", "));
+    println!("{}", png.display());
     Ok(())
 }
 
@@ -515,6 +648,7 @@ impl View {
         }
         surface.configure(&device, &config);
         let mut lab = Lab::new(device, queue, settings, (w, h), format)?;
+        lab.groove = a.groove;
         let built = lab.built(&a.visual)?;
         // Settle off-screen, then show it held.
         let scratch = lab.device.create_texture(&wgpu::TextureDescriptor {

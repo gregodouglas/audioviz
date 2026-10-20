@@ -268,7 +268,7 @@ fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
     let ang = L.th * TAU;
     // Luminescence swells and ebbs: loud music brightens it less and less.
     let glow = soft(J.glow);
-    let flash = soft(J.flash);
+    let flash = soft(flash_of(J));
     if (!L.inner) {
         // The warts (clusters of stinging cells): tiny, uneven in size and
         // light, few near the crown and thicker toward the margin.
@@ -283,7 +283,9 @@ fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
         // Each rhopalium's pigment spot (warm, small) and the hood of jelly
         // over its notch, a faint arc just inside it.
         let spot = exp(-dot(d - vec2<f32>(0.0, 0.006), d - vec2<f32>(0.0, 0.006)) / (0.004 * 0.004));
-        c += shown(L_MARKS, vec3<f32>(1.0, 0.55, 0.25) * spot * 0.25 * (1.0 + glow));
+        // (Its own warm pigment on a natural body; the palette's light otherwise.)
+        let pigment = select(tone(LIGHT, hue), vec3<f32>(1.0, 0.55, 0.25), natural_bodies() > 0.5);
+        c += shown(L_MARKS, pigment * spot * 0.25 * (1.0 + glow));
         c += shown(L_MARKS, body * thin_line(abs(length(d) - 0.03), 0.003, L.fp) * smoothstep(0.0, 0.01, d.y + 0.01) * 0.12);
         c += diffuse(shown(L_MARKS, mix(tone(LIGHT, hue), vec3<f32>(1.0), 0.5) * rh * (1.0 + 1.2 * glow + 2.5 * flash)), POINTS_DIFFUSE, params().light);
         return c;
@@ -398,7 +400,7 @@ fn nettle_light(J: Jelly, L: Look) -> vec3<f32> {
     let hue = hue_of(J);
     let s = L.s;
     if (!L.inner) {
-        var c = diffuse(tone(ORGANS, hue) * nettle_stripes(J, L) * (0.06 + 0.9 * J.glow + 1.2 * J.flash), PATTERN_DIFFUSES, params().light);
+        var c = diffuse(tone(ORGANS, hue) * nettle_stripes(J, L) * (0.06 + 0.9 * J.glow + 1.2 * flash_of(J)), PATTERN_DIFFUSES, params().light);
         c += diffuse(tone(LIGHT, hue) * photophores(L.plan, 70.0, 0.3, V.time, L.fp) * 0.3 * (0.5 + J.glow), POINTS_DIFFUSE, params().light);
         return c;
     }
@@ -436,8 +438,9 @@ fn crystal_light(J: Jelly, L: Look) -> vec3<f32> {
     let d = vec2<f32>(along, 1.0 - s - 0.025);
     let dots = exp(-dot(d, d) / (0.008 * 0.008));
     let ring = smoothstep(0.9, 0.97, s) * smoothstep(1.0, 0.98, s) * 0.06;
-    let run = exp(-fract(L.th - J.pa) * 6.0) * J.flash;
-    return diffuse(tone(LIGHT, hue) * (dots + ring) * (1.2 + 2.0 * J.glow + 8.0 * J.flash + 6.0 * run), POINTS_DIFFUSE, params().light);
+    let flash = flash_of(J);
+    let run = exp(-fract(L.th - J.pa) * 6.0) * flash;
+    return diffuse(tone(LIGHT, hue) * (dots + ring) * (1.2 + 2.0 * J.glow + 5.0 * flash + 4.0 * run), POINTS_DIFFUSE, params().light);
 }
 
 // Atolla's jelly below the coronal groove: a ring of thick pedalia, one
@@ -466,7 +469,7 @@ fn atolla_light(J: Jelly, L: Look) -> vec3<f32> {
     let rim = smoothstep(0.88, 0.99, s);
     // Its lights are dark until it is stirred: a faint glimmer at rest.
     let dots = pow(0.5 + 0.5 * cos(L.th * TAU * 20.0), 8.0) * rim * 0.5 * (0.15 + 0.85 * J.glow);
-    let wheel = exp(-fract(L.th - J.pa) * 8.0) * rim * J.flash * 8.0;
+    let wheel = exp(-fract(L.th - J.pa) * 8.0) * rim * flash_of(J) * 8.0;
     return tone(BODY, hue) * groove + diffuse(tone(LIGHT, hue) * (dots + wheel), POINTS_DIFFUSE, params().light);
 }
 
@@ -493,7 +496,7 @@ fn comb_light(J: Jelly, L: Look) -> vec3<f32> {
     let wave = pow(0.5 + 0.5 * cos(s * TAU * 2.5 - J.pa * TAU * 1.5 + row * 0.8), 2.0);
     let natural = params().colours > 0.5 && params().colours < 1.5;
     let irid = select(colour(hue + s - J.pa * 0.2), spectrum(s * 2.0 - J.pa * 0.5 + L.th + cell * 0.25) * 0.75 + 0.25 * thin_film(L.face, 2.0 + s * 3.0 + J.pa * 0.2), natural);
-    let combs = (vec3<f32>(0.75, 0.85, 1.0) * 0.2 + irid * wave * (0.8 + J.glow * 2.5 + J.flash * 2.0)) * bar * plate;
+    let combs = (mix(tone(BODY, hue), vec3<f32>(1.0), 0.5) * 0.2 + irid * wave * (0.4 + J.glow * 3.2 + J.flash * 2.5)) * bar * plate;
     let base = thin_line(dx, 0.003, L.fp) * span * 0.06;
     let sheen = thin_film(L.face, 1.5 + s) * fresnel(L.face, 2.0) * 0.04;
     return diffuse(combs, COMBS_DIFFUSE, params().light) + (sheen + base) * tone(BODY, hue);

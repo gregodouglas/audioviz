@@ -98,7 +98,13 @@ fn vertex(vi: u32) -> MeshVertex {
     let moon = k == MOON;
     let tha = ((f32(a) + select(0.5, 0.0, moon)) / f32(ARMS) + u * 0.08) * TAU;
     let radial = dir_to_world(J, vec3<f32>(cos(tha), 0.0, sin(tha)));
-    let e_out = normalize(radial - dir * dot(radial, dir) + vec3<f32>(0.0, 1e-6, 0.0));
+    // Which way the arm opens: out from the axis, square to the arm. The
+    // radial direction with the arm's projected out fails as the arm swings
+    // into line with it (the frame flipped in one frame); the tangent round
+    // the bell crossed with the arm gives the same direction and fails only
+    // where the first is strong, so their sum is always well defined.
+    let round = dir_to_world(J, vec3<f32>(-sin(tha), 0.0, cos(tha)));
+    let e_out = normalize(radial - dir * dot(radial, dir) + cross(round, dir) + vec3<f32>(0.0, 1e-6, 0.0));
     let e_side = cross(dir, e_out);
     // A moon jelly's arm narrows a little and ends in a rounded tip.
     let tip = sqrt(max(1.0 - pow(smoothstep(0.7, 1.0, u), 2.0), 0.0));
@@ -108,7 +114,7 @@ fn vertex(vi: u32) -> MeshVertex {
     let lip = x * x;
     // Each lip its own ruffle, so the two edges of an arm are not mirrors.
     let sd = select(0.0, 1.7, x > 0.0);
-    let ruffle = sin(u * 9.0 + f32(a) * 2.3 + sd + V.time * 0.9) * 0.6 + sin(u * 4.0 - V.time * 0.5 + f32(a) + sd * 2.0) * 0.4;
+    let ruffle = sin(u * 9.0 + f32(a) * 2.3 + sd + groove_clock() * 0.9) * 0.6 + sin(u * 4.0 - groove_clock() * 0.5 + f32(a) + sd * 2.0) * 0.4;
     // The frills: a row of waves along each edge, out of the sheet, each
     // lip its own, irregular in size and spacing, slowly moving.
     // (Frills along an arm: about five a bell radius of it, as many as its
@@ -124,7 +130,7 @@ fn vertex(vi: u32) -> MeshVertex {
     var frill = 0.0;
     if (frills > 0.0) {
         let edge = pow(smoothstep(0.5, 1.0, abs(x)), 2.0);
-        let ph = u * TAU * frills + 1.0 * sin(u * TAU * 2.3 + f32(a) * 1.9 + sd) + sd * 2.1 + f32(a) * 1.3 + V.time * 0.6;
+        let ph = u * TAU * frills + 1.0 * sin(u * TAU * 2.3 + f32(a) * 1.9 + sd) + sd * 2.1 + f32(a) * 1.3 + groove_clock() * 0.6;
         frill = sin(ph) * edge * (tall + 0.1 * sin(u * 17.0 + f32(a) + sd)) * select(1.0, min(tip * 2.0, 1.0), moon);
     }
     let wp = at + e_side * x * width + e_out * (abs(x) * fold + lip * ruffle * select(0.35, 0.4, moon) + frill) * width;

@@ -39,8 +39,9 @@
 //   2                   (last any onset hit, last low hit, drop envelope, 0)
 //   3                   the close-up camera: (where it looks, how far away)
 //   JELLY0 + 5j + f     jelly j: (position, seconds into its stroke),
-//                       (velocity, 0), (axis, spin), (size, hue, frames
-//                       alive, last beat), (glow, flash, wave phase, hue drift)
+//                       (velocity, seconds into the stroke before it),
+//                       (axis, spin), (size, hue, frames alive, last beat),
+//                       (glow, flash, wave phase, hue drift)
 //   STRAND0 + (j * STRANDS + s) * SEG + k
 //                       strand s (tentacle or hair) of jelly j, link k: (x, y, z, 0)
 //   ARM0 + (j * ARMS + a) * ARM_SEG + k
@@ -52,6 +53,9 @@
 //                       level), (colour, how lately it stroked)
 //   SNOW0 + l           snow layer l: (where it is on screen, its cell size,
 //                       how out of focus)
+//   GROOVE              the groove clock, what everything that waves runs
+//                       on: (seconds, quickening with the music; a soft beat,
+//                       0, 0)
 // Line point i is strand link STRAND0 + i. Triangles per jelly: the bell's
 // outer skin (exumbrella) and inner skin (subumbrella), each RINGS x SECTORS
 // quads, then the arms (ARM_SEG - 1 links of ARM_SUB rows, ARM_ACROSS quads
@@ -70,6 +74,7 @@ const ARM0: u32 = 30784u;           // STRAND0 + MAX_J * STRANDS * SEG
 const PROFILE0: u32 = 31552u;       // ARM0 + MAX_J * ARMS * ARM_SEG
 const HALO0: u32 = 31852u;          // PROFILE0 + MAX_J * NODES
 const SNOW0: u32 = 31876u;          // HALO0 + 2 * MAX_J
+const GROOVE: u32 = 31880u;         // SNOW0 + 4
 const RINGS: u32 = 24u;
 const NODES: u32 = 25u;             // RINGS + 1
 const SECTORS: u32 = 64u;
@@ -171,6 +176,9 @@ fn eye_near() -> f32 {
 }
 
 fn prepare(i: u32) -> vec4<f32> {
+    if (i >= GROOVE) {
+        return groove_step();
+    }
     if (i >= SNOW0) {
         return snow_step(i);
     }
@@ -190,7 +198,7 @@ fn prepare(i: u32) -> vec4<f32> {
         let J = jelly_step((i - JELLY0) / 5u);
         switch ((i - JELLY0) % 5u) {
             case 0u: { return vec4<f32>(J.pos, J.since); }
-            case 1u: { return vec4<f32>(J.vel, 0.0); }
+            case 1u: { return vec4<f32>(J.vel, J.prev); }
             case 2u: { return vec4<f32>(J.axis, J.spin); }
             case 3u: { return vec4<f32>(J.size, J.hue, J.age, J.last_beat); }
             default: { return vec4<f32>(J.glow, J.flash, J.pa, J.pb); }

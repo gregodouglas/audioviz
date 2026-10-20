@@ -12,11 +12,13 @@ fn strand_count() -> u32 {
     return clamp(u32(round(species_of(kind()).strands * P.tentacles)), 1u, STRANDS);
 }
 
-// Where strand s (of n) leaves jelly j's bell, and which way the skin runs
-// there (outward along it), in the bell's own units.
+// Where strand s (of n) leaves jelly j's bell, which way the skin runs
+// there (outward along it) and the way round the margin, in the bell's own
+// units.
 struct Root {
     pos: vec3<f32>,
     out: vec3<f32>,
+    round: vec3<f32>,
 };
 
 fn strand_root(j: u32, s: u32, n: u32) -> Root {
@@ -28,6 +30,7 @@ fn strand_root(j: u32, s: u32, n: u32) -> Root {
         let th = select(0.0, 0.5, s == 1u);
         r.pos = jelly_skin(j, RINGS / 2u, th, false).pos * 0.9;
         r.out = vec3<f32>(cos(th * TAU), -0.3, sin(th * TAU));
+        r.round = vec3<f32>(-sin(th * TAU), 0.0, cos(th * TAU));
         return r;
     }
     var th = (f32(s) + 0.5) / f32(max(n, 1u));
@@ -42,6 +45,7 @@ fn strand_root(j: u32, s: u32, n: u32) -> Root {
     // From the underside of the margin.
     r.pos = jelly_skin(j, node, th, true).pos;
     r.out = bell_tangent(b, profile(j, node), th);
+    r.round = vec3<f32>(-sin(th * TAU), 0.0, cos(th * TAU));
     return r;
 }
 
@@ -85,8 +89,11 @@ fn strand_step(i: u32) -> vec4<f32> {
     let u = f32(k) / f32(SEG - 1u);
     let out_dir = normalize(dir_to_world(J, root.out));
     let hang = normalize(-J.axis * 0.75 + vec3<f32>(0.0, -0.45, 0.0) - J.vel * 2.0 + current(anchor, V.time) * 0.15 * P.current);
-    let side = normalize(cross(hang, out_dir) + vec3<f32>(1e-6, 0.0, 0.0));
-    let w = V.time * 1.1 - f32(k) * 0.18 + creature_hash(f32(s), 24.0 + f32(j)) * TAU;
+    // Side to side along the margin. (Worked out from the hang and the way
+    // out, it flipped in a frame when a tipping bell brought the two into
+    // line.)
+    let side = dir_to_world(J, root.round);
+    let w = groove_clock() * 1.1 - f32(k) * 0.18 + creature_hash(f32(s), 24.0 + f32(j)) * TAU;
     var rest = normalize(hang + side * sin(w) * amp);
     let follow = sp.follow * mix(1.0, 0.13, u);
     let h = vec3<f32>(creature_hash(f32(s), 21.0 + f32(j)), creature_hash(f32(s), 22.0 + f32(j)), creature_hash(f32(s), 23.0 + f32(j))) - 0.5;
@@ -97,7 +104,7 @@ fn strand_step(i: u32) -> vec4<f32> {
         // fringe hangs as a soft curtain, neither a comb nor a tangle.
         let ph = creature_hash(f32(s), 25.0 + f32(j)) * TAU;
         let curl = 0.4 + 1.2 * creature_hash(f32(s), 27.0 + f32(j));
-        let wave = sin(f32(k) * 0.5 + ph + V.time * 0.4) * side + cos(f32(k) * 0.35 + ph * 1.3 - V.time * 0.3) * out_dir * 0.6;
+        let wave = sin(f32(k) * 0.5 + ph + groove_clock() * 0.4) * side + cos(f32(k) * 0.35 + ph * 1.3 - groove_clock() * 0.3) * out_dir * 0.6;
         rest = normalize(rest + wave * curl * (0.3 + 1.2 * u));
     }
     if (J.age < 1.5) {
@@ -136,12 +143,12 @@ fn arm_step(i: u32) -> vec4<f32> {
     if (j >= jelly_count() || len <= 0.0 || k == 0u) {
         return vec4<f32>(anchor, 0.0);
     }
-    let twist = select(0.0, f32(k) * 0.45 + V.time * 0.3, kd == NETTLE) + f32(a) * 1.5708;
+    let twist = select(0.0, f32(k) * 0.45 + groove_clock() * 0.3, kd == NETTLE) + f32(a) * 1.5708;
     let ex = frame_x(J);
     let ez = cross(J.axis, ex);
     let amp = 0.2 * P.sway * (0.5 + 0.5 * item(1u).y * music());
     let ph = f32(a) * 1.7 + f32(j) * 2.9;
-    let wobble = (ex * sin(V.time * 0.7 - f32(k) * 0.42 + ph) + ez * cos(V.time * 0.55 - f32(k) * 0.33 + ph * 1.3)) * (0.25 + 0.5 * amp);
+    let wobble = (ex * sin(groove_clock() * 0.7 - f32(k) * 0.42 + ph) + ez * cos(groove_clock() * 0.55 - f32(k) * 0.33 + ph * 1.3)) * (0.25 + 0.5 * amp);
     let splay = select(0.3, 1.2, moon);
     let rest = normalize(-J.axis + vec3<f32>(0.0, -0.3, 0.0) - J.vel * 2.0 + (ex * cos(twist) + ez * sin(twist)) * splay + current(anchor, V.time) * 0.1 * P.current + wobble);
     if (J.age < 1.5) {
@@ -185,7 +192,7 @@ fn point(i: u32) -> LinePoint {
             light *= select(0.7, 1.0, s == 0u);
         }
         case 2u: {
-            light *= 0.1 + J.flash * 0.5;
+            light *= 0.1 + flash_of(J) * 0.5;
         }
         case 4u: {
             light *= 0.4;
@@ -196,9 +203,11 @@ fn point(i: u32) -> LinePoint {
         }
         default: {}
     }
-    // The stroke's light, a pulse running from the root to the tip.
+    // The stroke's light, a pulse running from the root to the tip (the
+    // last stroke's still running out as the new one takes over).
     let front = (u - J.since * 1.4) / 0.14;
-    let pulse = exp(-front * front) * sp.stroke_light * select(1.0, 0.0, sp.period <= 0.0);
+    let before = (u - J.prev * 1.4) / 0.14;
+    let pulse = mix(exp(-before * before), exp(-front * front), stroke_handover(J)) * sp.stroke_light * select(1.0, 0.0, sp.period <= 0.0);
     let hue = hue_of(J);
     var c = tone(STRANDS_C, hue + 0.1 * u) * light + tone(LIGHT, hue) * pulse * 0.6 * (1.0 - 0.5 * u);
     c = water(c, to_camera(cam, p3).z, cam.dist - 1.0, natural_bodies());

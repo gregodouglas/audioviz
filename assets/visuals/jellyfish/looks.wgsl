@@ -109,7 +109,7 @@ fn wet_normal(F: SkinFrame, plan: vec2<f32>, s: f32, fp: f32, seed: f32) -> vec3
         let a = fi * 2.399 + seed * 6.0;
         let k = 9.0 * pow(1.6, fi);
         let d = vec2<f32>(cos(a), sin(a)) * k;
-        let fade = keep_detail(fp * k / TAU * 8.0);
+        let fade = keep_detail(fp * k / TAU * 14.0);
         if (fade <= 0.0) {
             break;
         }
@@ -338,7 +338,7 @@ fn moon_light(J: Jelly, L: Look) -> vec3<f32> {
     // tentacles leaves the margin.
     let bx = abs(fract(L.th * 160.0 + 0.5) - 0.5) / 160.0 * TAU * s;
     let bulbs = thin_line(length(vec2<f32>(bx, 1.0 - s - 0.012)), 0.006, fq);
-    c += shown(L_MARKS, tone(STRANDS_C, hue) * bulbs * 0.5);
+    c += shown(L_MARKS, tone(STRANDS_C, hue) * bulbs * 0.25 * (0.4 + 0.6 * hash21(vec2<f32>(floor(L.th * 160.0 + 0.5), J.hue * 3.0))));
     // The swimming muscle: a fine, broken striation in the outer bell, its
     // fibres short and wavering, so it reads as tissue, not as rings. It
     // brightens only a little on the squeeze (the stroke's light is the

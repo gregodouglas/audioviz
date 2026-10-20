@@ -64,38 +64,60 @@ fn vertex(vi: u32) -> MeshVertex {
         v.data = vec4<f32>(at, 0.0, f32(j) + 0.5 + PART_GLOW);
         return v;
     }
-    // An oral arm: a sheet along its links, folded into a V that opens away
-    // from the axis, its lips ruffled and the whole arm twisting a little
-    // down its length. The fine crenulation is painted, not modelled: a
-    // ruffle finer than the links would alias into zig-zags.
+    // An oral arm: a sheet along a smooth curve through its links (ARM_SUB
+    // rows a link, so its outline does not kink at each link), folded into
+    // a V that opens away from the axis, its lips ruffled and the whole arm
+    // twisting a little down its length. A moon jelly's lips are frilled
+    // curtains: a row of frills along each edge, modelled; the finer
+    // crenulation is painted.
     let sp = species_of(k);
     if (sp.arm_len <= 0.0 || P.arms < 0.01) {
         return v;
     }
     let quad = (l - BELL_CORNERS) / 6u;
-    let per_arm = (ARM_SEG - 1u) * ARM_ACROSS;
+    let per_arm = (ARM_SEG - 1u) * ARM_SUB * ARM_ACROSS;
     let a = quad / per_arm;
-    let link = (quad % per_arm) / ARM_ACROSS;
-    let kk = link + da[c6];
+    let row = (quad % per_arm) / ARM_ACROSS + da[c6];
     let xi = (quad % ARM_ACROSS) + db[c6];
     let x = f32(xi) / f32(ARM_ACROSS) * 2.0 - 1.0;
     let base = ARM0 + (j * ARMS + a) * ARM_SEG;
-    let at = item(base + kk).xyz;
-    let dir = normalize(item(base + min(kk + 1u, ARM_SEG - 1u)).xyz - item(base + max(kk, 1u) - 1u).xyz + vec3<f32>(1e-6, 0.0, 0.0));
-    let u = f32(kk) / f32(ARM_SEG - 1u);
+    // Catmull-Rom through the links either side of this row.
+    let t = f32(row) / f32(ARM_SUB);
+    let k1 = min(u32(t), ARM_SEG - 2u);
+    let ft = t - f32(k1);
+    let p0 = item(base + max(k1, 1u) - 1u).xyz;
+    let p1 = item(base + k1).xyz;
+    let p2 = item(base + k1 + 1u).xyz;
+    let p3 = item(base + min(k1 + 2u, ARM_SEG - 1u)).xyz;
+    let c1 = p2 - p0;
+    let c2 = 2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3;
+    let c3 = 3.0 * (p1 - p2) + p3 - p0;
+    let at = p1 + 0.5 * ft * (c1 + ft * (c2 + ft * c3));
+    let dir = normalize(c1 + ft * (2.0 * c2 + 3.0 * ft * c3) + vec3<f32>(1e-6, 0.0, 0.0));
+    let u = t / f32(ARM_SEG - 1u);
     let moon = k == MOON;
     let tha = ((f32(a) + select(0.5, 0.0, moon)) / f32(ARMS) + u * 0.08) * TAU;
     let radial = dir_to_world(J, vec3<f32>(cos(tha), 0.0, sin(tha)));
     let e_out = normalize(radial - dir * dot(radial, dir) + vec3<f32>(0.0, 1e-6, 0.0));
     let e_side = cross(dir, e_out);
-    let width = sp.arm_w * radius(J) * P.arms * select(mix(1.0, 0.45, u), mix(1.0, 0.04, pow(u, 1.6)), moon);
+    // A moon jelly's arm narrows a little and ends in a rounded tip.
+    let tip = sqrt(max(1.0 - pow(smoothstep(0.7, 1.0, u), 2.0), 0.0));
+    let width = sp.arm_w * radius(J) * P.arms * select(mix(1.0, 0.45, u), mix(1.0, 0.6, u) * max(tip, 0.12), moon);
     let fold = select(0.25, 0.55, moon);
     // The lips: a slow ruffle and a slower, irregular wave, strongest at the edges.
     let lip = x * x;
     // Each lip its own ruffle, so the two edges of an arm are not mirrors.
     let sd = select(0.0, 1.7, x > 0.0);
     let ruffle = sin(u * 9.0 + f32(a) * 2.3 + sd + V.time * 0.9) * 0.6 + sin(u * 4.0 - V.time * 0.5 + f32(a) + sd * 2.0) * 0.4;
-    let wp = at + e_side * x * width + e_out * (abs(x) * fold + lip * ruffle * select(0.35, 0.6, moon)) * width;
+    // The frills: a row of waves along each edge, out of the sheet, each
+    // lip its own, irregular in size and spacing, slowly moving.
+    var frill = 0.0;
+    if (moon) {
+        let edge = pow(smoothstep(0.5, 1.0, abs(x)), 2.0);
+        let ph = u * TAU * 5.0 + 1.0 * sin(u * TAU * 2.3 + f32(a) * 1.9 + sd) + sd * 2.1 + f32(a) * 1.3 + V.time * 0.6;
+        frill = sin(ph) * edge * (0.16 + 0.1 * sin(u * 17.0 + f32(a) + sd)) * min(tip * 2.0, 1.0);
+    }
+    let wp = at + e_side * x * width + e_out * (abs(x) * fold + lip * ruffle * select(0.35, 0.4, moon) + frill) * width;
     let wn = normalize(cross(dir, e_side + e_out * fold * sign(x)) + vec3<f32>(0.0, 1e-6, 0.0));
     let lit = key_light(wn, normalize(wp - eye));
     v.pos = clip_pos(cam, wp);

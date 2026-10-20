@@ -92,11 +92,13 @@ fn strand_step(i: u32) -> vec4<f32> {
     let h = vec3<f32>(creature_hash(f32(s), 21.0 + f32(j)), creature_hash(f32(s), 22.0 + f32(j)), creature_hash(f32(s), 23.0 + f32(j))) - 0.5;
     rest = normalize(out_dir * follow + rest * (1.0 - 0.4 * follow) + h * select(0.2, 0.45, kd == MOON));
     if (kd == MOON) {
-        // The fringe curls: each fine tentacle its own wave along it, more
-        // toward the tip, drifting slowly, so the fringe is not a comb.
+        // The fringe curls a little: each fine tentacle its own long, slow
+        // wave, more toward the tip, some curling more than others, so the
+        // fringe hangs as a soft curtain, neither a comb nor a tangle.
         let ph = creature_hash(f32(s), 25.0 + f32(j)) * TAU;
-        let wave = sin(f32(k) * 0.85 + ph + V.time * 0.4) * side + cos(f32(k) * 0.6 + ph * 1.3 - V.time * 0.3) * out_dir;
-        rest = normalize(rest + wave * (2.0 + 4.0 * u));
+        let curl = 0.4 + 1.2 * creature_hash(f32(s), 27.0 + f32(j));
+        let wave = sin(f32(k) * 0.5 + ph + V.time * 0.4) * side + cos(f32(k) * 0.35 + ph * 1.3 - V.time * 0.3) * out_dir * 0.6;
+        rest = normalize(rest + wave * curl * (0.3 + 1.2 * u));
     }
     if (J.age < 1.5) {
         return vec4<f32>(anchor + rest * len * f32(k), 0.0);
@@ -140,7 +142,7 @@ fn arm_step(i: u32) -> vec4<f32> {
     let amp = 0.2 * P.sway * (0.5 + 0.5 * item(1u).y * music());
     let ph = f32(a) * 1.7 + f32(j) * 2.9;
     let wobble = (ex * sin(V.time * 0.7 - f32(k) * 0.42 + ph) + ez * cos(V.time * 0.55 - f32(k) * 0.33 + ph * 1.3)) * (0.25 + 0.5 * amp);
-    let splay = select(0.3, 0.22, moon);
+    let splay = select(0.3, 1.2, moon);
     let rest = normalize(-J.axis + vec3<f32>(0.0, -0.3, 0.0) - J.vel * 2.0 + (ex * cos(twist) + ez * sin(twist)) * splay + current(anchor, V.time) * 0.1 * P.current + wobble);
     if (J.age < 1.5) {
         return vec4<f32>(anchor + rest * len * f32(k), 0.0);

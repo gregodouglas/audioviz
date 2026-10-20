@@ -11,7 +11,7 @@
   "layers": ["Glass", "Edges", "Sheen", "Inner skin", "Stroke", "Organs", "Canals", "Marks", "Arms", "Tentacles", "Glow", "Tank"],
   "levelling": "bright",
   "items": 31880,
-  "triangles": 85272,
+  "triangles": 108312,
   "line": 30720,
   "params": [
     { "id": "species", "label": "Species", "type": "choice", "group": "Swarm", "options": ["Moon jelly", "Sea nettle", "Crystal jelly", "Atolla", "Comb jelly", "Lion's mane"], "values": ["moon", "nettle", "crystal", "atolla", "comb", "lion"], "default": "moon" },

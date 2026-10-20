@@ -49,7 +49,7 @@ fn bell_shade(J: Jelly, k: u32, L: Look) -> vec4<f32> {
     // Lit as a body, not glass: from above, a little light scattered up
     // through it where it thins toward the band, the wet skin's sheen.
     // (Light passes through it: the photos show the whole body glowing.)
-    var c = tissue * (0.11 + 0.2 * lit * L.top + 0.14 * smoothstep(0.2, CORE, s) + 0.06 * fresnel(L.face, 2.0));
+    var c = tissue * (0.28 + 0.3 * lit * L.top + 0.35 * smoothstep(0.2, CORE, s) + 0.06 * fresnel(L.face, 2.0));
     // The middle, thickest, is the deeper and darker (bright, its red would
     // bleach toward yellow in the tonemap).
     c *= mix(0.55, 1.0, smoothstep(0.0, CORE, s));
@@ -64,9 +64,9 @@ fn bell_shade(J: Jelly, k: u32, L: Look) -> vec4<f32> {
     // The clear band: milky, faintly blue, its light where the eye looks
     // through more of it and at its edges, lit by the sheen; a thin bright rim.
     // Cream-white next to the tissue, bluish toward the edge.
-    let edge_blue = smoothstep(CORE + 0.05, 1.0, s);
+    let edge_blue = smoothstep(0.82, 1.0, s);
     let milky = select(mix(amber, vec3<f32>(1.0), 0.6), mix(vec3<f32>(1.0, 0.92, 0.8), vec3<f32>(0.7, 0.83, 1.0), edge_blue), natural);
-    var g = milky * (0.05 + 0.08 * (1.0 - edge_blue) + 0.1 * fresnel(L.face, 3.0) * (0.4 + 0.6 * L.sky)) * lit;
+    var g = milky * (0.16 + 0.3 * (1.0 - edge_blue) + 0.2 * fresnel(L.face, 3.0) * (0.4 + 0.6 * L.sky)) * lit;
     g += milky * L.sheen * 0.3;
     g += milky * thin_line(abs(rim - s), 0.01, L.fs) * 0.25;
     // A rhopalium in each shallow notch, a small warm bead.

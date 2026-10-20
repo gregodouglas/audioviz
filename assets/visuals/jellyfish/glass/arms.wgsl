@@ -4,6 +4,11 @@
 
 const CORNERS_J: u32 = 27078u;      // EXTRA_AT: nothing past the glow
 
+// Their tentacles are the strands themselves.
+fn point(i: u32) -> LinePoint {
+    return strand_point(i);
+}
+
 // Corner l of a jelly's arms (from 0 at BELL_CORNERS).
 fn arms_vertex(j: u32, J: Jelly, cam: Camera, eye: vec3<f32>, l: u32, da: array<u32, 6>, db: array<u32, 6>, c6: u32) -> MeshVertex {
     let P = params();

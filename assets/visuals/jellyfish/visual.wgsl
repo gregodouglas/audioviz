@@ -56,7 +56,9 @@
 //   GROOVE              the groove clock, what everything that waves runs
 //                       on: (seconds, quickening with the music; a soft beat,
 //                       0, 0)
-// Line point i is strand link STRAND0 + i. Triangles per jelly: the bell's
+// The glass species' line point i is strand link STRAND0 + i; a lion's
+// mane's line is its hair, about a thousand a jelly following its strands
+// (lion/hair.wgsl). Triangles per jelly: the bell's
 // outer skin (exumbrella) and inner skin (subumbrella), each RINGS x SECTORS
 // quads, then the arms (ARM_CORNERS: the glass species' sheets, ARM_SEG - 1
 // links of ARM_SUB rows, ARM_ACROSS quads across each, folded into a V; a

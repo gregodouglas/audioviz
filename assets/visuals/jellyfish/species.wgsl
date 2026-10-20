@@ -51,7 +51,7 @@ fn bell_of(kind: u32) -> Bell {
         // turning down into a skirt of lobes round the mass (the photos'
         // side view), cut by deep clefts into eight pairs of lobes (the
         // notch within each pair painted); slow and heavy.
-        case 5u: { b = Bell(1.35, 1.9, 1.0, 0.65, 0.95, 0.18, 0.5, 0.65, 0.26, 0.01, 8.0, 0.07, 0.13, 0.0, 0.0, 0.7); }
+        case 5u: { b = Bell(1.8, 1.9, 1.0, 0.65, 0.95, 0.18, 0.5, 0.65, 0.4, 0.06, 8.0, 0.07, 0.13, 0.0, 0.0, 0.7); }
         // The moon jelly: a saucer, thick in the middle, eight lobes with a
         // rhopalium in each notch, a margin that whips and flares.
         default: { b = Bell(1.05, 1.7, 1.0, 1.1, 1.8, 0.12, 0.32, 0.4, 0.22, 0.012, 8.0, 0.035, 0.05, 0.0, 0.0, 0.73); }

@@ -9,6 +9,10 @@ fn strand_count() -> u32 {
     if (P.tentacles < 0.01) {
         return 0u;
     }
+    if (kind() == LION) {
+        // (Its strands are the guides its hair follows: all of them, always.)
+        return STRANDS;
+    }
     return clamp(u32(round(species_of(kind()).strands * P.tentacles)), 1u, STRANDS);
 }
 
@@ -199,7 +203,8 @@ fn arm_step(i: u32) -> vec4<f32> {
 
 // Tentacles and hair, drawn as the line: fine, fading toward the tip, in
 // the water's depth; the light of a stroke runs down them from the bell.
-fn point(i: u32) -> LinePoint {
+// (The glass species' point; a lion's mane draws its own hair, lion/hair.wgsl.)
+fn strand_point(i: u32) -> LinePoint {
     let P = params();
     let k = i % SEG;
     let s = (i / SEG) % STRANDS;

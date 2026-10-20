@@ -8,7 +8,7 @@
 // gonads end sooner. All of it slowly drifting.
 const MASS_AROUND: u32 = 64u;
 const MASS_ALONG: u32 = 22u;        // MASS_AROUND * MASS_ALONG <= ARM_CORNERS / 6
-const MASS_REACH: f32 = 0.72;       // how much of the arms' length it hangs: about a bell across
+const MASS_REACH: f32 = 0.45;       // how much of the arms' length it hangs: most of a bell across
 
 // The middle of the arms at u (0 the mouth, 1 their ends).
 fn mass_spine(j: u32, u: f32) -> vec3<f32> {
@@ -135,7 +135,7 @@ fn mass_look(J: Jelly, u: f32, th: f32, pleat: f32, top: f32, through: f32, face
     let hue = hue_of(J);
     // The gonads paler, creamier, than the arms.
     let tissue = mix(mix(tone(ARMS_C, hue), vec3<f32>(1.0, 0.86, 0.66), 0.45), tone(ARMS_C, hue), mass_arm(th));
-    let deep = tone(ORGANS, hue) * 0.5;
+    let deep = mix(tone(ORGANS, hue), tone(ARMS_C, hue), 0.5) * 0.55;
     // (Waves at odd angles, not value noise: its grid showed as blocks.)
     let q = vec2<f32>(th * 26.0, u * 18.0);
     let crinkle = (0.5 + 0.25 * sin(q.x * 1.0 + q.y * 0.7 + J.hue * 9.0 + 2.0 * sin(q.y * 0.9)) + 0.25 * sin(q.x * 1.7 - q.y * 1.3 + 3.0 * sin(q.x * 0.4))) * keep_detail(fp * 40.0);
@@ -150,7 +150,7 @@ fn mass_look(J: Jelly, u: f32, th: f32, pleat: f32, top: f32, through: f32, face
     let pale = mix(tissue, vec3<f32>(1.0, 0.82, 0.62), 0.35 * ridge);
     let col = mix(deep, pale, ridge);
     // (Light passes through it: in the photos the mass glows cream under the bell.)
-    let lit = 0.17 + 0.18 * top + 0.1 * through + 0.08 * fresnel(face, 2.5);
+    let lit = 0.26 + 0.22 * top + 0.14 * through + 0.1 * fresnel(face, 2.5);
     let inner = tone(ORGANS, hue) * 0.015 * (0.5 + soft(J.glow) * 1.5) * (1.0 - ridge);
     let c = (col * lit * (0.7 + 0.6 * crinkle) + inner) * (1.0 - 0.4 * u) * P.body;
     let cover = 0.85 * (1.0 - 0.5 * smoothstep(0.75, 1.0, u)) * smoothstep(0.0, 0.04, u);

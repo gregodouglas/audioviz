@@ -412,23 +412,32 @@ fn nettle_light(J: Jelly, L: Look) -> vec3<f32> {
     return diffuse(tone(ORGANS, hue) * g * 0.15 * (0.5 + J.glow), ORGANS_DIFFUSE, params().light);
 }
 
-// Crystal jelly. Inner skin: a hundred hair-thin radial canals, thicker
-// along the gonads in the outer half. Outer: a ring of green photocytes
-// round the rim that flash on strong low onsets, the flash running round.
+// Crystal jelly. Inner skin: a big round stomach in the middle, and from
+// its rim a hundred hair-thin radial canals, each wavering its own way, a
+// wavy whitish gonad along the outer half of each. Outer: a ring of tiny
+// green photocytes, one at the end of each canal, faint at rest, flashing
+// on strong low onsets, the flash running round.
 fn crystal_light(J: Jelly, L: Look) -> vec3<f32> {
     let hue = hue_of(J);
     let s = L.s;
+    let u = L.th * 96.0;
+    let k = floor(u + 0.5);
+    let along = (fract(u + 0.5) - 0.5) / 96.0 * TAU * s;
     if (L.inner) {
-        let u = L.th * 96.0;
-        let dx = abs(fract(u + 0.5) - 0.5) / 96.0 * TAU * s;
-        let canals = thin_line(dx, 0.0035, L.fp) * smoothstep(0.15, 0.25, s) * smoothstep(0.98, 0.94, s);
-        let gonads = thin_line(dx, 0.009, L.fp) * smoothstep(0.45, 0.55, s) * smoothstep(0.88, 0.8, s);
-        return tone(ORGANS, hue) * canals * 0.25 * (0.4 + J.glow) + diffuse(tone(ORGANS, hue) * gonads * 0.3 * (0.4 + J.glow), ORGANS_DIFFUSE, params().light);
+        let dx = abs(along + (noise(vec2<f32>(s * 6.0, k * 3.1)) - 0.5) * 0.006 * s);
+        let canals = thin_line(dx, 0.0028, L.fp) * smoothstep(0.32, 0.38, s) * smoothstep(0.98, 0.94, s);
+        // (Each gonad its own wave: one wave for all drew a fishbone moire.)
+        let wave = 0.003 * (noise(vec2<f32>(s * 30.0, k * 5.7)) - 0.5) * 2.0;
+        let thick = 0.006 * (0.5 + noise(vec2<f32>(s * 25.0, k * 2.3)));
+        let gonads = thin_line(abs(dx + wave * smoothstep(0.5, 0.6, s)), thick, L.fp) * smoothstep(0.5, 0.6, s) * smoothstep(0.88, 0.8, s);
+        let stomach = thin_line(abs(s - 0.33), 0.006, L.fs) * 0.6 + smoothstep(0.34, 0.25, s) * 0.06;
+        return tone(ORGANS, hue) * (canals * 0.22 + stomach * 0.3) * (0.4 + J.glow) + diffuse(mix(tone(ORGANS, hue), vec3<f32>(1.0), 0.4) * gonads * 0.3 * (0.4 + J.glow), ORGANS_DIFFUSE, params().light);
     }
-    let rim = smoothstep(0.88, 0.99, s);
-    let dots = pow(0.5 + 0.5 * cos(L.th * TAU * 48.0), 4.0) * rim;
+    let d = vec2<f32>(along, 1.0 - s - 0.025);
+    let dots = exp(-dot(d, d) / (0.008 * 0.008));
+    let ring = smoothstep(0.9, 0.97, s) * smoothstep(1.0, 0.98, s) * 0.06;
     let run = exp(-fract(L.th - J.pa) * 6.0) * J.flash;
-    return diffuse(tone(LIGHT, hue) * dots * (1.5 + 2.0 * J.glow + 8.0 * J.flash + 6.0 * run), POINTS_DIFFUSE, params().light);
+    return diffuse(tone(LIGHT, hue) * (dots + ring) * (1.2 + 2.0 * J.glow + 8.0 * J.flash + 6.0 * run), POINTS_DIFFUSE, params().light);
 }
 
 // Atolla's jelly below the coronal groove: a ring of thick pedalia, one
@@ -461,22 +470,33 @@ fn atolla_light(J: Jelly, L: Look) -> vec3<f32> {
     return tone(BODY, hue) * groove + diffuse(tone(LIGHT, hue) * (dots + wheel), POINTS_DIFFUSE, params().light);
 }
 
-// Comb jelly. Outer skin: eight comb rows from pole to pole whose plates of
-// cilia break the light into rainbows racing along them with the highs,
-// over a faint thin-film shimmer of the whole body.
+// Comb jelly. Outer skin: eight comb rows from pole to pole, each a line
+// of short plates of cilia across the row, faint and whitish; waves of
+// beating run down each row (faster with the highs), and where the plates
+// beat they break the light into a rainbow sliding along them; over it a
+// faint thin-film shimmer of the whole body. Inner: the canal under each
+// row, and the apical organ, a small bright statocyst at the top pole.
 fn comb_light(J: Jelly, L: Look) -> vec3<f32> {
     let hue = hue_of(J);
     let s = L.s;
+    let row = floor(L.th * 8.0 + 0.5);
+    let dx = abs(fract(L.th * 8.0 + 0.5) - 0.5) / 8.0 * TAU * max(s, 0.05);
+    let span = smoothstep(0.1, 0.18, s) * smoothstep(0.9, 0.82, s);
     if (L.inner) {
-        return tone(ORGANS, hue) * fresnel(L.face, 2.0) * 0.05;
+        let canal = thin_line(dx, 0.004, L.fp) * smoothstep(0.06, 0.14, s) * smoothstep(0.95, 0.88, s);
+        let apical = exp(-s * s / (0.035 * 0.035));
+        return tone(ORGANS, hue) * (fresnel(L.face, 2.0) * 0.05 + canal * 0.12) + mix(tone(LIGHT, hue), vec3<f32>(1.0), 0.6) * apical * 0.35;
     }
-    let m = abs(fract(L.th * 8.0 + 0.5) - 0.5);
-    let row = exp(-m / 0.05) * smoothstep(0.1, 0.2, s) * smoothstep(0.9, 0.8, s);
-    let plates = pow(0.5 + 0.5 * cos(s * TAU * 22.0 - J.pa * TAU * 1.5), 3.0);
+    let bar = thin_line(dx, 0.03, L.fp) * span;
+    let cell = fract(s * 26.0);
+    let plate = mix(smoothstep(0.0, 0.06, cell) * smoothstep(0.55, 0.4, cell), 0.4, clamp(L.fs * 26.0 * 1.5, 0.0, 1.0));
+    let wave = pow(0.5 + 0.5 * cos(s * TAU * 2.5 - J.pa * TAU * 1.5 + row * 0.8), 2.0);
     let natural = params().colours > 0.5 && params().colours < 1.5;
-    let irid = select(colour(hue + s - J.pa * 0.2), spectrum(s * 2.0 - J.pa * 0.5 + L.th) * 0.7 + 0.3 * thin_film(L.face, 2.0 + s * 3.0 + J.pa * 0.2), natural);
+    let irid = select(colour(hue + s - J.pa * 0.2), spectrum(s * 2.0 - J.pa * 0.5 + L.th + cell * 0.25) * 0.75 + 0.25 * thin_film(L.face, 2.0 + s * 3.0 + J.pa * 0.2), natural);
+    let combs = (vec3<f32>(0.75, 0.85, 1.0) * 0.2 + irid * wave * (0.8 + J.glow * 2.5 + J.flash * 2.0)) * bar * plate;
+    let base = thin_line(dx, 0.003, L.fp) * span * 0.06;
     let sheen = thin_film(L.face, 1.5 + s) * fresnel(L.face, 2.0) * 0.04;
-    return diffuse(irid * row * plates * (0.8 + J.glow * 2.5 + J.flash * 2.0), COMBS_DIFFUSE, params().light) + sheen * tone(BODY, hue);
+    return diffuse(combs, COMBS_DIFFUSE, params().light) + (sheen + base) * tone(BODY, hue);
 }
 
 // Lion's mane. Outer skin: thirty-two radial folds over the lobes; inner:

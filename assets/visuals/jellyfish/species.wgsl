@@ -24,7 +24,7 @@ fn species_of(kind: u32) -> Species {
     var s: Species;
     switch (kind) {
         case 1u: { s = Species(0.9, 24.0, 5.0, 1.4, 3.5, 0.3, 1.1, 1.0, 0.08, 1.8, 0.25, 0.35, 0.45, 1.2); }
-        case 2u: { s = Species(0.95, 28.0, 3.0, 0.3, 0.25, 0.1, 2.0, 0.7, 0.01, 1.2, 0.35, 0.3, 0.45, 1.2); }
+        case 2u: { s = Species(0.95, 80.0, 1.8, 0.25, 0.25, 0.1, 2.0, 0.7, 0.01, 1.2, 0.35, 0.3, 0.45, 1.2); }
         case 3u: { s = Species(0.7, 22.0, 0.8, 1.2, 0.0, 0.0, 0.9, 1.1, 0.16, 2.5, 0.2, 0.3, 0.7, 1.0); }
         case 4u: { s = Species(0.85, 2.0, 3.5, 0.9, 0.0, 0.0, 0.0, 0.6, 0.012, 1.2, 0.3, 0.0, 0.3, 0.0); }
         case 5u: { s = Species(1.9, 120.0, 5.0, 0.55, 2.0, 0.4, 2.2, 0.6, 0.07, 1.6, 0.25, 0.3, 0.35, 1.2); }
@@ -45,8 +45,8 @@ fn bell_of(kind: u32) -> Bell {
         case 2u: { b = Bell(0.9, 1.5, 1.0, 0.9, 1.4, 0.12, 0.36, 0.5, 0.16, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.75); }
         // A deep crown, thick jelly, twenty lappets (painted), the coronal groove.
         case 3u: { b = Bell(1.55, 1.1, 1.0, 0.7, 1.0, 0.08, 0.24, 0.32, 0.26, 0.015, 20.0, 0.0, 0.0, 0.07, 0.5, 0.62); }
-        // An egg, pole to pole, that never pulses.
-        case 4u: { b = Bell(3.0, 1.0, 0.55, 0.0, 0.0, 0.0, 0.0, 1.0, 0.06, 0.04, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5); }
+        // An egg, pole to pole (a turn of pi closes it at both), that never pulses.
+        case 4u: { b = Bell(3.1416, 1.0, 0.55, 0.0, 0.0, 0.0, 0.0, 1.0, 0.06, 0.04, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5); }
         // A big bell in eight deep lobes, slow and heavy.
         case 5u: { b = Bell(1.4, 1.5, 1.0, 0.8, 1.2, 0.15, 0.42, 0.55, 0.2, 0.015, 8.0, 0.1, 0.06, 0.0, 0.0, 0.65); }
         // The moon jelly: a saucer, thick in the middle, eight lobes with a

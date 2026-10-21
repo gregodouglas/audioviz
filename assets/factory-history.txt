@@ -205,8 +205,10 @@ visuals/ripples/visual.wgsl c88b0fc2324e4eb2
 visuals/ripples/visual.wgsl e3d319b8183efad7
 visuals/scope/visual.json 0c4af80f6715b4b4
 visuals/scope/visual.wgsl 77c4af8171c05ffe
+visuals/sigil/visual.json 495bed31aef83e1d
 visuals/sigil/visual.json d0b034c94ca53ad1
 visuals/sigil/visual.wgsl 2e8516e43310444d
+visuals/sigil/visual.wgsl b4e67a313cf3de95
 visuals/sigil/visual.wgsl c623951ad1ae7b2b
 visuals/spiral/visual.json 034bff86ec31bd3a
 visuals/spiral/visual.json 5fc9c960e0a2b7b2

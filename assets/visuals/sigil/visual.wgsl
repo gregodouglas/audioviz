@@ -27,6 +27,7 @@
 //   21..24  this frame's trace points, xy pairs (from last frame's
 //           arrangement: on a rebuild frame everything is dark)
 //   25..48  rays (angle, strength, length, palette position)
+//   81      (the section last frame, 0, 0, 0)
 //   49..80  drips, two items each: (x, top, head, palette position),
 //           (strength, speed, age, life)
 // Every item works out the frame's events (rebuild, ray strike, drip spawn)
@@ -40,6 +41,7 @@ const RING0: u32 = 15u;
 const TRACE0: u32 = 21u;
 const RAY0: u32 = 25u;
 const DRIP0: u32 = 49u;
+const SECTION_ITEM: u32 = 81u;
 // Seconds for the elements to go out, and to light back up.
 const OUT_S: f32 = 1.6;
 const IN_S: f32 = 3.2;
@@ -64,6 +66,13 @@ fn rnd(state: ptr<function, u32>) -> f32 {
 // Seeds are whole numbers below 2^24, so an item holds them exactly.
 fn seed_of(track: f32) -> f32 {
     return f32(u32(clamp(track, 0.0, 1.0) * 16777215.0));
+}
+
+// The seed for a section of the track: the track's own for the first
+// section (A), so a song starts on its glyph, and one per label after, so a
+// section that comes back gets its glyph back.
+fn section_seed_of(track: f32, label: f32) -> f32 {
+    return seed_of(select(fract(track + label * 0.618034), track, label < 0.5));
 }
 
 fn next_seed(seed: f32) -> f32 {
@@ -191,6 +200,7 @@ struct G {
     pending: f32,
     seed: f32,
     last_track: f32,
+    last_section: f32,
     started: f32,
     last_button: f32,
     energy: f32,
@@ -247,6 +257,7 @@ fn advance() -> G {
     g.pending = i0.z;
     g.seed = i0.w;
     g.last_track = i1.x;
+    g.last_section = item(SECTION_ITEM).x;
     g.started = i1.y;
     g.last_button = i1.z;
     g.energy = i1.w;
@@ -276,6 +287,11 @@ fn advance() -> G {
         g.energy = 1.0;
         g.since_ray = 1.0;
     } else {
+        if (V.track == g.last_track && section() != g.last_section && P.by_section > 0.5) {
+            // A new section of the song: its own glyph (the one it had, if it came before).
+            g.pending = section_seed_of(V.track, section());
+            g.going_out = 1.0;
+        }
         if (V.track != g.last_track) {
             g.last_track = V.track;
             if (P.rebuild > 0.5) {
@@ -550,6 +566,9 @@ fn prepare(i: u32) -> vec4<f32> {
     }
     if (i >= RAY0 && i < DRIP0) {
         return ray_item(g, i - RAY0, picks);
+    }
+    if (i == SECTION_ITEM) {
+        return vec4<f32>(section(), 0.0, 0.0, 0.0);
     }
     if (i >= DRIP0) {
         return drip_item(g, (i - DRIP0) / 2u, ((i - DRIP0) & 1u) == 1u);

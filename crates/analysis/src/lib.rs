@@ -86,6 +86,16 @@ pub struct FeatureFrame {
     pub centroid_hz: f32,
     /// 0 = mono, 1 = wide.
     pub stereo_width: f32,
+    /// -1 = all left, 1 = all right (energy), smoothed over ~150 ms.
+    pub balance: f32,
+    /// 0 = tonal (notes, chords), 1 = noise-like (hats, cymbals, distortion,
+    /// rain): spectral flatness from 100 Hz to 10 kHz.
+    pub noisiness: f32,
+    /// 0..1: how busy the music is, onsets per second over the last couple
+    /// of seconds (1 = eight or more a second).
+    pub activity: f32,
+    /// 0..1: the centroid on a log scale, 200 Hz to 8 kHz.
+    pub brightness: f32,
     /// Onsets per group [low, mid, high, total]: continuous strength,
     /// discrete hit this hop, and a decaying pulse. A hit lasts one hop, so
     /// a reader slower than the hop rate should use `onset_count` instead.
@@ -133,6 +143,10 @@ impl Default for FeatureFrame {
             broad_attack: [0.0; BROAD],
             centroid_hz: 0.0,
             stereo_width: 0.0,
+            balance: 0.0,
+            noisiness: 0.0,
+            activity: 0.0,
+            brightness: 0.0,
             onset_strength: [0.0; 4],
             onset_hit: [false; 4],
             onset_count: [0; 4],
@@ -179,6 +193,9 @@ pub struct Analyzer {
     acc_mid: f64,
     acc_side: f64,
     acc_peak: f32,
+    acc_lr: [f64; 2],
+    /// Onsets (all) counted down over ~2 s, for `activity`.
+    onset_rate: f32,
     bands: BandSignals,
     band_edges: Vec<(f32, f32)>,
     filterbank: FilterBank,
@@ -229,6 +246,8 @@ impl Analyzer {
             acc_mid: 0.0,
             acc_side: 0.0,
             acc_peak: 0.0,
+            acc_lr: [0.0; 2],
+            onset_rate: 0.0,
             bands,
             band_power: vec![0.0; band_edges.len()],
             band_edges,
@@ -277,6 +296,8 @@ impl Analyzer {
             self.acc_mid += (mid * mid) as f64;
             self.acc_side += (side * side) as f64;
             self.acc_peak = self.acc_peak.max(l.abs()).max(r.abs());
+            self.acc_lr[0] += (l * l) as f64;
+            self.acc_lr[1] += (r * r) as f64;
             self.ring.push(mid);
             self.hop_buf.push(mid);
             self.loudness.push(l, r);
@@ -312,6 +333,10 @@ impl Analyzer {
         f.peak = follow(f.peak, peak, dt, 0.0, 1.5);
         let width = if silent { 0.0 } else { (side_e.sqrt() / (mid_e.sqrt() + 1e-6)).min(1.0) };
         f.stereo_width = follow(f.stereo_width, width, dt, 0.1, 0.5);
+        let [el, er] = self.acc_lr;
+        self.acc_lr = [0.0; 2];
+        let balance = if silent || el + er <= 0.0 { 0.0 } else { ((er - el) / (er + el)) as f32 };
+        f.balance = follow(f.balance, balance, dt, 0.15, 0.15);
 
         self.loudness.hop(dt);
         f.lufs_m = self.loudness.lufs_m;
@@ -338,6 +363,21 @@ impl Analyzer {
         }
         let centroid = if silent || den <= 0.0 { 0.0 } else { num / den };
         f.centroid_hz = follow(f.centroid_hz, centroid, dt, 0.2, 0.6);
+        f.brightness = if f.centroid_hz <= 0.0 { 0.0 } else { ((f.centroid_hz / 200.0).log2() / 40f32.log2()).clamp(0.0, 1.0) };
+
+        // Noisiness: the spectrum's flatness (geometric over arithmetic mean)
+        // from 100 Hz to 10 kHz, in dB. Windowed white noise reads about
+        // -2.5 dB, music -15 to -30, a lone tone far lower.
+        let (lo, hi) = ((100.0 / bin_hz) as usize, ((10_000.0 / bin_hz) as usize).min(self.mid.power.len()));
+        let n = (hi - lo).max(1) as f32;
+        let (mut log_sum, mut sum) = (0.0f32, 0.0f32);
+        for p in &self.mid.power[lo..hi] {
+            log_sum += (p + 1e-12).ln();
+            sum += p;
+        }
+        let flat_db = if sum > 0.0 { 10.0 * ((log_sum / n).exp() / (sum / n + 1e-12)).max(1e-12).log10() } else { -60.0 };
+        let noisy = if silent { 0.0 } else { ((flat_db + 25.0) / 22.5).clamp(0.0, 1.0) };
+        f.noisiness = follow(f.noisiness, noisy, dt, 0.05, 0.2);
 
         // Bands, from the filterbank.
         self.filterbank.process(&self.hop_buf, &mut self.band_power);
@@ -369,10 +409,12 @@ impl Analyzer {
         f.treb_att = self.bmt_att[2];
 
         // Onsets, beat, chroma.
-        self.onsets.process(&self.short.mag, &self.mid.mag, dt, silent);
+        self.onsets.process(&self.short.mag, &self.mid.mag, self.bands.low_flux, dt, silent);
         f.onset_strength = self.onsets.strength;
         f.onset_hit = self.onsets.hit;
         f.onset_count = self.onsets.count;
+        self.onset_rate = self.onset_rate * (-dt / 2.0).exp() + self.onsets.hit[3] as u32 as f32;
+        f.activity = (self.onset_rate / 2.0 / 8.0).min(1.0);
         f.onset_pulse = self.onsets.pulse;
 
         self.beat.process(self.onsets.flux_total, dt, silent);
@@ -425,6 +467,9 @@ impl Analyzer {
             treb: f.treb,
             centroid_hz: f.centroid_hz,
             stereo_width: f.stereo_width,
+            balance: f.balance,
+            noisiness: f.noisiness,
+            activity: f.activity,
             energy_trend: f.energy_trend,
             silent: f.silent,
         });
@@ -483,6 +528,35 @@ mod tests {
         // A half-scale sine is -6 dB.
         let db = history::SPEC_FLOOR_DB * (1.0 - last.spectrum[row] as f32 / 255.0);
         assert!((db + 6.0).abs() < 1.5, "{db} dB");
+    }
+
+    #[test]
+    fn noise_is_noisy_and_a_tone_is_not() {
+        let cfg = AnalyzerConfig::default();
+        let mut seed = 3u32;
+        let mut noise = Analyzer::new(cfg.clone());
+        let mut tone = Analyzer::new(cfg.clone());
+        let (mut nb, mut tb) = (Vec::new(), Vec::new());
+        for i in 0..cfg.sample_rate as usize {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            let r = ((seed >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0) * 0.3;
+            nb.extend([r, r]);
+            let s = sine(440.0, 0.3, cfg.sample_rate, i);
+            tb.extend([s, s]);
+        }
+        noise.push(&nb);
+        tone.push(&tb);
+        assert!(noise.frame().noisiness > 0.8, "noise {}", noise.frame().noisiness);
+        assert!(tone.frame().noisiness < 0.1, "tone {}", tone.frame().noisiness);
+    }
+
+    #[test]
+    fn the_left_channel_alone_reads_left() {
+        let cfg = AnalyzerConfig::default();
+        let mut a = Analyzer::new(cfg.clone());
+        let buf: Vec<f32> = (0..cfg.sample_rate as usize).flat_map(|i| [sine(300.0, 0.3, cfg.sample_rate, i), 0.0]).collect();
+        a.push(&buf);
+        assert!(a.frame().balance < -0.95, "balance {}", a.frame().balance);
     }
 
     #[test]

@@ -792,7 +792,9 @@ impl Running {
             on_battery: self.battery,
         };
         let notices = self.notices();
-        let pinned = self.settings.show_ui || calibrating || self.first_run.is_some() || self.show_shortcuts || self.start.elapsed().as_secs_f32() < 5.0;
+        // The director view pins the bar and the strip: hiding them as the
+        // mouse rests moved the view up and down (it sits on the strip).
+        let pinned = self.settings.show_ui || calibrating || self.first_run.is_some() || self.show_shortcuts || self.audio_view.open || self.start.elapsed().as_secs_f32() < 5.0;
         let chrome_wanted = !self.zen && self.chrome.wants_visible(&self.egui_ctx, fullscreen, self.settings.chrome_autohide, pinned);
         // Cursor: gone in fullscreen once everything is hidden and the mouse rests.
         let want_cursor_hidden = fullscreen && !chrome_wanted && !self.settings.show_ui && self.first_run.is_none() && !calibrating && self.chrome.last_mouse.elapsed().as_secs_f32() > theme::AUTOHIDE_S;
@@ -974,6 +976,9 @@ impl Running {
         }
         if panel_actions.toggle_fullscreen {
             self.toggle_fullscreen();
+        }
+        if panel_actions.audio_view_toggle {
+            self.audio_view.open = !self.audio_view.open;
         }
         if panel_actions.calibrate_toggle || cal_actions.cancel {
             self.toggle_calibration();

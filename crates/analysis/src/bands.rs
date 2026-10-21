@@ -12,6 +12,10 @@
 //!   (32 ms), 0..1 (1 at `ATTACK_DB`), gated by its level so the floor's noise never
 //!   attacks; it fades over ~80 ms, and a held note gives none.
 //!
+//! Their rises in the lowest bands (centres up to `LOW_FLUX_HZ`) also make
+//! the low onset group's envelope (`low_flux`): a snare's noise barely moves
+//! them, where it moved the FFT's 30-200 Hz bins.
+//!
 //! The same for six broad bands (sub, bass, low mid, mid, presence, air),
 //! whose relative value is against their own average (1 = typical), as
 //! bass/mid/treb always were.
@@ -33,6 +37,8 @@ const REF_FLOOR_DB: f32 = -40.0;
 const LEAK_DB: f32 = 30.0;
 /// The rise over the last 32 ms that reads as a full attack.
 const ATTACK_DB: f32 = 9.0;
+/// Bands whose centre is under this feed `low_flux`.
+const LOW_FLUX_HZ: f32 = 130.0;
 /// Release of the relative value and the level, s (attack 10 / 5 ms).
 const RELEASE_S: f32 = 0.09;
 /// dB added per octave above 1 kHz (taken off below), so typical music
@@ -47,13 +53,18 @@ struct Track {
     /// Power of the last three hops, newest first.
     recent: [f32; 3],
     attack: f32,
+    /// This hop's rise over the loudest of the last three hops, in
+    /// compressed power (power^0.4): a loud band's rise counts more than a
+    /// quiet one's, and an envelope swelling back (two notes beating in the
+    /// band) does not count at all, only going past it does.
+    rise_v: f32,
     avg: f32,
     tilt_db: f32,
 }
 
 impl Track {
     fn new(centre_hz: f32) -> Self {
-        Self { norm: 1e-3, value: 0.0, level: 0.0, recent: [-1.0; 3], attack: 0.0, avg: 1e-3, tilt_db: TILT_DB_PER_OCT * (centre_hz / 1000.0).log2() }
+        Self { norm: 1e-3, value: 0.0, level: 0.0, recent: [-1.0; 3], attack: 0.0, rise_v: 0.0, avg: 1e-3, tilt_db: TILT_DB_PER_OCT * (centre_hz / 1000.0).log2() }
     }
 
     /// Level and attack from this hop's power, against the reference (tilted dB).
@@ -63,7 +74,10 @@ impl Track {
         self.level = follow(self.level, target, dt, 0.005, RELEASE_S);
         let gate = ((target - 0.02) / 0.10).clamp(0.0, 1.0);
         let before = self.recent.iter().sum::<f32>() / 3.0;
-        let rise = if silent || self.recent[2] < 0.0 { 0.0 } else { ((db(power) - db(before)) / ATTACK_DB).clamp(0.0, 1.0) * gate };
+        let started = !silent && self.recent[2] >= 0.0;
+        let rise = if started { ((db(power) - db(before)) / ATTACK_DB).clamp(0.0, 1.0) * gate } else { 0.0 };
+        let loudest = self.recent.iter().copied().fold(0.0f32, f32::max);
+        self.rise_v = if started { (power.max(0.0).powf(0.4) - loudest.powf(0.4)).max(0.0) } else { 0.0 };
         self.recent = [power.max(0.0), self.recent[0], self.recent[1]];
         self.attack = follow(self.attack, rise, dt, 0.0, 0.08);
     }
@@ -85,6 +99,10 @@ pub struct BandSignals {
     pub broad_level: [f32; BROAD],
     pub broad_relative: [f32; BROAD],
     pub broad_attack: [f32; BROAD],
+    /// The summed rise of the lowest bands this hop (compressed power):
+    /// the low onset group's envelope.
+    pub low_flux: f32,
+    low_bands: usize,
 }
 
 impl BandSignals {
@@ -103,6 +121,8 @@ impl BandSignals {
             broad_level: [0.0; BROAD],
             broad_relative: [0.0; BROAD],
             broad_attack: [0.0; BROAD],
+            low_flux: 0.0,
+            low_bands: centres_hz.iter().filter(|c| **c <= LOW_FLUX_HZ).count().max(1),
         }
     }
 
@@ -130,6 +150,7 @@ impl BandSignals {
             self.level[i] = t.level;
             self.attack[i] = t.attack;
         }
+        self.low_flux = self.bands[..self.low_bands].iter().map(|t| t.rise_v).sum();
 
         // Broad bands: the mean power of the bands inside each, so they
         // sit on the same scale as one band.

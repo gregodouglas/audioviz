@@ -47,6 +47,9 @@ pub struct HopRecord {
     pub treb: f32,
     pub centroid_hz: f32,
     pub stereo_width: f32,
+    pub balance: f32,
+    pub noisiness: f32,
+    pub activity: f32,
     pub energy_trend: f32,
     pub silent: bool,
 }

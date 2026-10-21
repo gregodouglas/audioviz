@@ -4,9 +4,11 @@
 //! refractory period.
 //!
 //! Resolution matters: the 512-point spectrum is great for hi-hat timing but
-//! gives bass two bins, so the low group and the beat envelope come from the
-//! 2048-point spectrum (aggregated into log bands), while mid/high transients
-//! come from the 512-point one.
+//! gives bass two bins, so the beat envelope comes from the 2048-point
+//! spectrum (aggregated into log bands) and mid/high transients from the
+//! 512-point one. The low group's envelope is handed in: the rise of the
+//! filterbank's lowest bands (`bands::BandSignals::low_flux`), which a
+//! snare's noise barely moves (ADR-0006 step 2).
 
 use std::collections::VecDeque;
 
@@ -26,7 +28,6 @@ pub struct OnsetDetector {
     // 2048-point spectrum: low group and the log-band beat envelope.
     prev_mid: Vec<f32>,
     cur_mid: Vec<f32>,
-    low_range: (usize, usize),
     band_edges: Vec<(usize, usize)>,
     prev_bands: Vec<f32>,
     cur_bands: Vec<f32>,
@@ -58,9 +59,7 @@ pub struct OnsetDetector {
 impl OnsetDetector {
     pub fn new(short_bins: usize, short_bin_hz: f32, mid_bins: usize, mid_bin_hz: f32, frame_rate: f32) -> Self {
         let sbin = |f: f32| ((f / short_bin_hz).round() as usize).clamp(1, short_bins - 1);
-        let mbin = |f: f32| ((f / mid_bin_hz).round() as usize).clamp(1, mid_bins - 1);
         let short_ranges = [(sbin(200.0), sbin(2000.0)), (sbin(2000.0), sbin(16000.0).min(short_bins))];
-        let low_range = (mbin(30.0), mbin(200.0).max(mbin(30.0) + 1));
 
         let (lo, hi) = (30.0f32.ln(), 16_000.0f32.ln());
         let mut band_edges = Vec::with_capacity(ENV_BANDS);
@@ -79,7 +78,6 @@ impl OnsetDetector {
             short_ranges,
             prev_mid: vec![0.0; mid_bins],
             cur_mid: vec![0.0; mid_bins],
-            low_range,
             band_edges,
             prev_bands: vec![0.0; ENV_BANDS],
             cur_bands: vec![0.0; ENV_BANDS],
@@ -100,7 +98,7 @@ impl OnsetDetector {
         }
     }
 
-    pub fn process(&mut self, short_mag: &[f32], mid_mag: &[f32], dt: f32, silent: bool) {
+    pub fn process(&mut self, short_mag: &[f32], mid_mag: &[f32], low_flux: f32, dt: f32, silent: bool) {
         for (c, m) in self.cur_short.iter_mut().zip(short_mag) {
             *c = (1.0 + LAMBDA * m).ln();
         }
@@ -113,7 +111,7 @@ impl OnsetDetector {
         }
 
         let mut flux = [0.0f32; GROUPS];
-        flux[0] = hwr_flux(&self.cur_mid, &self.prev_mid, self.low_range);
+        flux[0] = low_flux;
         flux[1] = hwr_flux(&self.cur_short, &self.prev_short, self.short_ranges[0]);
         flux[2] = hwr_flux(&self.cur_short, &self.prev_short, self.short_ranges[1]);
         flux[3] = hwr_flux(&self.cur_bands, &self.prev_bands, (0, ENV_BANDS));

@@ -133,6 +133,8 @@ pub struct Actions {
     pub restore_scene: Option<String>,
     pub calibrate_toggle: bool,
     pub calibrate_apply: bool,
+    /// Open or close the director view (D).
+    pub audio_view_toggle: bool,
     pub open_url: Option<String>,
     pub open_scenes_folder: bool,
     /// Authoring: open the visuals folder, make a new visual from the
@@ -1424,6 +1426,14 @@ fn sync_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelSta
                 }
             });
         }
+    }
+
+    ui.add_space(12.0);
+    small_caps(ui, "Director view");
+    hint(ui, "What the engine hears, for making visuals: a live spectrogram, the bands' levels and attacks, onsets against their thresholds, the beat grid. F freezes it, a drag scrolls back over the last five minutes, the wheel zooms.");
+    ui.add_space(4.0);
+    if ghost_button(ui, "Open or close the director view (D)", false).clicked() {
+        a.audio_view_toggle = true;
     }
 
     ui.add_space(12.0);

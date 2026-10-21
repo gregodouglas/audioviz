@@ -238,6 +238,10 @@ fn groove(bpm: f32, t: f32, dt: f32) -> FeatureFrame {
     f.broad_relative = [0.8 + kick, 0.8 + 0.8 * kick, 0.8 + 0.4 * swell, 0.8 + 0.4 * swell + 0.4 * snare, 0.8 + 0.6 * hat, 0.8 + 0.6 * hat];
     f.broad_attack = [kick, kick * 0.8, snare * 0.5, snare, hat * 0.7, hat];
     f.centroid_hz = 1200.0 + 2500.0 * hat;
+    f.brightness = 0.5 + 0.3 * hat;
+    f.noisiness = 0.3 + 0.4 * hat + 0.2 * snare;
+    f.activity = 0.35 + 0.2 * swell;
+    f.balance = 0.1 * (beats / 8.0 * std::f32::consts::TAU).sin();
     f.stereo_width = 0.4;
     f.onset_strength = [kick, snare, hat, kick.max(snare).max(hat)];
     f.onset_hit = [on_beat, on_beat && count % 2 == 1, on_eighth, on_beat || on_eighth];

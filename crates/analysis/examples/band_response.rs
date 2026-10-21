@@ -80,7 +80,76 @@ fn kick_table(name: &str, kick: fn(f32) -> f32) {
     }
 }
 
+/// A groove for the onset groups: kicks on beats 1 and 3, a noise snare on
+/// 2 and 4, closed hats on the eighths, and a bass note that changes on
+/// each beat's second sixteenth (so a low onset there is a bass note, not a kick).
+fn groove_onsets() {
+    let bpm = 120.0f32;
+    let beat = 60.0 / bpm;
+    let mut seed = 11u32;
+    let mut noise = move || {
+        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        (seed >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0
+    };
+    let mut hp = 0.0f32;
+    let mut last = 0.0f32;
+    let notes = [41.2f32, 55.0, 49.0, 61.7];
+    let mut bass_phase = 0.0f32;
+    let total = SR as usize * 20;
+    let mut mono = Vec::with_capacity(total);
+    for i in 0..total {
+        let t = i as f32 / SR as f32;
+        let b = t / beat;
+        let tb = (b.fract()) * beat;
+        let n = noise();
+        // A crude high-pass for the hats.
+        hp = 0.9 * (hp + n - last);
+        last = n;
+        let kick = if (b as u32) % 2 == 0 { thump(tb) * 0.6 } else { 0.0 };
+        let snare = if (b as u32) % 2 == 1 { n * (-tb / 0.08).exp() * 0.35 * (tb / 0.002).min(1.0) } else { 0.0 };
+        let te = (b * 2.0).fract() * beat * 0.5;
+        let hat = hp * (-te / 0.02).exp() * 0.15;
+        let note = notes[((b - 0.25).max(0.0) as usize) % 4];
+        bass_phase += std::f32::consts::TAU * note / SR as f32;
+        let bass = bass_phase.sin() * 0.25;
+        mono.push(kick + snare + hat + bass);
+    }
+    let mut a = Analyzer::new(AnalyzerConfig::default());
+    let mut hits = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+    let mut recs = Vec::new();
+    for chunk in stereo(mono.into_iter()).chunks(1024) {
+        a.push(chunk);
+        a.drain_records(&mut recs);
+    }
+    for r in recs.iter().filter(|r| r.time_s > 6.0) {
+        for g in 0..4 {
+            if r.onset_hits & (1 << g) != 0 {
+                hits[g].push(r.time_s as f32);
+            }
+        }
+    }
+    // Where each hit fell: on a kick (beats 1, 3), a snare (2, 4), the bass note (a beat's second sixteenth), the off-eighth, else.
+    println!("groove (kick on 1 and 3, snare on 2 and 4, hats on eighths, bass note on each beat's second sixteenth), 28 beats:");
+    for (g, name) in ["low", "mid", "high", "all"].iter().enumerate() {
+        let (mut kick, mut snare, mut at_note, mut at_eighth, mut other) = (0, 0, 0, 0, 0);
+        for t in &hits[g] {
+            let x = (t / beat).fract();
+            // A hit just before a beat belongs to it.
+            let which = ((t / beat) + 0.08).floor() as u32;
+            let near = |p: f32| (x - p).abs() < 0.12 || (x - p - 1.0).abs() < 0.12;
+            if near(0.0) { if which % 2 == 0 { kick += 1 } else { snare += 1 } } else if near(0.25) { at_note += 1 } else if near(0.5) { at_eighth += 1 } else { other += 1 }
+        }
+        if std::env::var_os("TRACE").is_some() && g == 0 {
+            let mut xs: Vec<String> = hits[g].iter().map(|t| format!("{:.2}", (t / beat) % 2.0)).collect();
+            xs.sort();
+            println!("  low hit positions in the bar of two beats: {}", xs.join(" "));
+        }
+        println!("  {name:<5} {:>3} hits: {kick:>3} kicks (of 14), {snare:>3} snares (14), {at_note:>3} bass notes (28), {at_eighth:>3} off-eighths (28), {other:>3} elsewhere", hits[g].len());
+    }
+}
+
 fn main() -> anyhow::Result<()> {
+    groove_onsets();
     kick_table("sweep kicks (120 -> 45 Hz, 120 ms)", sweep_kick);
     kick_table("thumps (55 Hz, 60 ms)", thump);
 
@@ -116,6 +185,15 @@ fn main() -> anyhow::Result<()> {
         }
         let broad: Vec<f32> = (0..6).map(|k| recs.iter().map(|r| r.broad_level[k]).sum::<f32>() / n).collect();
         println!("broad level mean {:?}", round(broad, 100.0));
+        let stat = |f: fn(&HopRecord) -> f32| {
+            let mut v: Vec<f32> = recs.iter().map(f).collect();
+            v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            (v[v.len() / 10], v[v.len() / 2], v[v.len() * 9 / 10])
+        };
+        for (name, f) in [("noisiness", (|r: &HopRecord| r.noisiness) as fn(&HopRecord) -> f32), ("activity", |r| r.activity), ("balance", |r| r.balance), ("width", |r| r.stereo_width)] {
+            let (a, b, c) = stat(f);
+            println!("{name}: 10th {a:.2}, median {b:.2}, 90th {c:.2}");
+        }
     }
     Ok(())
 }

@@ -1000,6 +1000,10 @@ struct Uniform {
     broad: [[f32; 4]; 2],
     broad_rel: [[f32; 4]; 2],
     broad_attack: [[f32; 4]; 2],
+    noisiness: f32,
+    balance: f32,
+    activity: f32,
+    brightness: f32,
 }
 
 // ------------------------------------------------------------ building off the render thread
@@ -2169,6 +2173,10 @@ impl ShaderVisual {
             broad: pack6(&f.broad_level),
             broad_rel: pack6(&f.broad_relative),
             broad_attack: pack6(&f.broad_attack),
+            noisiness: f.noisiness,
+            balance: f.balance,
+            activity: f.activity,
+            brightness: f.brightness,
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
         // The album art, once per track.
@@ -2473,7 +2481,8 @@ mod tests {
         assert_eq!(std::mem::offset_of!(Uniform, space), 544 + 512 + 128);
         assert_eq!(std::mem::offset_of!(Uniform, levels), 544 + 512 + 144);
         assert_eq!(std::mem::offset_of!(Uniform, broad_attack), 544 + 512 + 144 + 320);
-        assert_eq!(std::mem::size_of::<Uniform>(), 544 + 512 + 144 + 352);
+        assert_eq!(std::mem::offset_of!(Uniform, noisiness), 544 + 512 + 144 + 352);
+        assert_eq!(std::mem::size_of::<Uniform>(), 544 + 512 + 144 + 352 + 16);
     }
 
     #[test]

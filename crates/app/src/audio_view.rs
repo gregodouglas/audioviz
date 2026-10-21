@@ -30,6 +30,7 @@ const GROUP_COLOURS: [Color32; 4] = [
     Color32::from_rgb(0xd9, 0xdf, 0xdd),
 ];
 const BEAT: Color32 = Color32::from_rgb(0x66, 0xff, 0x8c);
+const NOISY: Color32 = Color32::from_rgb(0xc7, 0x8b, 0xff);
 
 /// The engine's recent past, as records per hop, and the track changes in it.
 pub struct History {
@@ -301,8 +302,20 @@ impl ViewState {
             }
             p.line_segment([pos2(level_r.left(), yl(0.5)), pos2(level_r.right(), yl(0.5))], Stroke::new(1.0, HAIRLINE));
             p.add(Shape::line(trend, Stroke::new(1.0, theme::with_alpha(GROUP_COLOURS[1], 140))));
+            // Noisiness and activity, 0..1 across the lane.
+            let mut noisy = Vec::new();
+            let mut busy = Vec::new();
+            for c in 0..COLS {
+                if let Some(h) = col_record(c) {
+                    noisy.push(pos2(col_x(c), yl(h.noisiness)));
+                    busy.push(pos2(col_x(c), yl(h.activity)));
+                }
+            }
+            p.add(Shape::line(noisy, Stroke::new(1.0, theme::with_alpha(NOISY, 170))));
+            p.add(Shape::line(busy, Stroke::new(1.0, theme::with_alpha(GROUP_COLOURS[2], 170))));
             p.add(Shape::line(lvl, Stroke::new(1.5, TEXT)));
             lane_label(&p, level_r, "Level");
+            p.text(pos2(level_r.left() - GUTTER + 8.0, level_r.bottom()), Align2::LEFT_BOTTOM, "noise · busy", theme::sans(9.0), TEXT_3);
 
             // Track changes.
             for (t, label) in &history.marks {
@@ -328,8 +341,8 @@ impl ViewState {
                         }
                     }
                     let read = format!(
-                        "{:.2} s back{hz} · onsets {:.2} {:.2} {:.2} {:.2} · {:.1} BPM, conf {:.2}, phase {:.2} · sub {:.2} bass {:.2} low mid {:.2} mid {:.2} presence {:.2} air {:.2} · {:.0} Hz centroid · width {:.2}",
-                        live_end - h.time_s, h.onset_strength[0], h.onset_strength[1], h.onset_strength[2], h.onset_strength[3], h.bpm, h.beat_confidence, h.beat_phase, h.broad_level[0], h.broad_level[1], h.broad_level[2], h.broad_level[3], h.broad_level[4], h.broad_level[5], h.centroid_hz, h.stereo_width
+                        "{:.2} s back{hz} · onsets {:.2} {:.2} {:.2} {:.2} · {:.1} BPM, conf {:.2}, phase {:.2} · sub {:.2} bass {:.2} low mid {:.2} mid {:.2} presence {:.2} air {:.2} · {:.0} Hz centroid · noise {:.2} · busy {:.2} · width {:.2}, balance {:+.2}",
+                        live_end - h.time_s, h.onset_strength[0], h.onset_strength[1], h.onset_strength[2], h.onset_strength[3], h.bpm, h.beat_confidence, h.beat_phase, h.broad_level[0], h.broad_level[1], h.broad_level[2], h.broad_level[3], h.broad_level[4], h.broad_level[5], h.centroid_hz, h.noisiness, h.activity, h.stereo_width, h.balance
                     );
                     let galley = p.layout_no_wrap(read, theme::mono(11.0), TEXT);
                     let at = pos2((pt.x + 10.0).min(rect.right() - galley.size().x - 8.0), plot.top() + 4.0);

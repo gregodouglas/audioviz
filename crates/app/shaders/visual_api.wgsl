@@ -55,6 +55,10 @@ struct VisualIn {
     broad_v: array<vec4<f32>, 2>,        // six broad bands' level (use broad())
     broad_rel_v: array<vec4<f32>, 2>,    // their value against their own average (broad_rel())
     broad_attack_v: array<vec4<f32>, 2>, // their attacks (broad_attack())
+    noisiness: f32,     // 0 tonal (notes, chords) .. 1 noise-like (hats, cymbals, distortion)
+    balance: f32,       // -1 all left .. 1 all right
+    activity: f32,      // 0..1, how busy: onsets a second over the last couple of seconds (1 = eight or more)
+    brightness: f32,    // 0..1, where the sound's weight sits: 200 Hz .. 8 kHz on a log scale
 };
 
 @group(0) @binding(0) var<uniform> V: VisualIn;

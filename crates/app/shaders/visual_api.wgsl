@@ -45,7 +45,7 @@ struct VisualIn {
     picture_count: f32, // pictures shown so far (goes up by one with each new one)
     confidence: f32,    // 0..1, how sure the beat clock is of the beat
     silent: f32,        // 1 when nothing is playing
-    _pad8: f32,
+    width: f32,         // stereo width 0..1 (use stereo_width())
     hits: vec4<f32>,    // 1 on the frame an onset is detected (low, mid, high, all), else 0
     strengths: vec4<f32>, // onset strength now, continuous (low, mid, high, all)
     chroma_slow_v: array<vec4<f32>, 3>, // 12 pitch classes, slow profile (the chord over seconds)
@@ -59,11 +59,14 @@ struct VisualIn {
     balance: f32,       // -1 all left .. 1 all right
     activity: f32,      // 0..1, how busy: onsets a second over the last couple of seconds (1 = eight or more)
     brightness: f32,    // 0..1, where the sound's weight sits: 200 Hz .. 8 kHz on a log scale
-    bar: vec4<f32>,     // x: 0..1 through the bar of four beats; y: which beat (0 = the first); z: how sure of the bar's first beat; w: how steady the pulse has been (0..1)
-    context: vec4<f32>, // x: build intensity 0..1; y: bass presence 0..1; z: contrast with the last minute 0..1; w: novelty against its usual (about 1 at a change)
-    trends: vec4<f32>,  // x: brightness, y: density, z: energy trend, each -1 falling .. 1 rising over seconds
-    moments: vec4<f32>, // x: 1 at a drop, fading over ~0.6 s; y: how sure that drop was; z: 1 at a transition, fading; w: 0..1 through the eight-bar phrase
-    section: vec4<f32>, // x: the section's label (0 = A, 1 = B ...; a section that sounds like an earlier one gets its label); y: how much it does (0..1); z: bars to the next expected change; w: how sure (0..1)
+    // The music's shape over bars and seconds (ADR-0006). Read them by name
+    // with the functions below (bar_phase(), build(), drop_pulse() ...).
+    bar: vec4<f32>,     // bar phase, beat in the bar, how sure of the bar, pulse steadiness
+    context: vec4<f32>, // build, bass presence, contrast, novelty
+    trends: vec4<f32>,  // brightness, density and energy trends, bars into the section
+    moments: vec4<f32>, // drop pulse, how sure of the drop, change pulse, phrase phase
+    section: vec4<f32>, // section label, seen before, bars to the expected change, how sure
+    extra: vec4<f32>,   // loudness, drops so far, changes so far, 0
 };
 
 @group(0) @binding(0) var<uniform> V: VisualIn;
@@ -218,6 +221,159 @@ fn band_at(t: f32) -> f32 {
     let x = clamp(t, 0.0, 1.0) * 31.0;
     let i = u32(floor(x));
     return mix(band(i), band(min(i + 1u, 31u)), fract(x));
+}
+
+// level() at t (0 = lowest band, 1 = highest), interpolated: the spectrum
+// in balance, quiet bands low.
+fn level_at(t: f32) -> f32 {
+    let x = clamp(t, 0.0, 1.0) * 31.0;
+    let i = u32(floor(x));
+    return mix(level(i), level(min(i + 1u, 31u)), fract(x));
+}
+
+// attack() at t, interpolated.
+fn attack_at(t: f32) -> f32 {
+    let x = clamp(t, 0.0, 1.0) * 31.0;
+    let i = u32(floor(x));
+    return mix(attack(i), attack(min(i + 1u, 31u)), fract(x));
+}
+
+// The sound's character, 0..1 unless said.
+
+// How loud, 0..1 (momentary loudness from -40 to -5 LUFS): the level
+// itself, not against its average as V.energy is.
+fn loudness() -> f32 {
+    return V.extra.x;
+}
+
+// How wide the stereo picture is, 0 mono .. 1 wide.
+fn stereo_width() -> f32 {
+    return V.width;
+}
+
+// The bar and the beat in it (ADR-0006 step 3). The bar is four beats.
+
+// 0..1 through the bar.
+fn bar_phase() -> f32 {
+    return V.bar.x;
+}
+
+// Which beat of the bar this is: 0 (the first) .. 3.
+fn beat_in_bar() -> f32 {
+    return V.bar.y;
+}
+
+// How sure the analysis is where the bar starts, 0..1. The chords changing
+// find it; kicks alone cannot tell the first beat from the third.
+fn bar_sure() -> f32 {
+    return V.bar.z;
+}
+
+// The beat pulse on the bar's first beat only, times bar_sure().
+fn first_beat() -> f32 {
+    return select(0.0, V.beat * V.bar.z, V.bar.y < 0.5);
+}
+
+// How steady the pulse has been over the last ~8 s, 0..1.
+fn pulse_steady() -> f32 {
+    return V.bar.w;
+}
+
+// Context over seconds (ADR-0006 step 4): where the music is heading. They
+// fade in over the first ~10 s of a track.
+
+// Build intensity, 0..1: energy, brightness, density and noise rising and
+// the bass taken out, over seconds. High before a drop.
+fn build() -> f32 {
+    return V.context.x;
+}
+
+// How much sub and bass there is over the last few seconds, 0..1.
+fn bass_presence() -> f32 {
+    return V.context.y;
+}
+
+// How unlike the last minute the last few seconds are, 0..1.
+fn contrast() -> f32 {
+    return V.context.z;
+}
+
+// Novelty: the last 1.5 s against the 4 s before, against its usual level
+// (0..1.5; about 1 at a change).
+fn novelty() -> f32 {
+    return V.context.w;
+}
+
+// Trends over seconds, -1 falling .. 1 rising.
+fn brightness_trend() -> f32 {
+    return V.trends.x;
+}
+
+fn density_trend() -> f32 {
+    return V.trends.y;
+}
+
+fn energy_trend() -> f32 {
+    return V.trends.z;
+}
+
+// 1 at a drop (after a build, the bass and energy back at once), fading
+// over ~0.6 s; known as it happens. drop_sure() is how sure that one was.
+fn drop_pulse() -> f32 {
+    return V.moments.x;
+}
+
+fn drop_sure() -> f32 {
+    return V.moments.y;
+}
+
+// 1 at a change (a transition: the sound turns into something else),
+// fading; known about 1.5 s after it.
+fn change_pulse() -> f32 {
+    return V.moments.z;
+}
+
+// Drops and changes so far in the track: when one goes up, an event
+// happened (keep last frame's in a prepare item to see it once).
+fn drop_count() -> f32 {
+    return V.extra.y;
+}
+
+fn change_count() -> f32 {
+    return V.extra.z;
+}
+
+// Sections from the track's own history (ADR-0006 step 4). Approximate.
+
+// 0..1 through the eight-bar phrase.
+fn phrase_phase() -> f32 {
+    return V.moments.w;
+}
+
+// The section's label: 0 = A, 1 = B ... A section that sounds like an
+// earlier one gets that one's label, so a chorus comes back as its letter.
+fn section() -> f32 {
+    return V.section.x;
+}
+
+// How much this section sounds like an earlier one, 0..1.
+fn seen_before() -> f32 {
+    return V.section.y;
+}
+
+// Whole bars since this section began.
+fn bars_in_section() -> f32 {
+    return V.trends.w;
+}
+
+// Bars to the next expected change (an earlier section's length when this
+// one matches it, else the next eight-bar phrase), and how sure, 0..1.
+fn bars_to_change() -> f32 {
+    return V.section.z;
+}
+
+fn change_sure() -> f32 {
+    return V.section.w;
 }
 
 // Pitch class i (0..11, C first).

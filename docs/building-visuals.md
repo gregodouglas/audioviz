@@ -123,7 +123,9 @@ Your picture is not shown as is. Per layer, in order:
 
 ### The music
 
-All of these are in the `V` struct or are functions. The values respect the layer's **Reacts to** band: if the layer listens to 20-400 Hz, the energy, onsets and spectrum are of that band.
+All of these are in the `V` struct or are functions. The values respect the layer's **Reacts to** band: if the layer listens to 20-400 Hz, the energy, levels, attacks, onsets and spectrum are of that band.
+
+**Time and clocks**
 
 | | Range | What it is |
 |---|---|---|
@@ -131,33 +133,100 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `V.dt` | seconds | This frame's length (0.004 at 240 fps, 0.017 at 60). Use it for anything that accumulates, so a visual looks the same at every frame rate. |
 | `V.resolution` | pixels | The layer's size. |
 | `V.flow` | seconds | **A music clock**: advances 0.5 s per second in silence up to about 1.7 s per second when loud (by `V.dt * (0.5 + 0.5 * V.energy)` each frame). Use it in place of `V.time` for motion that should speed up with the music. |
+
+**How loud, and where**
+
+| | Range | What it is |
+|---|---|---|
 | `V.energy` | 0..2.5, ~1 | The overall level against its own recent average: 1 is "as loud as lately", above is a build or a drop. |
 | `V.bass`, `V.mid`, `V.treble` | ~0..3, ~1 | The same for 30-200 Hz, 200-2000 Hz and 2-16 kHz. |
 | `V.swell` | 0..~2 | Bass above its average plus low onsets, fast attack and slow release: a ready-made "breathing" amount for sizes and pushes. |
-| `V.beat` | 0..1 | The beat pulse: jumps to 1 on each beat and decays; scaled by the tracker's confidence, so it fades out in music without a clear beat. |
-| `V.beat_phase` | 0..1 | Where we are within the current beat. |
-| `V.beat_count` | count | Beats since start; `V.beat_count % 4.0` counts within a bar of four. |
-| `V.bpm` | ~60..200 | The tracked tempo. |
+| `loudness()` | 0..1 | How loud, not against anything: momentary loudness from -40 to -5 LUFS. A quiet song stays low. |
+| `broad(k)` | 0..1 | Six broad bands on one scale: `SUB` (30-60 Hz), `BASS` (60-250), `LOW_MID` (250-500), `MID` (500-2k), `PRESENCE` (2-6k), `AIR` (6-16k). `broad(BASS)` is how much bass there is. |
+| `broad_rel(k)` | 0..3, ~1 | A broad band against its own average: 1 typical. |
+| `bass_presence()` | 0..1 | Sub and bass over the last few seconds: the steady weight of the low end. |
+
+**Punch**
+
+| | Range | What it is |
+|---|---|---|
+| `attack(i)`, `attack_at(t)` | 0..1 | How far band `i` rose in the last ~30 ms, fading over ~80 ms: its punch, 5 to 15 ms after a kick. A held note gives none. |
+| `broad_attack(k)` | 0..1 | A broad band's attack: `broad_attack(BASS)` is the kick, `broad_attack(AIR)` the hats. |
 | `V.onset` | 0..1 | A pulse on any onset (a hit, a note start), decaying. |
 | `V.onsets` | 0..1 each | Onset pulses for low, mid, high and all: `V.onsets.x` is kicks, `.z` is hats. |
 | `V.hits` | 0 or 1 each | 1 on the frame an onset is detected (low, mid, high, all). At high frame rates one detection can show on two frames, so act on a rise from 0 (keep last frame's value in a prepare item). |
 | `V.strengths` | ~0..1 each | How strong the onset is now, continuous (low, mid, high, all). |
+
+**The beat and the bar**
+
+| | Range | What it is |
+|---|---|---|
+| `V.beat` | 0..1 | The beat pulse: jumps to 1 on each beat and decays; scaled by the tracker's confidence, so it fades out in music without a clear beat. |
+| `V.beat_phase` | 0..1 | Where we are within the current beat. |
+| `V.beat_count` | count | Beats since start. |
+| `V.bpm` | ~60..200 | The tracked tempo. It starts afresh on each track and locks in about 2.5 s. |
 | `V.confidence` | 0..1 | How sure the beat tracker is; `V.beat` is already scaled by it. Step things on beats or bars only above about 0.3. |
-| `V.silent` | 0 or 1 | 1 when nothing is playing. |
+| `bar_phase()` | 0..1 | Where we are within the bar of four beats. Twice as slow as a beat and in time with the music: the one for sways. |
+| `beat_in_bar()` | 0..3 | Which beat of the bar this is (0 = the first). |
+| `first_beat()` | 0..1 | The beat pulse on the bar's first beat only, times `bar_sure()`. |
+| `bar_sure()` | 0..1 | How sure the analysis is where the bar starts. Chords changing find it; kicks alone cannot tell the first beat from the third. |
+| `pulse_steady()` | 0..1 | How steady the pulse has been over the last ~8 s. |
+
+**The sound's character**
+
+| | Range | What it is |
+|---|---|---|
+| `V.brightness` | 0..1 | Where the sound's weight sits, 200 Hz to 8 kHz on a log scale. |
+| `V.noisiness` | 0..1 | 0 tonal (notes, chords) to 1 noise-like (hats, cymbals, distortion). |
+| `V.activity` | 0..1 | How busy: onsets a second over the last couple of seconds (1 is eight or more). |
+| `V.balance` | -1..1 | All left to all right. |
+| `stereo_width()` | 0..1 | Mono to wide. |
 | `V.key` | 0..11 | The dominant pitch class, C = 0. |
-| `V.quiet` | 0 or 1 | 1 during a quiet passage (a breakdown, the gap between tracks). |
-| `band(i)` | ~0..1 | Band `i` of 32, log-spaced from 30 Hz (0) to 16 kHz (31), each auto-gained, smoothed with a 30 ms attack and 200 ms release. |
+| `chroma(i)`, `chroma_slow(i)` | 0..1 | Pitch class `i` (C = 0, C# = 1 ... B = 11), normalised so the loudest class is 1; the slow one over the last seconds, the chord rather than the note. |
+
+**Where the music is going** (over seconds; these fade in over a track's first ten seconds or so)
+
+| | Range | What it is |
+|---|---|---|
+| `build()` | 0..1 | Build intensity: energy, brightness, density and noise rising and the bass taken out. High before a drop. |
+| `drop_pulse()`, `drop_sure()` | 0..1 | 1 at a drop (after a build, the bass and the energy back at once), fading over ~0.6 s, known as it happens; how sure that drop was. |
+| `change_pulse()` | 0..1 | 1 at a change (the sound turns into something else), fading; known about 1.5 s after it. |
+| `drop_count()`, `change_count()` | count | Drops and changes so far in the track: when one goes up, an event happened. |
+| `contrast()` | 0..1 | How unlike the last minute the last few seconds are. |
+| `novelty()` | 0..1.5 | The last 1.5 s against the 4 s before, against its usual: about 1 at a change. |
+| `energy_trend()`, `brightness_trend()`, `density_trend()` | -1..1 | Falling or rising over seconds. |
+| `V.quiet`, `V.silent` | 0 or 1 | 1 during a quiet passage (a breakdown, the gap between tracks); 1 when nothing is playing. |
+
+**The track's sections** (from its own history; approximate)
+
+| | Range | What it is |
+|---|---|---|
+| `section()` | 0, 1, 2 ... | The section's label, 0 = A. A section that sounds like an earlier one gets that one's label, so a chorus comes back as its letter. |
+| `seen_before()` | 0..1 | How much this section sounds like an earlier one. |
+| `bars_in_section()` | count | Whole bars since this section began. |
+| `bars_to_change()`, `change_sure()` | bars, 0..1 | Bars to the next expected change (an earlier section's length when this one matches it, else the next eight-bar phrase), and how sure. |
+| `phrase_phase()` | 0..1 | Where we are within the eight-bar phrase. |
+
+**The spectrum and the waveform**
+
+| | Range | What it is |
+|---|---|---|
+| `band(i)` | ~0..1 | Band `i` of 32 from 30 Hz (0) to 16 kHz (31), each against its own recent best, smoothed with a 30 ms attack and 200 ms release. Every band moves, whatever the mix. |
 | `band_raw(i)` | ~0..1 | The same without smoothing: jumpier, better for flashes. |
 | `band_at(t)` | ~0..1 | The smoothed spectrum at `t` 0..1 (low to high), interpolated between bands. The easy way to map a position to a frequency. |
-| `chroma(i)` | 0..1 | Pitch class `i` (C = 0, C# = 1 ... B = 11), normalised so the loudest class is 1. |
-| `chroma_slow(i)` | 0..1 | The same over the last seconds: the chord rather than the note. |
+| `level(i)`, `level_at(t)` | 0..1 | Band `i` on one scale for all bands (0..1 over the 42 dB under the track's loud level): the spectrum in balance, quiet bands low however long they are quiet. |
 | `wave(t)` | ~-1..1 | The last 1024 samples (`t` 0 oldest, 1 newest) as (left, right), auto-gained. |
 | `wave_mono(t)` | ~-1..1 | Their average. |
 | `sample(i)` | ~-1..1 | Sample `i` of the last 4096, newest first, (left, right), auto-gained: for walking the waveform sample by sample. |
-| `V.track` | 0..1 | A hash of the playing track: a seed for anything that should be the same each time a song plays and change with the next. |
-| `V.instance` | 0..1 | Random per layer: two layers of the same visual start from different seeds. |
 | `V.wave_new` | count | How many of `sample()`'s newest samples arrived since last frame: a trace that draws exactly these (the scope) never repeats or skips one. |
 | `V.auto_gain`, `V.sample_rate` | | The gain already applied to the waveform (divide by it to undo), and samples per second. |
+
+**Everything else**
+
+| | Range | What it is |
+|---|---|---|
+| `V.track` | 0..1 | A hash of the playing track: a seed for anything that should be the same each time a song plays and change with the next. |
+| `V.instance` | 0..1 | Random per layer: two layers of the same visual start from different seeds. |
 | `prev(uv)` | colour | Your own last frame, before effects (with `"feedback": true`; black otherwise). |
 | `trail(uv)`, `write_trail(c)` | colour | With `"trail": true`: last frame's trail, and this pixel's trail for the next frame (see "Keeping a trail"). |
 | `picture(uv)`, `picture_prev(uv)` | colour | With `"pictures"` in the manifest: the current picture (album art or a photo from the photos folder) and the one before it, 0..1 across, y down, mirrored outside. `V.picture_fade` (0..1, eased) is how far the new one has replaced the old; `V.picture_aspect`, `V.picture_prev_aspect` are width over height; `V.picture_count` goes up by one per new picture. |
@@ -167,6 +236,28 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `param(i)` | | Control `i` by position, for loops over controls. Usually `params()` is clearer. |
 
 Also available: `TAU` (2π), `hash21(p)` and `hash22(p)` (a pseudo-random 0..1 number or pair from a position), `noise(p)` (smooth value noise 0..1, one feature per unit), and `ign(p)` (interleaved gradient noise from a pixel position, for dithering).
+
+The packed fields behind the named functions (`V.bar`, `V.context`, `V.trends`, `V.moments`, `V.section`, `V.extra`) may be rearranged as the analysis grows; the functions will keep their meaning.
+
+### Choosing a signal
+
+The music arrives on three timescales, and a visual that feels alive answers on all three: the hit, the bar, and the song's arc.
+
+- **A hit** (the next 100 ms): `broad_attack(BASS)` or `attack(i)` for punch exactly when it lands, `V.onsets` for a pulse that decays on its own. Use it to *push* something that then eases back (a size, a glow), not to jump a shape in one frame.
+- **Breathing** (a second or so): `V.swell`, `broad(k)`, `bass_presence()`, `loudness()`. Sizes, brightness, density.
+- **The bar** (a few seconds): `bar_phase()` for sways, turns and colour drifts that land on the bar; `phrase_phase()` for an eight-bar arc. Scale their effect by `V.confidence` or `bar_sure()`, so music without a clear beat falls back to free motion rather than a stutter.
+- **The arc** (tens of seconds): `build()` to tighten, brighten or gather as tension rises, `drop_pulse()` for the release, `section()` to pick a look per section (a hue, an arrangement), so a chorus comes back looking as it did, `change_pulse()` to start the move to a new look.
+- **A spectrum picture**: `level(i)` or `level_at(t)` keeps the mix's balance (a bass-heavy track looks bass-heavy; a quiet passage looks quiet). `band(i)` makes every band dance whatever the mix, which is livelier but says less.
+
+Three rules make it look musical rather than mechanical (ADR-0004):
+
+1. **Entrain, do not trigger.** Let the music pull your visual's own rhythm into step (a clock that runs faster with `V.energy`, a sway on `bar_phase()`), rather than starting animations on events. When something does start on an event, it takes over from what is playing, it does not cut it.
+2. **Every level eases.** Rise over 60 to 120 ms, fall over 0.3 to 0.5 s. A value from the analysis that is already smooth (`V.swell`, `build()`, `level()`) can be used as is; anything you derive from a hit or a step (a beat count, a section label) should be eased in a prepare item: `mix(last, target, 1.0 - exp(-V.dt / tau))`.
+3. **Without music it still lives.** Everything above falls to rest in silence. Keep some motion on `V.time` or `V.flow` so the picture never freezes.
+
+To see an event once (a drop, a change, a new section), keep last frame's `drop_count()`, `change_count()` or `section()` in a prepare item and compare. The lab's made-up groove (`--groove 120`) has every signal, a build and a drop every sixteen bars and a section change every eight; `--run 6` measures the motion for jolts.
+
+**Leave musical amounts as controls.** Anyone who uses your visual can *link* any slider to a music signal from the panel (ADR-0006 step 5): the value at nothing and at full, response, rise and fall, a threshold and a confidence gate, saved with the scene. A visual that exposes "Size", "Glow" and "Turn" as sliders can be made to follow the bass, the build or the bar by its user, without code. So prefer a slider for an amount over a fixed number in the shader, and wire your own music reactions with a "how much" slider beside each.
 
 ## Three worked examples
 

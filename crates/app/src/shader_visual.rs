@@ -992,7 +992,7 @@ struct Uniform {
     picture_count: f32,
     confidence: f32,
     silent: f32,
-    _pad8: f32,
+    width: f32,
     hits: [f32; 4],
     strengths: [f32; 4],
     chroma_slow: [[f32; 4]; 3],
@@ -1013,12 +1013,14 @@ struct Uniform {
     bar: [f32; 4],
     /// (build, bass presence, contrast, transition novelty).
     context: [f32; 4],
-    /// (brightness trend, density trend, energy trend, 0).
+    /// (brightness trend, density trend, energy trend, bars into the section).
     trends: [f32; 4],
     /// (drop pulse, how sure the last drop was, transition pulse, phrase phase).
     moments: [f32; 4],
     /// (section label, seen before, bars to the expected change, how sure).
     section: [f32; 4],
+    /// (loudness 0..1, drops so far, transitions so far, 0).
+    extra: [f32; 4],
 }
 
 // ------------------------------------------------------------ building off the render thread
@@ -2258,7 +2260,7 @@ impl ShaderVisual {
             picture_count: self.pic_count as f32,
             confidence: f.beat_confidence,
             silent: f.silent as u32 as f32,
-            _pad8: 0.0,
+            width: f.stereo_width,
             hits: f.onset_hit.map(|h| h as u32 as f32),
             strengths: f.onset_strength,
             chroma_slow,
@@ -2274,9 +2276,10 @@ impl ShaderVisual {
             brightness: f.brightness,
             bar: [f.bar_phase, f.beat_in_bar as f32, f.bar_confidence, f.pulse_stability],
             context: [f.build, f.bass_presence, f.contrast, f.transition],
-            trends: [f.brightness_trend, f.density_trend, f.energy_trend, 0.0],
+            trends: [f.brightness_trend, f.density_trend, f.energy_trend, f.bars_in_section as f32],
             moments: [f.drop_pulse, f.drop_confidence, f.transition_pulse, f.phrase_phase],
             section: [f.section_label as f32, f.seen_before, f.bars_to_change, f.change_confidence],
+            extra: [((f.lufs_m + 40.0) / 35.0).clamp(0.0, 1.0), f.drop_count as f32, f.transition_count as f32, 0.0],
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
         // The album art, once per track.
@@ -2585,7 +2588,8 @@ mod tests {
         assert_eq!(std::mem::offset_of!(Uniform, bar), 544 + 512 + 144 + 352 + 16);
         assert_eq!(std::mem::offset_of!(Uniform, moments), 544 + 512 + 144 + 352 + 64);
         assert_eq!(std::mem::offset_of!(Uniform, section), 544 + 512 + 144 + 352 + 80);
-        assert_eq!(std::mem::size_of::<Uniform>(), 544 + 512 + 144 + 352 + 96);
+        assert_eq!(std::mem::offset_of!(Uniform, extra), 544 + 512 + 144 + 352 + 96);
+        assert_eq!(std::mem::size_of::<Uniform>(), 544 + 512 + 144 + 352 + 112);
     }
 
     #[test]

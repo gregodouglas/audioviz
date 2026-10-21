@@ -74,6 +74,16 @@ Modifier candidates: ~~warp~~ (built 2026-10-18), ~~halftone~~ (built 2026-10-18
 - ~~Performance pass on the release build~~ **done 2026-10-18** (table in `docs/phase6-ui.md`): release at 2560x1440 is 160 fps with three plain layers and 63 fps with six modifiers on each; every modifier pass costs 0.1 to 0.5 ms except **fractal at about 2.4 ms** (incoherent deep-level reads). Found and fixed on the way: Feedback plus Luminescence in one chain crashed the app (shared history pair; now one pair per slot, on demand). Monitor 1 runs at 59 Hz, which the startup log now shows.
 - ~~Fractal cost~~ **done 2026-10-18**: a per-slot mip pyramid of the fractal's input, read at the lod of each level's magnification. Six fractals per layer 20 → 62 fps; the heavy set 63 → 98 fps.
 
+## Next: the audio engine after its first pass (ADR-0006, 2026-10-21)
+
+Steps 0 to 5 each have a first version (0.4.30 to 0.4.38; working log `docs/phase8-audio.md`). In order:
+
+1. **Greg's look** at 0.4.38 (installer built): the director view on his own music (D, or Sync > Director view); linking a slider or two; whether scenes feel different now the bands moved (0.4.33: four bass bands instead of eight, more in the mids, quicker); the bar and strip holding still with the view open. Capture hand tests: pause Spotify (`made up` should grow a second a second in the debug line), switch the default output on endpoint loopback, unplug the output.
+2. **Visuals use the new signals.** The payoff of the work: the factory visuals still read only the old ones. Candidates: the Jellyfish strokes on `attack(i)`/`broad_attack(BASS)` and swells with `V.context.x` (build) into a drop pulse; bar phase (`V.bar.x`) for slower sways; `level(i)` for spectrum visuals (Wheel, Waves) so quiet bands stay quiet. Per ADR-0004: entrain, do not trigger; check with the lab's `--run`.
+3. **Tuning on real music.** Three minutes from Greg's Spotify (`tmp/live-3min.wav`, track unknown) had the tempo wander 131 to 142 BPM: find the track and fix it. Record more clips, EDM and rock/pop, and run the three measuring examples on each.
+4. **Open items of the steps.** Each signal's delay from sound to screen (1c); saving the history as a session (1b); sections: changes of chords alone are missed, labels are approximate, a four-bar section is predicted as eight; links: a linked slider still shows its stored value, effects' and the Picture's sliders cannot be linked, nor choices or toggles; the director view costs ~2.5 ms CPU a frame while open.
+5. **Later, its own ADR:** song mapping from files (a WAV or a whole song analysed ahead, scenes timed to it, rendering videos), Greg's studio timeline (`docs/model.md`). The live signals and links are what it would drive.
+
 ## Casting (experimental)
 
 - Current: Windows Miracast via the cast panel, auto-detect the new display, one click to fullscreen there. Roku takes no Google Cast.

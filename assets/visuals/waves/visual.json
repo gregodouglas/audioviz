@@ -9,6 +9,7 @@
   "triangles": 163200,
   "params": [
     { "id": "source", "label": "Rows show", "type": "choice", "group": "Landscape", "options": ["Waveform", "Spectrum"], "default": "waveform" },
+    { "id": "spectrum", "label": "Spectrum", "type": "choice", "group": "Landscape", "options": ["Each band", "In balance"], "values": ["each", "balance"], "default": "each", "help": "Each band: every band against its own recent best, so all of them move whatever the mix. In balance: the bands on one scale, so a bass-heavy track looks bass-heavy and quiet bands stay quiet." },
     { "id": "rows", "label": "Rows", "type": "integer", "group": "Landscape", "min": 4, "max": 160, "default": 48 },
     { "id": "rate", "label": "Rate", "group": "Landscape", "min": 2.0, "max": 90.0, "default": 24.0, "unit": "/s", "help": "New rows per second." },
     { "id": "height", "label": "Height", "group": "Landscape", "min": 0.0, "max": 1.5, "default": 0.35 },

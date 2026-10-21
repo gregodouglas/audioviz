@@ -45,11 +45,14 @@ fn prepare(i: u32) -> vec4<f32> {
         return vec4<f32>(0.0);
     }
     // The band this wedge shows (walking with the step), resampled from the
-    // 32 raw bands; a fast attack and slow release so the wheel breathes.
+    // 32 raw bands (or their levels in balance), lit further by its attack;
+    // a fast attack and slow release so the wheel breathes.
     let src = (w + u32(last.y)) % n;
     let x = f32(src) / f32(n) * 32.0;
     let k = u32(floor(x));
-    let v = max(mix(band_raw(min(k, 31u)), band_raw(min(k + 1u, 31u)), fract(x)), 0.0) * P.gain;
+    let each = mix(band_raw(min(k, 31u)), band_raw(min(k + 1u, 31u)), fract(x));
+    let t = min(x, 31.0) / 31.0;
+    let v = max(select(each, level_at(t), P.spectrum > 0.5) + P.punch * attack_at(t), 0.0) * P.gain;
     let cur = item(i).w;
     let rate = select(1.0 - exp(-V.dt / 0.25), 1.0 - exp(-V.dt / 0.03), v > cur);
     let lvl = cur + (v - cur) * rate;

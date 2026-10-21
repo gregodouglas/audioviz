@@ -59,10 +59,11 @@ fn head_of(ck: vec3<f32>) -> u32 {
 fn raw(c: u32) -> f32 {
     let P = params();
     if (P.source > 0.5) {
-        // The spectrum, square-rooted so quiet bands still show.
+        // The spectrum (each band, or in balance), square-rooted so quiet
+        // bands still show.
         let x = f32(c) / f32(COLS - 1u) * 31.0;
         let k = u32(floor(x));
-        let v = mix(band_raw(k), band_raw(min(k + 1u, 31u)), fract(x));
+        let v = select(mix(band_raw(k), band_raw(min(k + 1u, 31u)), fract(x)), level_at(x / 31.0), P.spectrum > 0.5);
         return min(sqrt(max(v, 0.0)) * P.gain, 2.0);
     }
     // The newest COLS * DECIM samples, oldest first, DECIM to a column.

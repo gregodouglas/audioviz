@@ -10,6 +10,7 @@
   "rows": 64,
   "smooth": 2,
   "source": "spectrum",
+  "spectrum": "each",
   "spread": 0.699999988079071,
   "width": 1.5
 }

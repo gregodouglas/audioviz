@@ -29,7 +29,7 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
     for (var i = 0u; i < n; i++) {
         // Ring i reads the spectrum at its own place, bass innermost.
         let t = (f32(i) + 0.5) / f32(n);
-        let level = clamp(band_at(t) * P.gain, 0.0, 3.0);
+        let level = clamp(select(band_at(t), level_at(t), P.spectrum > 0.5) * P.gain, 0.0, 3.0);
         let r = P.radius * (f32(i) + 1.0) / f32(n) * (1.0 + 0.12 * level) * kick;
         // Alternate rings turn against each other with the music clock.
         let dir = select(-1.0, 1.0, i % 2u == 0u);

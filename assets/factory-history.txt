@@ -5,8 +5,10 @@ presets/ribbons/Starfield.json 330f6e0f5415b32b
 presets/scope/Fine beam.json ce71f3a303c1edfd
 presets/scope/Long phosphor.json cf0c1e76fb38a328
 presets/starfield/Quiet sky.json 9d839eb910ce8b65
+presets/waves/Spectrum ridge.json 33aa29b02a0eb9c3
 presets/waves/Spectrum ridge.json d307ca2c5e853ff5
 presets/wheel/Rays only.json 4a22989164256cb2
+presets/wheel/Rays only.json c3b5644514836c02
 scenes/Crystal.json 5a598fbbd8cebbbe
 scenes/Crystal.json 8772c78b51b38be8
 scenes/Deep field.json 2ac1b63faf77d969
@@ -55,7 +57,9 @@ visuals/comet/visual.wgsl 72cf89c4c0757c6a
 visuals/crystal/visual.json ce070f972a683422
 visuals/crystal/visual.wgsl 95b0a0089734f49d
 visuals/eclipse/visual.json 3b64408c51cb4c85
+visuals/eclipse/visual.json 4e2625cb25368fc8
 visuals/eclipse/visual.json bd94daa2bfb77c12
+visuals/eclipse/visual.wgsl a32c859c68c065d3
 visuals/eclipse/visual.wgsl b063ce848062b898
 visuals/eclipse/visual.wgsl d19bd98f6a6ffb3d
 visuals/harmonograph/visual.json 548d04f846e1fcb4
@@ -175,6 +179,8 @@ visuals/polygon/visual.json d64bb9c281a38d14
 visuals/polygon/visual.json f26215cab841c69e
 visuals/polygon/visual.wgsl afd98df47f322ff1
 visuals/pulse/visual.json 68b8a4e53955c8c6
+visuals/pulse/visual.json ee78e741c648b110
+visuals/pulse/visual.wgsl 5f1664cdf9538840
 visuals/pulse/visual.wgsl 945718839378ec48
 visuals/ribbons/visual.json 69b7ba5ca5fdf1f4
 visuals/ribbons/visual.wgsl d81a0ad02d20c2b5
@@ -188,6 +194,10 @@ visuals/sigil/visual.wgsl c623951ad1ae7b2b
 visuals/spiral/visual.json 034bff86ec31bd3a
 visuals/spiral/visual.wgsl 5356d77738139725
 visuals/waves/visual.json 51bc9b8a31515303
+visuals/waves/visual.json 5d91a19d5e6c976b
+visuals/waves/visual.wgsl 665fd2e489ad8b96
 visuals/waves/visual.wgsl b489e62bc8465d04
 visuals/wheel/visual.json 3e12321ce65881ba
+visuals/wheel/visual.json f92248a65301629c
+visuals/wheel/visual.wgsl 7eff940dd6d1d65e
 visuals/wheel/visual.wgsl 9953eb5d30239238

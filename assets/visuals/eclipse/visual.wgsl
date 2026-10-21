@@ -31,7 +31,8 @@ fn prepare(i: u32) -> vec4<f32> {
     let span = select(f32(n), f32((n + 1u) / 2u), mirror);
     var src = f32(d);
     if (mirror && f32(d) >= span) { src = f32(n - 1u - d); }
-    let level = band_at(src / max(span, 1.0)) * P.gain;
+    let t = src / max(span, 1.0);
+    let level = select(band_at(t), level_at(t), P.spectrum > 0.5) * P.gain;
     let lvl = pow(clamp(level, 0.0, 4.0), max(P.curve, 0.1));
     let spin = fract(V.flow * P.spin) * TAU;
     let a = -1.5707963 + (f32(d) + 0.5) * TAU / f32(n) + spin;

@@ -322,7 +322,7 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     for (var i = 0u; i < n; i++) {
         let t = (f32(i) + 0.5) / f32(n);
-        let level = clamp(band_at(t) * P.gain, 0.0, 3.0);
+        let level = clamp(select(band_at(t), level_at(t), P.spectrum > 0.5) * P.gain, 0.0, 3.0);
         let r = P.radius * (f32(i) + 1.0) / f32(n) * (1.0 + 0.12 * level) * kick;
         let dir = select(-1.0, 1.0, i % 2u == 0u);
         let q = rotate(p, dir * V.flow * P.twist + f32(i) * 0.3);
@@ -342,6 +342,7 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
 What to take from it:
 
 - **One position, three uses.** `t` picks the ring's band (`band_at(t)`), its colour (`colour(t)`), and its place. Tying space, frequency and colour together is what makes a picture read as the music.
+- **Let the user choose the spectrum.** The Spectrum control (a choice is 0, 1 ... in the shader) picks `band_at` (every band moves) or `level_at` (the mix in balance); Wheel, Waves and Eclipse have the same control.
 - **Pulses, not values, for events.** `V.beat` and `V.onset` jump and decay by themselves; multiply by them and the decay comes free. Keep the multiplier modest (`0.08 * kick`): the beat is the strongest signal there is.
 - **Squared level.** `level * level` keeps quiet bands faint and lets loud ones burn; a linear level looks flat. Add a floor (`0.15 +`) so the structure never vanishes completely.
 - **`V.flow` for motion.** The rings turn faster when the music is loud, without anything jumping.

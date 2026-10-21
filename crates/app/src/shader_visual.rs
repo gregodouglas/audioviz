@@ -1004,6 +1004,8 @@ struct Uniform {
     balance: f32,
     activity: f32,
     brightness: f32,
+    /// (bar phase, beat in the bar, how sure of the bar, pulse stability).
+    bar: [f32; 4],
 }
 
 // ------------------------------------------------------------ building off the render thread
@@ -2177,6 +2179,7 @@ impl ShaderVisual {
             balance: f.balance,
             activity: f.activity,
             brightness: f.brightness,
+            bar: [f.bar_phase, f.beat_in_bar as f32, f.bar_confidence, f.pulse_stability],
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
         // The album art, once per track.
@@ -2482,7 +2485,8 @@ mod tests {
         assert_eq!(std::mem::offset_of!(Uniform, levels), 544 + 512 + 144);
         assert_eq!(std::mem::offset_of!(Uniform, broad_attack), 544 + 512 + 144 + 320);
         assert_eq!(std::mem::offset_of!(Uniform, noisiness), 544 + 512 + 144 + 352);
-        assert_eq!(std::mem::size_of::<Uniform>(), 544 + 512 + 144 + 352 + 16);
+        assert_eq!(std::mem::offset_of!(Uniform, bar), 544 + 512 + 144 + 352 + 16);
+        assert_eq!(std::mem::size_of::<Uniform>(), 544 + 512 + 144 + 352 + 32);
     }
 
     #[test]

@@ -39,6 +39,10 @@ pub struct HopRecord {
     pub onset_hits: u8,
     pub bpm: f32,
     pub beat_confidence: f32,
+    pub pulse_stability: f32,
+    /// Which beat of the bar (0 = the first), and how sure.
+    pub beat_in_bar: u8,
+    pub bar_confidence: f32,
     pub beat_phase: f32,
     /// The beat clock wrapped this hop.
     pub beat: bool,

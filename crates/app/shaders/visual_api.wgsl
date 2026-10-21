@@ -59,6 +59,7 @@ struct VisualIn {
     balance: f32,       // -1 all left .. 1 all right
     activity: f32,      // 0..1, how busy: onsets a second over the last couple of seconds (1 = eight or more)
     brightness: f32,    // 0..1, where the sound's weight sits: 200 Hz .. 8 kHz on a log scale
+    bar: vec4<f32>,     // x: 0..1 through the bar of four beats; y: which beat (0 = the first); z: how sure of the bar's first beat; w: how steady the pulse has been (0..1)
 };
 
 @group(0) @binding(0) var<uniform> V: VisualIn;

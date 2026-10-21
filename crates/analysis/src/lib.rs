@@ -7,6 +7,7 @@
 //! stereo width and a long-window energy trend.
 
 pub mod bands;
+pub mod bar;
 pub mod beat;
 pub mod chroma;
 pub mod filterbank;
@@ -16,6 +17,7 @@ pub mod onset;
 pub mod stft;
 
 use bands::{BROAD, BandSignals};
+use bar::BarTracker;
 use beat::BeatTracker;
 use chroma::Chroma;
 use filterbank::FilterBank;
@@ -110,6 +112,14 @@ pub struct FeatureFrame {
     pub beat_phase: f32,
     pub beat_count: u32,
     pub beat_pulse: f32,
+    /// 0..1: how steady the pulse has been over the last ~8 s (the share of
+    /// the tempo estimates that agreed with it).
+    pub pulse_stability: f32,
+    /// The bar, assuming four beats: 0..1 through it, which beat this is
+    /// (0 = the first), and how sure the first beat is (see `bar`).
+    pub bar_phase: f32,
+    pub beat_in_bar: u32,
+    pub bar_confidence: f32,
     /// Pitch-class profile (C=0), fast and slow, plus the dominant class.
     pub chroma: [f32; 12],
     pub chroma_slow: [f32; 12],
@@ -156,6 +166,10 @@ impl Default for FeatureFrame {
             beat_phase: 0.0,
             beat_count: 0,
             beat_pulse: 0.0,
+            pulse_stability: 0.0,
+            bar_phase: 0.0,
+            beat_in_bar: 0,
+            bar_confidence: 0.0,
             chroma: [0.0; 12],
             chroma_slow: [0.0; 12],
             key_class: 0,
@@ -186,6 +200,7 @@ pub struct Analyzer {
     loudness: Loudness,
     onsets: OnsetDetector,
     beat: BeatTracker,
+    bar: BarTracker,
     chroma: Chroma,
     since_hop: usize,
     hop_dt: f32,
@@ -213,6 +228,9 @@ pub struct Analyzer {
     records: Vec<HopRecord>,
     hops: u64,
     last_beat_count: u32,
+    /// The playing track, and the settled tempos of tracks heard this session.
+    track: Option<u64>,
+    tempos: std::collections::HashMap<u64, f32>,
 }
 
 impl Analyzer {
@@ -236,6 +254,7 @@ impl Analyzer {
             loudness: Loudness::new(sr),
             onsets,
             beat: BeatTracker::new(frame_rate),
+            bar: BarTracker::new(),
             chroma,
             long,
             mid,
@@ -263,6 +282,8 @@ impl Analyzer {
             records: Vec::with_capacity(64),
             hops: 0,
             last_beat_count: 0,
+            track: None,
+            tempos: std::collections::HashMap::new(),
             cfg,
         }
     }
@@ -278,6 +299,26 @@ impl Analyzer {
 
     pub fn frame(&self) -> &FeatureFrame {
         &self.frame
+    }
+
+    /// Tells the analysis a new track has started (from the player's
+    /// metadata), so what it learnt about the last one can go.
+    pub fn new_track(&mut self, track_id: Option<u64>) {
+        // Remember the last track's tempo if it had settled.
+        if let Some(id) = self.track {
+            if self.beat.settled() {
+                if self.tempos.len() >= 512 {
+                    self.tempos.clear();
+                }
+                self.tempos.insert(id, self.beat.bpm);
+            }
+        }
+        self.beat.reset();
+        self.bar.reset();
+        if let Some(bpm) = track_id.and_then(|id| self.tempos.get(&id)) {
+            self.beat.seed(*bpm);
+        }
+        self.track = track_id;
     }
 
     /// Moves the records of the hops analyzed since the last call into
@@ -423,11 +464,17 @@ impl Analyzer {
         f.beat_phase = self.beat.phase;
         f.beat_count = self.beat.count;
         f.beat_pulse = self.beat.pulse;
+        f.pulse_stability = self.beat.stability;
 
         self.chroma.process(&self.long.mag, dt, silent);
         f.chroma = self.chroma.values;
         f.chroma_slow = self.chroma.slow;
         f.key_class = self.chroma.dominant;
+
+        self.bar.process(f.beat_count, f.beat_phase, f.beat_confidence, f.onset_strength[0], f.broad_attack[1], &self.chroma.raw, dt, silent);
+        f.bar_phase = self.bar.bar_phase;
+        f.beat_in_bar = self.bar.beat_in_bar;
+        f.bar_confidence = self.bar.confidence;
 
         // Remember the hop. A reader that never drains is capped at a minute.
         if self.records.len() >= 94 * 60 {
@@ -460,6 +507,9 @@ impl Analyzer {
             onset_hits: hits,
             bpm: f.bpm,
             beat_confidence: f.beat_confidence,
+            pulse_stability: f.pulse_stability,
+            beat_in_bar: f.beat_in_bar as u8,
+            bar_confidence: f.bar_confidence,
             beat_phase: f.beat_phase,
             beat: f.beat_count != self.last_beat_count,
             bass: f.bass,

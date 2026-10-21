@@ -173,6 +173,11 @@ fn main() -> anyhow::Result<()> {
         let took = started.elapsed().as_secs_f64();
         let audio = samples.len() as f64 / 2.0 / SR as f64;
         println!("{path}: {audio:.1} s of audio analysed in {:.0} ms ({:.2}% of one core)", took * 1000.0, took / audio * 100.0);
+        if std::env::var_os("ACT").is_some() {
+            for r in recs.iter().filter(|r| r.time_s > 20.0 && r.time_s < 26.0).step_by(10) {
+                println!("t {:.2} activity {:.3} hits {:04b}", r.time_s, r.activity, r.onset_hits);
+            }
+        }
         let skip = (5.0 / HOP_S) as usize;
         let recs = &recs[skip.min(recs.len())..];
         let n = recs.len() as f32;

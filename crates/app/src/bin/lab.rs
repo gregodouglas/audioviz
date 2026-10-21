@@ -251,6 +251,10 @@ fn groove(bpm: f32, t: f32, dt: f32) -> FeatureFrame {
     f.beat_phase = phase;
     f.beat_count = count;
     f.beat_pulse = (-phase * 7.0).exp();
+    f.beat_in_bar = count % 4;
+    f.bar_phase = ((count % 4) as f32 + phase) / 4.0;
+    f.bar_confidence = 0.8;
+    f.pulse_stability = 0.9;
     f.chroma[((count / 8) * 7 % 12) as usize] = 1.0;
     f.chroma_slow = f.chroma;
     f.key_class = ((count / 8) * 7 % 12) as u8;

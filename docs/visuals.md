@@ -111,6 +111,7 @@ The colour is linear HDR light (values above 1 are fine; levelling, effects and 
 | `V.onset`, `V.onsets` | onset pulses (all; low, mid, high, all) |
 | `V.hits`, `V.strengths` | 1 on the frame an onset is detected, and the onset strength now (low, mid, high, all) |
 | `V.confidence`, `V.silent` | how sure the beat clock is (0..1); 1 when nothing is playing |
+| `V.bar` | x: 0..1 through the bar of four beats; y: which beat of the bar (0 = the first); z: how sure the bar's first beat is (0..1; the chords changing find it, kicks alone cannot tell 1 from 3); w: how steady the pulse has been over ~8 s (0..1) |
 | `V.swell` | bass above its average plus low onsets, fast attack, slow release |
 | `V.key`, `V.quiet` | dominant pitch class (C = 0), 1 in a quiet passage |
 | `band(i)`, `band_raw(i)`, `band_at(t)` | 32 bands low to high, each against its own recent best (so every band moves whatever the mix), smoothed (30 ms in, 200 ms out) or as the analysis gives them (10 ms in, 90 ms out); `band_at` interpolates t 0..1. The bands come from a gammatone filterbank, even on ln(1 + f / 100 Hz) from 30 Hz to 16 kHz: four under 140 Hz, logarithmic above a few hundred hertz (ADR-0006) |

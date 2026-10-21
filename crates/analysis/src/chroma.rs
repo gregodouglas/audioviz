@@ -7,6 +7,8 @@ pub struct Chroma {
     class: Vec<u8>,
     /// Per-bin weight: de-emphasize very low and very high bins.
     weight: Vec<f32>,
+    /// This hop's profile, normalized so the max is 1, unsmoothed.
+    pub raw: [f32; 12],
     /// Smoothed, normalized so the max is 1.
     pub values: [f32; 12],
     /// Slow version for key/color decisions (tau ~3 s).
@@ -30,7 +32,7 @@ impl Chroma {
             // Favor the melodic/harmonic register; taper highs where harmonics smear.
             weight[k] = if f < 2000.0 { 1.0 } else { (2000.0 / f).sqrt() };
         }
-        Self { class, weight, values: [0.0; 12], slow: [0.0; 12], dominant: 0 }
+        Self { class, weight, raw: [0.0; 12], values: [0.0; 12], slow: [0.0; 12], dominant: 0 }
     }
 
     pub fn process(&mut self, mag: &[f32], dt: f32, silent: bool) {
@@ -48,6 +50,7 @@ impl Chroma {
                 *a /= max;
             }
         }
+        self.raw = acc;
         let mut best = (0u8, -1.0f32);
         for i in 0..12 {
             self.values[i] = follow(self.values[i], acc[i], dt, 0.05, 0.4);

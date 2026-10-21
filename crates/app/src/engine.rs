@@ -15,6 +15,8 @@ const CHUNK_FRAMES: usize = 256;
 
 enum Cmd {
     DelayMs(f32),
+    /// A new track started (its id from the player's metadata).
+    NewTrack(Option<u64>),
 }
 
 /// Wall-clock times of recent onset detections (after the delay line), for
@@ -90,6 +92,12 @@ impl Engine {
         self.health.lock().map(|h| h.clone()).unwrap_or_default()
     }
 
+    /// Tells the analysis a new track started, so the beat clock looks for
+    /// its tempo afresh (or starts from the one it settled on last time).
+    pub fn new_track(&self, id: Option<u64>) {
+        let _ = self.cmd_tx.send(Cmd::NewTrack(id));
+    }
+
     pub fn set_delay_ms(&self, ms: f32) {
         let _ = self.cmd_tx.send(Cmd::DelayMs(ms));
     }
@@ -136,6 +144,7 @@ impl Worker {
             while let Ok(cmd) = self.cmd_rx.try_recv() {
                 match cmd {
                     Cmd::DelayMs(ms) => self.delay_ms = ms.max(0.0),
+                    Cmd::NewTrack(id) => self.analyzer.new_track(id),
                 }
             }
             while let Ok(m) = self.capture.mode.try_recv() {

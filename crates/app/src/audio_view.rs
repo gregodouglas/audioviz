@@ -171,8 +171,9 @@ impl ViewState {
                 None => "Live".to_string(),
                 Some(t) => format!("Frozen {:.1} s back", live_end - t),
             };
+            let groove = history.at(end).map_or(String::new(), |h| format!(" · {:.1} BPM, sure {:.2}, steady {:.2}, bar {:.2}", h.bpm, h.beat_confidence, h.pulse_stability, h.bar_confidence));
             let head = format!(
-                "Director view · {state} · {:.0} s across · capture: {} glitches, {} late, {} dropped, {} clipped, {} reopens",
+                "Director view · {state} · {:.0} s across{groove} · capture: {} glitches, {} late, {} dropped, {} clipped, {} reopens",
                 self.span_s, health.discontinuities, health.late_packets, health.dropped_chunks, health.clipped_samples, health.reopens
             );
             p.text(pos2(rect.left() + 10.0, rect.top() + 12.0), Align2::LEFT_CENTER, head, theme::mono(11.0), TEXT_2);
@@ -282,12 +283,16 @@ impl ViewState {
                 if h.beat {
                     let x = x_of(h.time_s);
                     let a = (40.0 + 120.0 * h.beat_confidence) as u8;
+                    if h.beat_in_bar == 0 && h.bar_confidence > 0.2 {
+                        // The bar's first beat: a brighter line, and its number.
+                        p.line_segment([pos2(x, spec_r.top()), pos2(x, beat_r.bottom())], Stroke::new(1.0, theme::with_alpha(BEAT, (40.0 + 160.0 * h.bar_confidence) as u8)));
+                        p.text(pos2(x + 2.0, beat_r.top()), Align2::LEFT_TOP, "1", theme::mono(9.0), theme::with_alpha(BEAT, (80.0 + 170.0 * h.bar_confidence) as u8));
+                    }
                     p.line_segment([pos2(x, spec_r.top()), pos2(x, beat_r.bottom())], Stroke::new(1.0, theme::with_alpha(BEAT, a / 3)));
                     p.line_segment([pos2(x, beat_r.top()), pos2(x, beat_r.bottom())], Stroke::new(1.5, theme::with_alpha(BEAT, a)));
                 }
             }
-            let bpm = history.at(end).map_or(String::new(), |h| format!("{:.1} BPM", h.bpm));
-            lane_label(&p, beat_r, &format!("Beat {bpm}"));
+            lane_label(&p, beat_r, "Beat");
 
             // Level: RMS in dB (-60..0) and the energy trend about the middle.
             let yl = |v: f32| level_r.bottom() - v.clamp(0.0, 1.0) * (level_r.height() - 2.0);

@@ -654,6 +654,8 @@ impl Running {
         // Track change: toast and art tint.
         let track_id = now_playing.as_ref().map(|n| n.track_id);
         if track_id != self.last_track {
+            // The beat clock starts afresh on each track (and remembers the last one's tempo).
+            self.engine.new_track(track_id);
             if let Some(np) = now_playing.as_ref().filter(|n| !n.title.is_empty()) {
                 self.history.mark(format!("{} · {}", np.artist, np.title));
             }

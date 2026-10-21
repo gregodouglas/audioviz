@@ -2142,7 +2142,7 @@ impl Scene for ShaderVisual {
 /// The editor under a linked slider: which signal, the values at nothing
 /// and at full, the response, the smoothing, the threshold, the gate, and a
 /// test input (`test` below 0 when off) that stands in for the signal.
-fn link_editor(ui: &mut egui::Ui, label: &str, l: &mut crate::links::Link, range: (f32, f32), test: &mut f32) {
+pub(crate) fn link_editor(ui: &mut egui::Ui, label: &str, l: &mut crate::links::Link, range: (f32, f32), test: &mut f32) {
     use crate::links::Signal;
     use crate::widgets::{dropdown, hint, slider_def, toggle_row};
     let frame = egui::Frame::new().fill(crate::theme::with_alpha(crate::theme::RAISED, 140)).corner_radius(4.0).inner_margin(egui::Margin { left: 10, right: 6, top: 6, bottom: 6 });

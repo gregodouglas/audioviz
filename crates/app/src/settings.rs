@@ -35,6 +35,9 @@ pub struct Fold {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     pub mode: FoldMode,
     pub segments: u32,
     /// Rotation, radians per second at average energy.
@@ -52,7 +55,7 @@ pub struct Fold {
 
 impl Default for Fold {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, mode: FoldMode::Radial, segments: 8, speed: 0.15, zoom: 1.0, offset: 0.25, wander: 1.0, step_beats: 0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), mode: FoldMode::Radial, segments: 8, speed: 0.15, zoom: 1.0, offset: 0.25, wander: 1.0, step_beats: 0, react: 1.0 }
     }
 }
 
@@ -85,6 +88,9 @@ pub struct Feedback {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     pub decay: f32,
     /// Zoom rate per second (positive = outward).
     pub zoom: f32,
@@ -95,7 +101,7 @@ pub struct Feedback {
 
 impl Default for Feedback {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, decay: 0.9, zoom: 0.25, spin: 0.1, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), decay: 0.9, zoom: 0.25, spin: 0.1, react: 1.0 }
     }
 }
 
@@ -110,6 +116,9 @@ pub struct Polar {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     /// false = wrap (x becomes angle), true = unwrap (the inverse).
     pub unwrap: bool,
     pub radius: f32,
@@ -119,7 +128,7 @@ pub struct Polar {
 
 impl Default for Polar {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, unwrap: false, radius: 1.0, spin: 0.1, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), unwrap: false, radius: 1.0, spin: 0.1, react: 1.0 }
     }
 }
 
@@ -134,6 +143,9 @@ pub struct Ripple {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     pub amount: f32,
     pub wavelength: f32,
     pub speed: f32,
@@ -143,7 +155,7 @@ pub struct Ripple {
 
 impl Default for Ripple {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, amount: 0.04, wavelength: 0.15, speed: 0.8, sine: 0.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), amount: 0.04, wavelength: 0.15, speed: 0.8, sine: 0.0, react: 1.0 }
     }
 }
 
@@ -182,6 +194,9 @@ pub struct Edge {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     pub strength: f32,
     /// Share of the original kept underneath.
     pub keep: f32,
@@ -194,7 +209,7 @@ pub struct Edge {
 
 impl Default for Edge {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, strength: 1.5, keep: 0.0, colour: EdgeColour::Picture, tinted: false, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), strength: 1.5, keep: 0.0, colour: EdgeColour::Picture, tinted: false, react: 1.0 }
     }
 }
 
@@ -209,6 +224,9 @@ pub struct ChromaSplit {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     pub amount: f32,
     pub radial: bool,
     pub react: f32,
@@ -216,7 +234,7 @@ pub struct ChromaSplit {
 
 impl Default for ChromaSplit {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, amount: 0.012, radial: true, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), amount: 0.012, radial: true, react: 1.0 }
     }
 }
 
@@ -239,6 +257,9 @@ pub struct Mask {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     pub shape: MaskShape,
     pub radius: f32,
     pub soft: f32,
@@ -248,7 +269,7 @@ pub struct Mask {
 
 impl Default for Mask {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, shape: MaskShape::Circle, radius: 0.7, soft: 0.1, invert: false, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), shape: MaskShape::Circle, radius: 0.7, soft: 0.1, invert: false, react: 1.0 }
     }
 }
 
@@ -272,6 +293,9 @@ pub struct Fractal {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     pub mode: FractalMode,
     pub iterations: u32,
     /// KIFS scale per step (>1 shrinks the cell each level).
@@ -288,7 +312,7 @@ pub struct Fractal {
 
 impl Default for Fractal {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, mode: FractalMode::Kifs, iterations: 4, scale: 1.9, angle: 0.35, offset: 0.8, zoom: 1.0, falloff: 0.8, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), mode: FractalMode::Kifs, iterations: 4, scale: 1.9, angle: 0.35, offset: 0.8, zoom: 1.0, falloff: 0.8, react: 1.0 }
     }
 }
 
@@ -303,6 +327,9 @@ pub struct Luminescence {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     /// Fast pool release, seconds.
     pub fresh_s: f32,
     /// Slow pool release, seconds (the afterglow).
@@ -324,7 +351,7 @@ pub struct Luminescence {
 
 impl Default for Luminescence {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, fresh_s: 0.35, afterglow_s: 4.0, fresh_gain: 0.6, afterglow_gain: 0.5, hue_shift: -140.0, own_colour: true, excite: 1.5, uv: 0.6, sparkle: 1.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), fresh_s: 0.35, afterglow_s: 4.0, fresh_gain: 0.6, afterglow_gain: 0.5, hue_shift: -140.0, own_colour: true, excite: 1.5, uv: 0.6, sparkle: 1.0, react: 1.0 }
     }
 }
 
@@ -339,6 +366,9 @@ pub struct Grade {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     /// false = by brightness (gradient map), true = by the picture's hue.
     pub by_hue: bool,
     pub amount: f32,
@@ -347,7 +377,7 @@ pub struct Grade {
 
 impl Default for Grade {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, by_hue: false, amount: 1.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), by_hue: false, amount: 1.0, react: 1.0 }
     }
 }
 
@@ -550,6 +580,144 @@ impl Modifier {
         }
     }
 
+    /// The sliders following the music.
+    pub fn links(&self) -> &crate::links::FxLinks {
+        match self {
+            Modifier::Fold(k) => &k.links,
+            Modifier::Feedback(k) => &k.links,
+            Modifier::Polar(k) => &k.links,
+            Modifier::Ripple(k) => &k.links,
+            Modifier::Edge(k) => &k.links,
+            Modifier::Chroma(k) => &k.links,
+            Modifier::Mask(k) => &k.links,
+            Modifier::Fractal(k) => &k.links,
+            Modifier::Lumi(k) => &k.links,
+            Modifier::Grade(k) => &k.links,
+            Modifier::Halftone(k) => &k.links,
+            Modifier::Warp(k) => &k.links,
+            Modifier::Lines(k) => &k.links,
+            Modifier::Mirror(k) => &k.links,
+            Modifier::Glow(k) => &k.links,
+            Modifier::Vignette(k) => &k.links,
+            Modifier::Colorify(k) => &k.links,
+        }
+    }
+
+    /// The wet/dry mix and the links together (two fields, borrowed at once).
+    pub fn mix_and_links_mut(&mut self) -> (&mut f32, &mut crate::links::FxLinks) {
+        match self {
+            Modifier::Fold(k) => (&mut k.mix, &mut k.links),
+            Modifier::Feedback(k) => (&mut k.mix, &mut k.links),
+            Modifier::Polar(k) => (&mut k.mix, &mut k.links),
+            Modifier::Ripple(k) => (&mut k.mix, &mut k.links),
+            Modifier::Edge(k) => (&mut k.mix, &mut k.links),
+            Modifier::Chroma(k) => (&mut k.mix, &mut k.links),
+            Modifier::Mask(k) => (&mut k.mix, &mut k.links),
+            Modifier::Fractal(k) => (&mut k.mix, &mut k.links),
+            Modifier::Lumi(k) => (&mut k.mix, &mut k.links),
+            Modifier::Grade(k) => (&mut k.mix, &mut k.links),
+            Modifier::Halftone(k) => (&mut k.mix, &mut k.links),
+            Modifier::Warp(k) => (&mut k.mix, &mut k.links),
+            Modifier::Lines(k) => (&mut k.mix, &mut k.links),
+            Modifier::Mirror(k) => (&mut k.mix, &mut k.links),
+            Modifier::Glow(k) => (&mut k.mix, &mut k.links),
+            Modifier::Vignette(k) => (&mut k.mix, &mut k.links),
+            Modifier::Colorify(k) => (&mut k.mix, &mut k.links),
+        }
+    }
+
+    /// A slider's value by its field's name (what a link stores), for the
+    /// sliders that can follow the music: "mix" and the effect's own.
+    pub fn number_mut(&mut self, name: &str) -> Option<&mut f32> {
+        match self {
+            Modifier::Fold(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "speed" => Some(&mut k.speed), "zoom" => Some(&mut k.zoom), "offset" => Some(&mut k.offset), "wander" => Some(&mut k.wander), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Feedback(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "decay" => Some(&mut k.decay), "zoom" => Some(&mut k.zoom), "spin" => Some(&mut k.spin), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Polar(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "radius" => Some(&mut k.radius), "spin" => Some(&mut k.spin), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Ripple(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "amount" => Some(&mut k.amount), "wavelength" => Some(&mut k.wavelength), "speed" => Some(&mut k.speed), "sine" => Some(&mut k.sine), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Edge(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "strength" => Some(&mut k.strength), "keep" => Some(&mut k.keep), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Chroma(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "amount" => Some(&mut k.amount), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Mask(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "radius" => Some(&mut k.radius), "soft" => Some(&mut k.soft), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Fractal(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "scale" => Some(&mut k.scale), "angle" => Some(&mut k.angle), "offset" => Some(&mut k.offset), "zoom" => Some(&mut k.zoom), "falloff" => Some(&mut k.falloff), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Lumi(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "fresh_gain" => Some(&mut k.fresh_gain), "fresh_s" => Some(&mut k.fresh_s), "afterglow_gain" => Some(&mut k.afterglow_gain), "afterglow_s" => Some(&mut k.afterglow_s), "hue_shift" => Some(&mut k.hue_shift), "uv" => Some(&mut k.uv), "excite" => Some(&mut k.excite), "sparkle" => Some(&mut k.sparkle), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Grade(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "amount" => Some(&mut k.amount), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Halftone(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "cell" => Some(&mut k.cell), "angle" => Some(&mut k.angle), "gamma" => Some(&mut k.gamma), "mono" => Some(&mut k.mono), "drift" => Some(&mut k.drift), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Warp(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "amount" => Some(&mut k.amount), "scale" => Some(&mut k.scale), "speed" => Some(&mut k.speed), "twist" => Some(&mut k.twist), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Lines(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "pitch" => Some(&mut k.pitch), "angle" => Some(&mut k.angle), "cut" => Some(&mut k.cut), "glow" => Some(&mut k.glow), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Mirror(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "flip" => Some(&mut k.flip), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Glow(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "amount" => Some(&mut k.amount), "size" => Some(&mut k.size), "threshold" => Some(&mut k.threshold), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Vignette(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "amount" => Some(&mut k.amount), "softness" => Some(&mut k.softness), "roundness" => Some(&mut k.roundness), "react" => Some(&mut k.react),
+                _ => None,
+            },
+            Modifier::Colorify(k) => match name {
+                "mix" => Some(&mut k.mix),
+                "strength" => Some(&mut k.strength), "speed" => Some(&mut k.speed), "react" => Some(&mut k.react),
+                _ => None,
+            },
+        }
+    }
+
     /// Always on (not in the effects director's pool).
     pub fn pinned(&self) -> bool {
         match self {
@@ -731,6 +899,9 @@ pub struct Halftone {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     pub shape: HalftoneShape,
     /// Screen cell size, pixels.
     pub cell: f32,
@@ -751,7 +922,7 @@ pub struct Halftone {
 
 impl Default for Halftone {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, shape: HalftoneShape::Dot, cell: 9.0, angle: 15.0, mono: 0.5, drift: 0.6, gamma: 1.4, palette: true, invert: false, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), shape: HalftoneShape::Dot, cell: 9.0, angle: 15.0, mono: 0.5, drift: 0.6, gamma: 1.4, palette: true, invert: false, react: 1.0 }
     }
 }
 
@@ -766,6 +937,9 @@ pub struct Warp {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     /// Displacement at rest, pixels.
     pub amount: f32,
     /// Field detail: noise cycles across the screen.
@@ -782,7 +956,7 @@ pub struct Warp {
 
 impl Default for Warp {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, amount: 24.0, scale: 3.0, speed: 0.25, twist: 0.5, octaves: 2, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), amount: 24.0, scale: 3.0, speed: 0.25, twist: 0.5, octaves: 2, react: 1.0 }
     }
 }
 
@@ -798,6 +972,9 @@ pub struct Lines {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     /// Stripe pitch, pixels.
     pub pitch: f32,
     /// Stripe angle, degrees (0 = horizontal lines).
@@ -812,7 +989,7 @@ pub struct Lines {
 
 impl Default for Lines {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, pitch: 3.0, angle: 45.0, cut: 0.35, glow: 0.04, react: 0.5 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), pitch: 3.0, angle: 45.0, cut: 0.35, glow: 0.04, react: 0.5 }
     }
 }
 
@@ -857,6 +1034,9 @@ pub struct Mirror {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     pub side: MirrorSide,
     /// Add the reflection to the picture instead of replacing the far side.
     pub additive: bool,
@@ -867,7 +1047,7 @@ pub struct Mirror {
 
 impl Default for Mirror {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, side: MirrorSide::Left, additive: false, flip: 0.0, react: 1.0 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), side: MirrorSide::Left, additive: false, flip: 0.0, react: 1.0 }
     }
 }
 
@@ -884,6 +1064,9 @@ pub struct Glow {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     /// How much of the blur is added back.
     pub amount: f32,
     /// Blur width, 1 = about 40 px at 1440p.
@@ -896,7 +1079,7 @@ pub struct Glow {
 
 impl Default for Glow {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, amount: 0.8, size: 1.0, threshold: 0.2, react: 0.5 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), amount: 0.8, size: 1.0, threshold: 0.2, react: 0.5 }
     }
 }
 
@@ -911,6 +1094,9 @@ pub struct Vignette {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     /// How dark the corners go.
     pub amount: f32,
     /// Width of the fall-off.
@@ -923,7 +1109,7 @@ pub struct Vignette {
 
 impl Default for Vignette {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, amount: 0.6, softness: 0.5, roundness: 0.6, react: 0.3 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), amount: 0.6, softness: 0.5, roundness: 0.6, react: 0.3 }
     }
 }
 
@@ -940,6 +1126,9 @@ pub struct Colorify {
     pub band: Option<AudioBand>,
     /// Always on: kept out of the effects director's pool.
     pub pinned: bool,
+    /// Sliders following the music (ADR-0006 step 5), as a visual's links.
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
     /// 1 = one ink, 0 = the picture's own colours.
     pub strength: f32,
     /// Ink from the palette (by luminance) instead of the tint.
@@ -952,7 +1141,7 @@ pub struct Colorify {
 
 impl Default for Colorify {
     fn default() -> Self {
-        Self { enabled: true, mix: 1.0, band: None, pinned: false, strength: 1.0, palette: false, speed: 12.0, react: 0.5 }
+        Self { enabled: true, mix: 1.0, band: None, pinned: false, links: crate::links::FxLinks::default(), strength: 1.0, palette: false, speed: 12.0, react: 0.5 }
     }
 }
 
@@ -1196,11 +1385,27 @@ pub struct PostSettings {
     pub look: Look,
     /// Colour saturation before the tonemapper (1 = as rendered).
     pub saturation: f32,
+    /// Sliders following the music (ADR-0006 step 5).
+    #[serde(default, skip_serializing_if = "crate::links::FxLinks::is_empty")]
+    pub links: crate::links::FxLinks,
 }
 
 impl Default for PostSettings {
     fn default() -> Self {
-        Self { exposure: 1.0, auto_exposure: true, bloom: 0.3, grain: 0.15, look: Look::Film, saturation: 1.0 }
+        Self { exposure: 1.0, auto_exposure: true, bloom: 0.3, grain: 0.15, look: Look::Film, saturation: 1.0, links: crate::links::FxLinks::default() }
+    }
+}
+
+impl PostSettings {
+    /// A slider's value by its field's name, for the sliders a link can drive.
+    pub fn number_mut(&mut self, name: &str) -> Option<&mut f32> {
+        match name {
+            "exposure" => Some(&mut self.exposure),
+            "bloom" => Some(&mut self.bloom),
+            "grain" => Some(&mut self.grain),
+            "saturation" => Some(&mut self.saturation),
+            _ => None,
+        }
     }
 }
 

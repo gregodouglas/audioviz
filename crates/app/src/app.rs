@@ -139,6 +139,8 @@ struct Running {
     points_per_sec: f32,
     auto_gain_value: f32,
     post_error: Option<String>,
+    /// The Picture's links' running state, by field.
+    picture_links: std::collections::BTreeMap<String, crate::links::LinkRun>,
 
     calibration: Option<Calibration>,
     calibration_result: Option<(String, Instant)>,
@@ -309,6 +311,7 @@ impl Running {
             points_per_sec: 0.0,
             auto_gain_value: 1.0,
             post_error: None,
+            picture_links: Default::default(),
             calibration: None,
             calibration_result: None,
             last_capture: CaptureMode::Starting,
@@ -744,7 +747,8 @@ impl Running {
         self.director.render(&self.gpu.device, &self.gpu.queue, &mut encoder, &self.settings, &features, &self.pending_points, self.engine.sample_rate, self.tint_current, self.art_tint, now_playing.as_ref().and_then(|n| n.art.as_deref()), now_playing.as_ref().map(|n| n.track_id).unwrap_or(0), dt, time, self.auto_gain_value, self.post.input(), self.post.exposure(), &mut self.timer);
         self.points_per_sec = self.points_per_sec * 0.98 + (self.pending_points.len() as f32 / dt) * 0.02;
         self.pending_points.clear();
-        let post = self.settings.post;
+        // The Picture's sliders linked to the music take this frame's values (on a copy).
+        let post = crate::links::apply_picture(&self.settings.post, &features, &mut self.picture_links, dt);
         let mut flags = 0u32;
         if post.auto_exposure {
             flags |= 1;

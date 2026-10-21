@@ -704,6 +704,48 @@ fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelStat
     }
 }
 
+/// Which effect a linkable slider belongs to (see `links::fx_owner`).
+#[derive(Clone, Copy)]
+struct FxAt {
+    owner: u64,
+}
+
+/// An effect's slider that can follow the music, as a visual's sliders do:
+/// the link button on its rail, and while linked the live value, its range
+/// marked, and the link's editor under it. `id` is the field's name (what
+/// the link stores).
+#[allow(clippy::too_many_arguments)]
+fn fx_slider(ui: &mut egui::Ui, at: FxAt, links: &mut crate::links::FxLinks, id: &str, label: &str, value: &mut f32, default: Option<f32>, range: std::ops::RangeInclusive<f32>, fmt: impl Fn(f64) -> String, log: bool) {
+    let mut all = links.get();
+    let was = all.iter().any(|l| l.param == id);
+    let mut linked = was;
+    let follows = all.iter().find(|l| l.param == id).map(|l| (l.low as f64, l.high as f64));
+    let mut x = if was { crate::links::fx_live(at.owner, id).unwrap_or(*value) } else { *value };
+    let (lo, hi) = (*range.start(), *range.end());
+    let r = crate::widgets::slider_link(ui, label, &mut x, default, range, &mut linked, follows, fmt, log);
+    if was {
+        r.on_hover_text("Following the music: set its range with At nothing and At full below");
+    } else {
+        *value = x;
+    }
+    if linked && !was {
+        if all.len() < crate::links::FX_LINKS {
+            // A new link moves the value from where it is up to its top.
+            all.push(crate::links::Link::new(id, *value, if (hi - *value).abs() > 1e-6 { hi } else { lo }));
+        }
+    } else if !linked && was {
+        all.retain(|l| l.param != id);
+        crate::links::fx_forget(at.owner, id);
+    }
+    if let Some(l) = all.iter_mut().find(|l| l.param == id) {
+        let mut test = crate::links::fx_test(at.owner, id).unwrap_or(-1.0);
+        crate::shader_visual::link_editor(ui, label, l, (lo, hi), &mut test);
+        crate::links::fx_set_test(at.owner, id, test);
+        crate::links::focus(at.owner, l, label);
+    }
+    links.set(&all);
+}
+
 /// One modifier's controls, opened in place of the layer tabs.
 fn modifier_page(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, editing: usize, a: &mut Actions) {
     let l = settings.layer_mut(editing);
@@ -713,11 +755,15 @@ fn modifier_page(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelSt
         return;
     };
     toggle_row(ui, "On", m.enabled_mut());
-    slider_def(ui, "Mix", m.mix_mut(), Some(1.0), 0.0..=1.0, |v| format!("{:.0}%", v * 100.0), false);
+    let at = FxAt { owner: crate::links::fx_owner(editing, j) };
+    {
+        let (mix, links) = m.mix_and_links_mut();
+        fx_slider(ui, at, links, "mix", "Mix", mix, Some(1.0), 0.0..=1.0, |v| format!("{:.0}%", v * 100.0), false);
+    }
     modifier_band(ui, m.band_mut());
     toggle_row(ui, "Always on", m.pinned_mut()).on_hover_text("Kept out of the effects director's pool");
     ui.add_space(4.0);
-    modifier_controls(ui, m);
+    modifier_controls(ui, m, at);
     ui.add_space(10.0);
     let (mut do_reset, mut do_remove) = (false, false);
     ui.horizontal(|ui| {
@@ -816,7 +862,7 @@ fn effect_picker(ui: &mut egui::Ui) -> Option<usize> {
     picked
 }
 
-fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
+fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier, at: FxAt) {
     match m {
         Modifier::Fold(k) => {
             let d = Fold::default();
@@ -829,19 +875,19 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
                 slider_def(ui, "Segments", &mut k.segments, Some(d.segments), 1..=24, |v| format!("{v:.0}"), false);
                 slider_def(ui, "Step on beats", &mut k.step_beats, Some(d.step_beats), 0..=16, |v| if v < 0.5 { "off".into() } else { format!("every {v:.0}") }, false);
             }
-            slider_def(ui, "Spin", &mut k.speed, Some(d.speed), -2.0..=2.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Zoom", &mut k.zoom, Some(d.zoom), 0.2..=3.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Apex offset", &mut k.offset, Some(d.offset), 0.0..=1.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Wander", &mut k.wander, Some(d.wander), 0.0..=4.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "speed", "Spin", &mut k.speed, Some(d.speed), -2.0..=2.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "zoom", "Zoom", &mut k.zoom, Some(d.zoom), 0.2..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "offset", "Apex offset", &mut k.offset, Some(d.offset), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "wander", "Wander", &mut k.wander, Some(d.wander), 0.0..=4.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Spin follows energy and onsets; zoom breathes with the bass. The apex off-centre is what makes real kaleidoscopes rich.");
         }
         Modifier::Feedback(k) => {
             let d = Feedback::default();
-            slider_def(ui, "Decay", &mut k.decay, Some(d.decay), 0.0..=0.985, |v| format!("{v:.3}"), false);
-            slider_def(ui, "Zoom", &mut k.zoom, Some(d.zoom), -1.0..=1.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Spin", &mut k.spin, Some(d.spin), -1.5..=1.5, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "decay", "Decay", &mut k.decay, Some(d.decay), 0.0..=0.985, |v| format!("{v:.3}"), false);
+            fx_slider(ui, at, &mut k.links, "zoom", "Zoom", &mut k.zoom, Some(d.zoom), -1.0..=1.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "spin", "Spin", &mut k.spin, Some(d.spin), -1.5..=1.5, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Last frame echoes under this one, zooming and turning. One feedback per layer keeps its own history.");
         }
         Modifier::Polar(k) => {
@@ -850,37 +896,37 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             if let Some(i) = segmented(ui, &["Wrap", "Unwrap"], k.unwrap as usize) {
                 k.unwrap = i == 1;
             }
-            slider_def(ui, "Radius", &mut k.radius, Some(d.radius), 0.2..=2.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Spin", &mut k.spin, Some(d.spin), -2.0..=2.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "radius", "Radius", &mut k.radius, Some(d.radius), 0.2..=2.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "spin", "Spin", &mut k.spin, Some(d.spin), -2.0..=2.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Wrap turns left-to-right into around-the-centre: a scope becomes a ring.");
         }
         Modifier::Ripple(k) => {
             let d = Ripple::default();
-            slider_def(ui, "Amount", &mut k.amount, Some(d.amount), 0.0..=0.2, |v| format!("{v:.3}"), false);
-            slider_def(ui, "Wavelength", &mut k.wavelength, Some(d.wavelength), 0.02..=0.6, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Speed", &mut k.speed, Some(d.speed), 0.1..=3.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Standing wave", &mut k.sine, Some(d.sine), 0.0..=2.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "amount", "Amount", &mut k.amount, Some(d.amount), 0.0..=0.2, |v| format!("{v:.3}"), false);
+            fx_slider(ui, at, &mut k.links, "wavelength", "Wavelength", &mut k.wavelength, Some(d.wavelength), 0.02..=0.6, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "speed", "Speed", &mut k.speed, Some(d.speed), 0.1..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "sine", "Standing wave", &mut k.sine, Some(d.sine), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Beats launch rings from the centre. Above 1.5 reacts, onsets launch them too.");
         }
         Modifier::Edge(k) => {
             let d = Edge::default();
-            slider_def(ui, "Strength", &mut k.strength, Some(d.strength), 0.0..=5.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Keep original", &mut k.keep, Some(d.keep), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "strength", "Strength", &mut k.strength, Some(d.strength), 0.0..=5.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "keep", "Keep original", &mut k.keep, Some(d.keep), 0.0..=1.0, |v| format!("{v:.2}"), false);
             small_caps(ui, "Colour");
             let names: Vec<&str> = EdgeColour::ALL.iter().map(|c| c.name()).collect();
             if let Some(i) = segmented(ui, &names, EdgeColour::ALL.iter().position(|c| *c == k.colour).unwrap_or(0)) {
                 k.colour = EdgeColour::ALL[i];
             }
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Palette colours each edge by its direction, so a curve runs through the palette and the palette's cycle turns it with the music.");
         }
         Modifier::Chroma(k) => {
             let d = ChromaSplit::default();
-            slider_def(ui, "Amount", &mut k.amount, Some(d.amount), 0.0..=0.08, |v| format!("{v:.3}"), false);
+            fx_slider(ui, at, &mut k.links, "amount", "Amount", &mut k.amount, Some(d.amount), 0.0..=0.08, |v| format!("{v:.3}"), false);
             toggle_row(ui, "Radial from the centre", &mut k.radial);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Pulses with treble and onsets.");
         }
         Modifier::Fractal(k) => {
@@ -891,30 +937,30 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             }
             slider_def(ui, "Depth", &mut k.iterations, Some(d.iterations), 1..=8, |v| format!("{v:.0}"), false);
             if k.mode == FractalMode::Kifs {
-                slider_def(ui, "Scale per level", &mut k.scale, Some(d.scale), 1.1..=3.0, |v| format!("{v:.2}"), false);
-                slider_def(ui, "Twist", &mut k.angle, Some(d.angle), -2.0..=2.0, |v| format!("{v:.2}"), false);
-                slider_def(ui, "Shift", &mut k.offset, Some(d.offset), 0.0..=2.0, |v| format!("{v:.2}"), false);
+                fx_slider(ui, at, &mut k.links, "scale", "Scale per level", &mut k.scale, Some(d.scale), 1.1..=3.0, |v| format!("{v:.2}"), false);
+                fx_slider(ui, at, &mut k.links, "angle", "Twist", &mut k.angle, Some(d.angle), -2.0..=2.0, |v| format!("{v:.2}"), false);
+                fx_slider(ui, at, &mut k.links, "offset", "Shift", &mut k.offset, Some(d.offset), 0.0..=2.0, |v| format!("{v:.2}"), false);
             } else {
-                slider_def(ui, "Orbit speed", &mut k.angle, Some(d.angle), -2.0..=2.0, |v| format!("{v:.2}"), false);
-                slider_def(ui, "Orbit size", &mut k.offset, Some(d.offset), 0.0..=1.0, |v| format!("{v:.2}"), false);
+                fx_slider(ui, at, &mut k.links, "angle", "Orbit speed", &mut k.angle, Some(d.angle), -2.0..=2.0, |v| format!("{v:.2}"), false);
+                fx_slider(ui, at, &mut k.links, "offset", "Orbit size", &mut k.offset, Some(d.offset), 0.0..=1.0, |v| format!("{v:.2}"), false);
             }
-            slider_def(ui, "Zoom", &mut k.zoom, Some(d.zoom), 0.2..=3.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Deeper levels", &mut k.falloff, Some(d.falloff), 0.1..=1.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "zoom", "Zoom", &mut k.zoom, Some(d.zoom), 0.2..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "falloff", "Deeper levels", &mut k.falloff, Some(d.falloff), 0.1..=1.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "IFS folds, turns, scales and shifts the picture at every level so it recurs at every size. Julia pulls it into z² + c filaments; the twist and scale breathe with the music.");
         }
         Modifier::Lumi(k) => {
             let d = Luminescence::default();
-            slider_def(ui, "Fresh glow", &mut k.fresh_gain, Some(d.fresh_gain), 0.0..=2.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Fresh release", &mut k.fresh_s, Some(d.fresh_s), 0.05..=2.0, |v| format!("{v:.2} s"), false);
-            slider_def(ui, "Afterglow", &mut k.afterglow_gain, Some(d.afterglow_gain), 0.0..=2.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Afterglow release", &mut k.afterglow_s, Some(d.afterglow_s), 0.5..=20.0, |v| format!("{v:.1} s"), true);
-            slider_def(ui, "Afterglow hue", &mut k.hue_shift, Some(d.hue_shift), -180.0..=180.0, |v| format!("{v:.0}°"), false);
+            fx_slider(ui, at, &mut k.links, "fresh_gain", "Fresh glow", &mut k.fresh_gain, Some(d.fresh_gain), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "fresh_s", "Fresh release", &mut k.fresh_s, Some(d.fresh_s), 0.05..=2.0, |v| format!("{v:.2} s"), false);
+            fx_slider(ui, at, &mut k.links, "afterglow_gain", "Afterglow", &mut k.afterglow_gain, Some(d.afterglow_gain), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "afterglow_s", "Afterglow release", &mut k.afterglow_s, Some(d.afterglow_s), 0.5..=20.0, |v| format!("{v:.1} s"), true);
+            fx_slider(ui, at, &mut k.links, "hue_shift", "Afterglow hue", &mut k.hue_shift, Some(d.hue_shift), -180.0..=180.0, |v| format!("{v:.0}°"), false);
             toggle_row(ui, "Glow in the picture's colours", &mut k.own_colour);
-            slider_def(ui, "UV saturation", &mut k.uv, Some(d.uv), 0.0..=2.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Excite on onsets", &mut k.excite, Some(d.excite), 0.0..=4.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Sparkle", &mut k.sparkle, Some(d.sparkle), 0.0..=3.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "uv", "UV saturation", &mut k.uv, Some(d.uv), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "excite", "Excite on onsets", &mut k.excite, Some(d.excite), 0.0..=4.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "sparkle", "Sparkle", &mut k.sparkle, Some(d.sparkle), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "A dual phosphor: the picture flashes and leaves a long afterglow in a shifted hue; charged areas sparkle on transients like plankton. In the picture's colours a palette carries straight through; off, it glows in the layer tint.");
         }
         Modifier::Grade(k) => {
@@ -923,8 +969,8 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             if let Some(i) = segmented(ui, &["By brightness", "By hue"], k.by_hue as usize) {
                 k.by_hue = i == 1;
             }
-            slider_def(ui, "Amount", &mut k.amount, Some(d.amount), 0.0..=1.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "amount", "Amount", &mut k.amount, Some(d.amount), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Recolours this layer's picture through its palette (choose one above; none = phosphor). By brightness is a gradient map: dark to the first colours, bright to the last.");
         }
         Modifier::Halftone(k) => {
@@ -934,33 +980,33 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             if let Some(i) = segmented(ui, &names, HalftoneShape::ALL.iter().position(|s| *s == k.shape).unwrap_or(0)) {
                 k.shape = HalftoneShape::ALL[i];
             }
-            slider_def(ui, "Cell", &mut k.cell, Some(d.cell), 3.0..=40.0, |v| format!("{v:.0} px"), false);
-            slider_def(ui, "Angle", &mut k.angle, Some(d.angle), -90.0..=90.0, |v| format!("{v:.0}°"), false);
-            slider_def(ui, "Gamma", &mut k.gamma, Some(d.gamma), 0.3..=4.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "One ink", &mut k.mono, Some(d.mono), 0.0..=1.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Drift", &mut k.drift, Some(d.drift), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "cell", "Cell", &mut k.cell, Some(d.cell), 3.0..=40.0, |v| format!("{v:.0} px"), false);
+            fx_slider(ui, at, &mut k.links, "angle", "Angle", &mut k.angle, Some(d.angle), -90.0..=90.0, |v| format!("{v:.0}°"), false);
+            fx_slider(ui, at, &mut k.links, "gamma", "Gamma", &mut k.gamma, Some(d.gamma), 0.3..=4.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "mono", "One ink", &mut k.mono, Some(d.mono), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "drift", "Drift", &mut k.drift, Some(d.drift), 0.0..=1.0, |v| format!("{v:.2}"), false);
             toggle_row(ui, "Ink from the palette", &mut k.palette);
             toggle_row(ui, "Invert", &mut k.invert);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "A print screen: each cell's mark grows with the brightness under it. One ink prints in the tint or the palette; drift lets it wander between the picture's colours and one ink, and onsets push it there. After the halftone in Felix Turner's Uberviz.");
         }
         Modifier::Warp(k) => {
             let d = Warp::default();
-            slider_def(ui, "Amount", &mut k.amount, Some(d.amount), 0.0..=200.0, |v| format!("{v:.0} px"), true);
-            slider_def(ui, "Scale", &mut k.scale, Some(d.scale), 0.3..=20.0, |v| format!("{v:.1}"), true);
-            slider_def(ui, "Speed", &mut k.speed, Some(d.speed), 0.0..=3.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Twist", &mut k.twist, Some(d.twist), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "amount", "Amount", &mut k.amount, Some(d.amount), 0.0..=200.0, |v| format!("{v:.0} px"), true);
+            fx_slider(ui, at, &mut k.links, "scale", "Scale", &mut k.scale, Some(d.scale), 0.3..=20.0, |v| format!("{v:.1}"), true);
+            fx_slider(ui, at, &mut k.links, "speed", "Speed", &mut k.speed, Some(d.speed), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "twist", "Twist", &mut k.twist, Some(d.twist), 0.0..=2.0, |v| format!("{v:.2}"), false);
             slider_def(ui, "Detail", &mut k.octaves, Some(d.octaves), 1..=5, |v| format!("{v:.0}"), false);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Pulls the picture through a flowing field: small amounts are heat haze, large ones liquid. The bass swells it; onsets kick the flow.");
         }
         Modifier::Lines(k) => {
             let d = Lines::default();
-            slider_def(ui, "Pitch", &mut k.pitch, Some(d.pitch), 1.0..=24.0, |v| format!("{v:.1} px"), false);
-            slider_def(ui, "Angle", &mut k.angle, Some(d.angle), -90.0..=90.0, |v| format!("{v:.0}°"), false);
-            slider_def(ui, "Cut", &mut k.cut, Some(d.cut), 0.0..=1.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Glow", &mut k.glow, Some(d.glow), 0.0..=0.5, |v| format!("{v:.3}"), false);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "pitch", "Pitch", &mut k.pitch, Some(d.pitch), 1.0..=24.0, |v| format!("{v:.1} px"), false);
+            fx_slider(ui, at, &mut k.links, "angle", "Angle", &mut k.angle, Some(d.angle), -90.0..=90.0, |v| format!("{v:.0}°"), false);
+            fx_slider(ui, at, &mut k.links, "cut", "Cut", &mut k.cut, Some(d.cut), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "glow", "Glow", &mut k.glow, Some(d.glow), 0.0..=0.5, |v| format!("{v:.3}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Fine stripes over the picture: cut darkens, glow adds a faint stripe in the tint even over black. They crawl with the music.");
         }
         Modifier::Mirror(k) => {
@@ -970,32 +1016,32 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
                 k.side = MirrorSide::ALL[i];
             }
             toggle_row(ui, "Add the reflection", &mut k.additive);
-            slider_def(ui, "Flip on beats", &mut k.flip, Some(d.flip), 0.0..=1.0, |v| format!("{:.0}%", v * 100.0), false);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "flip", "Flip on beats", &mut k.flip, Some(d.flip), 0.0..=1.0, |v| format!("{:.0}%", v * 100.0), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "One side reflected across the middle: instant symmetry on anything. Add keeps both sides and lays the reflection over them.");
         }
         Modifier::Glow(k) => {
             let d = Glow::default();
-            slider_def(ui, "Amount", &mut k.amount, Some(d.amount), 0.0..=4.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Size", &mut k.size, Some(d.size), 0.1..=3.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Threshold", &mut k.threshold, Some(d.threshold), 0.0..=2.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "amount", "Amount", &mut k.amount, Some(d.amount), 0.0..=4.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "size", "Size", &mut k.size, Some(d.size), 0.1..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "threshold", "Threshold", &mut k.threshold, Some(d.threshold), 0.0..=2.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "The bright parts blurred wide and added back, in their own colours. Threshold picks what glows (measured after levelling, so it means the same on any layer); energy and onsets swell it. After the glow in Felix Turner's Uberviz.");
         }
         Modifier::Vignette(k) => {
             let d = Vignette::default();
-            slider_def(ui, "Amount", &mut k.amount, Some(d.amount), 0.0..=1.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Softness", &mut k.softness, Some(d.softness), 0.02..=1.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Roundness", &mut k.roundness, Some(d.roundness), 0.0..=1.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "amount", "Amount", &mut k.amount, Some(d.amount), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "softness", "Softness", &mut k.softness, Some(d.softness), 0.02..=1.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "roundness", "Roundness", &mut k.roundness, Some(d.roundness), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Darkens the edges of this layer: 0 roundness follows the frame, 1 is a circle. The frame opens a little on the bass. On the bottom layer, or on every layer, it frames the whole picture.");
         }
         Modifier::Colorify(k) => {
             let d = Colorify::default();
-            slider_def(ui, "Strength", &mut k.strength, Some(d.strength), 0.0..=1.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "strength", "Strength", &mut k.strength, Some(d.strength), 0.0..=1.0, |v| format!("{v:.2}"), false);
             toggle_row(ui, "Ink from the palette", &mut k.palette);
-            slider_def(ui, "Hue drift", &mut k.speed, Some(d.speed), -90.0..=90.0, |v| format!("{v:.0}°/s"), false);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "speed", "Hue drift", &mut k.speed, Some(d.speed), -90.0..=90.0, |v| format!("{v:.0}°/s"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Reprints the picture in one ink, keeping its brightness: the layer tint turning round the colour wheel, or the palette by brightness drifting along it. Put it in the effects director's pool to flip between colour and one ink. After the colorify in Felix Turner's Uberviz.");
         }
         Modifier::Mask(k) => {
@@ -1005,10 +1051,10 @@ fn modifier_controls(ui: &mut egui::Ui, m: &mut Modifier) {
             if let Some(i) = segmented(ui, &["Circle", "Band", "Hex"], shapes.iter().position(|m| *m == k.shape).unwrap_or(0)) {
                 k.shape = shapes[i];
             }
-            slider_def(ui, "Size", &mut k.radius, Some(d.radius), 0.05..=2.0, |v| format!("{v:.2}"), false);
-            slider_def(ui, "Softness", &mut k.soft, Some(d.soft), 0.0..=0.5, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "radius", "Size", &mut k.radius, Some(d.radius), 0.05..=2.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "soft", "Softness", &mut k.soft, Some(d.soft), 0.0..=0.5, |v| format!("{v:.2}"), false);
             toggle_row(ui, "Keep the outside instead", &mut k.invert);
-            slider_def(ui, "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
+            fx_slider(ui, at, &mut k.links, "react", "Reacts", &mut k.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
             hint(ui, "Lets two layers share the frame by place, not only by adding. Size breathes with the bass.");
         }
     }
@@ -1374,17 +1420,18 @@ fn picture_section(ui: &mut egui::Ui, settings: &mut Settings) {
     }
     let d = PostSettings::default();
     let p = &mut settings.post;
-    slider_def(ui, "Exposure", &mut p.exposure, Some(d.exposure), 0.1..=10.0, |v| format!("{v:.2}"), true);
+    let at = FxAt { owner: crate::links::PICTURE_OWNER };
+    fx_slider(ui, at, &mut p.links, "exposure", "Exposure", &mut p.exposure, Some(d.exposure), 0.1..=10.0, |v| format!("{v:.2}"), true);
     toggle_row(ui, "Auto exposure", &mut p.auto_exposure);
     ui.add_space(6.0);
-    slider_def(ui, "Bloom", &mut p.bloom, Some(d.bloom), 0.0..=3.0, |v| format!("{v:.2}"), false);
-    slider_def(ui, "Grain", &mut p.grain, Some(d.grain), 0.0..=1.0, |v| format!("{v:.2}"), false);
+    fx_slider(ui, at, &mut p.links, "bloom", "Bloom", &mut p.bloom, Some(d.bloom), 0.0..=3.0, |v| format!("{v:.2}"), false);
+    fx_slider(ui, at, &mut p.links, "grain", "Grain", &mut p.grain, Some(d.grain), 0.0..=1.0, |v| format!("{v:.2}"), false);
     ui.add_space(8.0);
     small_caps(ui, "Look");
     if let Some(i) = segmented(ui, &["Film", "Neon"], (p.look == Look::Neon) as usize) {
         p.look = if i == 1 { Look::Neon } else { Look::Film };
     }
-    slider_def(ui, "Saturation", &mut p.saturation, Some(d.saturation), 0.0..=2.0, |v| format!("{v:.2}"), false);
+    fx_slider(ui, at, &mut p.links, "saturation", "Saturation", &mut p.saturation, Some(d.saturation), 0.0..=2.0, |v| format!("{v:.2}"), false);
     hint(ui, match p.look {
         Look::Film => "Film: bright colours roll off toward white, like a camera.",
         Look::Neon => "Neon: hue and saturation survive brightness; only the hottest cores whiten, like a tube.",

@@ -6,7 +6,7 @@
 //! parameter block of the layer (`"links": [...]`), so they are saved with
 //! the scene and kept per visual when the layer switches away and back.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -309,6 +309,162 @@ pub fn record(owner: u64, param: &str, time_s: f64, step: Step) {
     }
 }
 
+// ---------------------------------------------------------------- effects
+
+/// How many links an effect keeps.
+pub const FX_LINKS: usize = 4;
+
+/// A link stored in an effect. Effects are `Copy`, so the parameter's name
+/// is kept inline (a field name, at most 24 bytes).
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct FxLink {
+    name: [u8; 24],
+    len: u8,
+    signal: Signal,
+    low: f32,
+    high: f32,
+    curve: f32,
+    attack_ms: f32,
+    release_ms: f32,
+    threshold: f32,
+    hysteresis: f32,
+    gate: f32,
+}
+
+impl FxLink {
+    fn from_link(l: &Link) -> Option<Self> {
+        let b = l.param.as_bytes();
+        if b.is_empty() || b.len() > 24 {
+            return None;
+        }
+        let mut name = [0u8; 24];
+        name[..b.len()].copy_from_slice(b);
+        Some(Self { name, len: b.len() as u8, signal: l.signal, low: l.low, high: l.high, curve: l.curve, attack_ms: l.attack_ms, release_ms: l.release_ms, threshold: l.threshold, hysteresis: l.hysteresis, gate: l.gate })
+    }
+
+    fn to_link(self) -> Link {
+        let param = String::from_utf8_lossy(&self.name[..self.len as usize]).into_owned();
+        Link { param, signal: self.signal, low: self.low, high: self.high, curve: self.curve, attack_ms: self.attack_ms, release_ms: self.release_ms, threshold: self.threshold, hysteresis: self.hysteresis, gate: self.gate }
+    }
+}
+
+/// An effect's links (up to `FX_LINKS`), saved as a visual's are: a list
+/// of links naming the effect's fields ("param": "amount").
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub struct FxLinks([Option<FxLink>; FX_LINKS]);
+
+impl FxLinks {
+    pub fn is_empty(&self) -> bool {
+        self.0.iter().all(Option::is_none)
+    }
+
+    pub fn get(&self) -> Vec<Link> {
+        self.0.iter().flatten().map(|l| l.to_link()).collect()
+    }
+
+    pub fn set(&mut self, links: &[Link]) {
+        let mut it = links.iter().filter_map(FxLink::from_link);
+        for slot in self.0.iter_mut() {
+            *slot = it.next();
+        }
+    }
+}
+
+impl Serialize for FxLinks {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.get().serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for FxLinks {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let links = Vec::<Link>::deserialize(d)?;
+        let mut out = FxLinks::default();
+        out.set(&links);
+        Ok(out)
+    }
+}
+
+/// Who runs an effect's links, for the probe, the live values and the test
+/// inputs: layer `layer`'s effect in place `slot`.
+pub fn fx_owner(layer: usize, slot: usize) -> u64 {
+    (1u64 << 48) | ((layer as u64) << 8) | slot as u64
+}
+
+/// What each effect link set last frame, and the panel's test inputs, by
+/// (owner, field).
+static FX_LIVE: Mutex<BTreeMap<(u64, String), f32>> = Mutex::new(BTreeMap::new());
+static FX_TEST: Mutex<BTreeMap<(u64, String), f32>> = Mutex::new(BTreeMap::new());
+
+pub fn fx_live(owner: u64, param: &str) -> Option<f32> {
+    FX_LIVE.lock().ok().and_then(|m| m.get(&(owner, param.to_string())).copied())
+}
+
+pub fn fx_test(owner: u64, param: &str) -> Option<f32> {
+    FX_TEST.lock().ok().and_then(|m| m.get(&(owner, param.to_string())).copied())
+}
+
+/// Sets a test input (below 0: none).
+pub fn fx_set_test(owner: u64, param: &str, v: f32) {
+    if let Ok(mut m) = FX_TEST.lock() {
+        if v < 0.0 {
+            m.remove(&(owner, param.to_string()));
+        } else {
+            m.insert((owner, param.to_string()), v);
+        }
+    }
+}
+
+pub fn fx_forget(owner: u64, param: &str) {
+    for m in [&FX_LIVE, &FX_TEST] {
+        if let Ok(mut m) = m.lock() {
+            m.remove(&(owner, param.to_string()));
+        }
+    }
+}
+
+/// Steps each of `links` one frame (their state in `runs`) and hands each
+/// field's value to `set`, keeping it as the live value and for the probe.
+fn run_fx(links: &FxLinks, f: &FeatureFrame, runs: &mut BTreeMap<String, LinkRun>, dt: f32, owner: u64, mut set: impl FnMut(&str, f32)) {
+    for l in links.get() {
+        let run = runs.entry(l.param.clone()).or_default();
+        let step = l.step(f, fx_test(owner, &l.param), run, dt);
+        set(&l.param, step.value);
+        if let Ok(mut live) = FX_LIVE.lock() {
+            live.insert((owner, l.param.clone()), step.value);
+        }
+        record(owner, &l.param, f.time_s, step);
+    }
+}
+
+/// The effect as its links set it this frame (a copy; the stored one is
+/// left alone), stepping each link's state in `runs`.
+pub fn apply_fx(m: &crate::settings::Modifier, f: &FeatureFrame, runs: &mut BTreeMap<String, LinkRun>, dt: f32, owner: u64) -> crate::settings::Modifier {
+    let mut out = *m;
+    run_fx(m.links(), f, runs, dt, owner, |name, v| {
+        if let Some(x) = out.number_mut(name) {
+            *x = v;
+        }
+    });
+    out
+}
+
+/// Who runs the Picture's links.
+pub const PICTURE_OWNER: u64 = 1u64 << 49;
+
+/// The Picture as its links set it this frame (a copy).
+pub fn apply_picture(p: &crate::settings::PostSettings, f: &FeatureFrame, runs: &mut BTreeMap<String, LinkRun>, dt: f32) -> crate::settings::PostSettings {
+    let mut out = *p;
+    if !p.links.is_empty() {
+        run_fx(&p.links, f, runs, dt, PICTURE_OWNER, |name, v| {
+            if let Some(x) = out.number_mut(name) {
+                *x = v;
+            }
+        });
+    }
+    out
+}
+
 /// The links stored in a visual's parameter block.
 pub fn read(block: Option<&Value>) -> Vec<Link> {
     block.and_then(|b| b.get("links")).and_then(|l| serde_json::from_value(l.clone()).ok()).unwrap_or_default()
@@ -362,5 +518,27 @@ mod tests {
         assert_eq!(read(Some(&Value::Object(block.clone()))), links);
         write(&mut block, &[]);
         assert!(!block.contains_key("links"));
+    }
+
+    #[test]
+    fn an_effect_keeps_its_links_and_saves_as_before_without() {
+        use crate::settings::{Glow, Modifier};
+        let plain = Modifier::Glow(Glow::default());
+        let json = serde_json::to_string(&plain).unwrap();
+        assert!(!json.contains("links"), "{json}");
+        let mut m = plain;
+        if let Modifier::Glow(g) = &mut m {
+            g.links.set(&[Link { release_ms: 0.0, ..Link::new("amount", 0.5, 3.0) }, Link::new("mix", 0.2, 1.0)]);
+        }
+        let back: Modifier = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+        assert_eq!(back, m);
+        assert_eq!(back.links().get().len(), 2);
+        // A link sets the field on a copy; the stored value stays.
+        let mut runs = BTreeMap::new();
+        let out = apply_fx(&m, &frame(1.0), &mut runs, 0.01, fx_owner(9, 0));
+        let Modifier::Glow(g) = out else { panic!() };
+        assert!((g.amount - 3.0).abs() < 1e-4, "{}", g.amount);
+        let Modifier::Glow(g0) = m else { panic!() };
+        assert!((g0.amount - Glow::default().amount).abs() < 1e-6);
     }
 }

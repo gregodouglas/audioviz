@@ -143,6 +143,8 @@ struct Chain {
     mix_bufs: Vec<wgpu::Buffer>,
     bufs: Vec<wgpu::Buffer>,
     states: Vec<ModState>,
+    /// Each slot's links' running state, by field.
+    link_runs: Vec<std::collections::BTreeMap<String, crate::links::LinkRun>>,
 }
 
 impl Chain {
@@ -157,6 +159,7 @@ impl Chain {
             mix_bufs: (0..MAX_MODS).map(|j| scene::uniform_buffer(device, &format!("layer {i} mix {j}"), std::mem::size_of::<MixParams>() as u64)).collect(),
             bufs: (0..MAX_MODS).map(|j| scene::uniform_buffer(device, &format!("layer {i} mod {j}"), std::mem::size_of::<GradeParams>() as u64)).collect(),
             states: vec![ModState::default(); MAX_MODS],
+            link_runs: vec![Default::default(); MAX_MODS],
         }
     }
 
@@ -1485,6 +1488,14 @@ fn render_layer(device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::
                     &own_band
                 }
                 Some(_) => fr.features,
+            };
+            // Sliders linked to the music take this frame's values (on a copy).
+            let linked;
+            let m = if m.links().is_empty() {
+                m
+            } else {
+                linked = crate::links::apply_fx(m, mf, &mut chain.link_runs[j], dt, crate::links::fx_owner(chain.index, j));
+                &linked
             };
             let mut p = mod_params(m, &mut chain.states[j], mf, slot.tint, dt, time, fr.width, fr.height);
             if let (Modifier::Glow(k), Some(g)) = (m, chain.glow[j].as_ref()) {

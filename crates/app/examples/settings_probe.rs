@@ -11,6 +11,9 @@ mod settings;
 #[path = "../src/config.rs"]
 #[allow(dead_code)]
 mod config;
+#[path = "../src/links.rs"]
+#[allow(dead_code)]
+mod links;
 
 fn main() -> anyhow::Result<()> {
     let path = std::env::args().nth(1).ok_or_else(|| anyhow::anyhow!("usage: settings_probe <settings.json>"))?;

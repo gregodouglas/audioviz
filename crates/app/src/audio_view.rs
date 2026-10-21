@@ -175,7 +175,7 @@ impl ViewState {
                 None => "Live".to_string(),
                 Some(t) => format!("Frozen {:.1} s back", live_end - t),
             };
-            let groove = history.at(end).map_or(String::new(), |h| format!(" · {:.1} BPM, sure {:.2}, steady {:.2}, bar {:.2}", h.bpm, h.beat_confidence, h.pulse_stability, h.bar_confidence));
+            let groove = history.at(end).map_or(String::new(), |h| format!(" · {:.1} BPM, sure {:.2}, steady {:.2}, bar {:.2} · section {}{} · change in {:.1} bars ({:.2})", h.bpm, h.beat_confidence, h.pulse_stability, h.bar_confidence, (b'A' + h.section_label.min(25)) as char, if h.seen_before > 0.0 { format!(" seen {:.2}", h.seen_before) } else { String::new() }, h.bars_to_change, h.change_confidence));
             let head = format!(
                 "Director view · {state} · {:.0} s across{groove} · capture: {} glitches, {} late, {} dropped, {} clipped, {} reopens",
                 self.span_s, health.discontinuities, health.late_packets, health.dropped_chunks, health.clipped_samples, health.reopens
@@ -346,6 +346,9 @@ impl ViewState {
                 if h.transitions != a.transitions {
                     p.line_segment([pos2(x, spec_r.top()), pos2(x, context_r.bottom())], Stroke::new(1.0, theme::with_alpha(TEXT, 90)));
                     p.text(pos2(x + 3.0, context_r.top()), Align2::LEFT_TOP, "change", theme::sans(10.0), TEXT_2);
+                }
+                if h.section_label != a.section_label {
+                    p.text(pos2(x + 3.0, context_r.bottom() - 2.0), Align2::LEFT_BOTTOM, ((b'A' + h.section_label.min(25)) as char).to_string(), theme::mono(10.0), theme::with_alpha(TEXT, 200));
                 }
                 if h.drops != a.drops {
                     p.line_segment([pos2(x, spec_r.top()), pos2(x, context_r.bottom())], Stroke::new(2.0, theme::with_alpha(DROP, 220)));

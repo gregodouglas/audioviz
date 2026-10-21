@@ -1010,8 +1010,10 @@ struct Uniform {
     context: [f32; 4],
     /// (brightness trend, density trend, energy trend, 0).
     trends: [f32; 4],
-    /// (drop pulse, how sure the last drop was, transition pulse, 0).
+    /// (drop pulse, how sure the last drop was, transition pulse, phrase phase).
     moments: [f32; 4],
+    /// (section label, seen before, bars to the expected change, how sure).
+    section: [f32; 4],
 }
 
 // ------------------------------------------------------------ building off the render thread
@@ -2188,7 +2190,8 @@ impl ShaderVisual {
             bar: [f.bar_phase, f.beat_in_bar as f32, f.bar_confidence, f.pulse_stability],
             context: [f.build, f.bass_presence, f.contrast, f.transition],
             trends: [f.brightness_trend, f.density_trend, f.energy_trend, 0.0],
-            moments: [f.drop_pulse, f.drop_confidence, f.transition_pulse, 0.0],
+            moments: [f.drop_pulse, f.drop_confidence, f.transition_pulse, f.phrase_phase],
+            section: [f.section_label as f32, f.seen_before, f.bars_to_change, f.change_confidence],
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
         // The album art, once per track.
@@ -2496,7 +2499,8 @@ mod tests {
         assert_eq!(std::mem::offset_of!(Uniform, noisiness), 544 + 512 + 144 + 352);
         assert_eq!(std::mem::offset_of!(Uniform, bar), 544 + 512 + 144 + 352 + 16);
         assert_eq!(std::mem::offset_of!(Uniform, moments), 544 + 512 + 144 + 352 + 64);
-        assert_eq!(std::mem::size_of::<Uniform>(), 544 + 512 + 144 + 352 + 80);
+        assert_eq!(std::mem::offset_of!(Uniform, section), 544 + 512 + 144 + 352 + 80);
+        assert_eq!(std::mem::size_of::<Uniform>(), 544 + 512 + 144 + 352 + 96);
     }
 
     #[test]

@@ -112,6 +112,7 @@ The colour is linear HDR light (values above 1 are fine; levelling, effects and 
 | `V.hits`, `V.strengths` | 1 on the frame an onset is detected, and the onset strength now (low, mid, high, all) |
 | `V.confidence`, `V.silent` | how sure the beat clock is (0..1); 1 when nothing is playing |
 | `V.context`, `V.trends`, `V.moments` | context over seconds (ADR-0006 step 4): build intensity, bass presence, contrast with the last minute, novelty (about 1 at a change); brightness, density and energy trends (-1..1); a drop pulse (1, fading over ~0.6 s), how sure that drop was, a transition pulse. A drop is known at once, a transition about 1.5 s after it |
+| `V.section`, `V.moments.w` | the track's sections from its own history: the current one's label (0 = A ...; one that sounds like an earlier section gets its label), how much it does (0..1), bars to the next expected change (an earlier section's length when it matches one, else the next eight-bar phrase), how sure; 0..1 through the eight-bar phrase. Labels are approximate |
 | `V.bar` | x: 0..1 through the bar of four beats; y: which beat of the bar (0 = the first); z: how sure the bar's first beat is (0..1; the chords changing find it, kicks alone cannot tell 1 from 3); w: how steady the pulse has been over ~8 s (0..1) |
 | `V.swell` | bass above its average plus low onsets, fast attack, slow release |
 | `V.key`, `V.quiet` | dominant pitch class (C = 0), 1 in a quiet passage |

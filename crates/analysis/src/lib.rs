@@ -15,6 +15,7 @@ pub mod filterbank;
 pub mod history;
 pub mod loudness;
 pub mod onset;
+pub mod sections;
 pub mod stft;
 
 use bands::{BROAD, BandSignals};
@@ -144,6 +145,16 @@ pub struct FeatureFrame {
     pub drop_count: u32,
     pub drop_confidence: f32,
     pub drop_pulse: f32,
+    /// Sections from the track's history (see `sections`): the current
+    /// one's label (0 = A), how much it sounds like an earlier one (0..1),
+    /// bars into it, bars to the next expected change and how sure, and
+    /// 0..1 through the current eight-bar phrase.
+    pub section_label: u32,
+    pub seen_before: f32,
+    pub bars_in_section: u32,
+    pub bars_to_change: f32,
+    pub change_confidence: f32,
+    pub phrase_phase: f32,
     pub quiet: bool,
     pub silent: bool,
 }
@@ -203,6 +214,12 @@ impl Default for FeatureFrame {
             drop_count: 0,
             drop_confidence: 0.0,
             drop_pulse: 0.0,
+            section_label: 0,
+            seen_before: 0.0,
+            bars_in_section: 0,
+            bars_to_change: 8.0,
+            change_confidence: 0.0,
+            phrase_phase: 0.0,
             quiet: true,
             silent: true,
         }
@@ -508,7 +525,8 @@ impl Analyzer {
         f.beat_in_bar = self.bar.beat_in_bar;
         f.bar_confidence = self.bar.confidence;
 
-        let input = ContextInput { lufs_m: f.lufs_m, broad_level: &f.broad_level, brightness: f.brightness, noisiness: f.noisiness, activity: f.activity, chroma: &self.chroma.raw };
+        let bar_started = f.beat_count != self.last_beat_count && f.beat_in_bar == 0;
+        let input = ContextInput { lufs_m: f.lufs_m, broad_level: &f.broad_level, brightness: f.brightness, noisiness: f.noisiness, activity: f.activity, chroma: &self.chroma.raw, time_s: f.time_s, bar_started, bar_phase: f.bar_phase };
         self.context.process(&input, dt, silent);
         let c = &self.context;
         f.brightness_trend = c.brightness_trend;
@@ -522,6 +540,12 @@ impl Analyzer {
         f.drop_count = c.drops;
         f.drop_confidence = c.drop_confidence;
         f.drop_pulse = c.drop_pulse;
+        f.section_label = c.sections.label;
+        f.seen_before = c.sections.seen_before;
+        f.bars_in_section = c.sections.bars_in;
+        f.bars_to_change = c.sections.bars_to_change;
+        f.change_confidence = c.sections.change_confidence;
+        f.phrase_phase = c.sections.phrase_phase;
 
         // Remember the hop. A reader that never drains is capped at a minute.
         if self.records.len() >= 94 * 60 {
@@ -577,6 +601,10 @@ impl Analyzer {
             build: f.build,
             drops: f.drop_count,
             drop_confidence: f.drop_confidence,
+            section_label: f.section_label.min(255) as u8,
+            seen_before: f.seen_before,
+            bars_to_change: f.bars_to_change,
+            change_confidence: f.change_confidence,
             silent: f.silent,
         });
         self.hops += 1;

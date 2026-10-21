@@ -34,7 +34,7 @@ fn render(sections: &[(Kind, u32)]) -> (Vec<f32>, Vec<(f32, Kind)>) {
         (seed >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0
     };
     let (mut hp, mut last) = (0.0f32, 0.0f32);
-    let mut ph = [0.0f32; 5];
+    let mut ph = [0.0f32; 6];
     let prog_a = [55.0f32, 43.65, 49.0, 41.2];
     let prog_b = [61.74f32, 46.25, 55.0, 36.71];
     let mut t0 = 0.0f32;
@@ -76,6 +76,13 @@ fn render(sections: &[(Kind, u32)]) -> (Vec<f32>, Vec<(f32, Kind)>) {
                 let tr = (b * rate).fract() * beat / rate;
                 x += (0.12 + 0.2 * p) * n0 * (tr / 0.002).min(1.0) * (-tr / 0.05).exp();
                 x += 0.25 * p * p * hp;
+            }
+            if kind == Kind::B {
+                // A bright lead: a buzzy note an octave and a half up, on the eighths.
+                ph[4] += std::f32::consts::TAU * root * 12.0 / SR as f32;
+                let te = (b * 2.0).fract();
+                let buzz: f32 = (1..6).map(|h| (ph[4] * h as f32).sin() / h as f32).sum();
+                x += 0.06 * buzz * (-te * 3.0).exp();
             }
             for (k, ratio) in [4.0f32, 5.0, 6.0].iter().enumerate() {
                 ph[k + 1] += std::f32::consts::TAU * root * ratio / SR as f32;
@@ -149,6 +156,26 @@ fn report(title: &str, sections: &[(Kind, u32)]) {
             events.push((w[1].time_s as f32, "DROP", w[1].drop_confidence));
         }
     }
+    if std::env::var_os("TRACE").is_some() {
+        for (t0, k) in &starts {
+            let peak = recs.iter().filter(|r| (r.time_s as f32 - t0).abs() < 4.0).map(|r| r.transition).fold(0.0f32, f32::max);
+            let typical = recs.iter().filter(|r| (r.time_s as f32) > t0 + 4.0 && (r.time_s as f32) < t0 + 12.0).map(|r| r.transition).fold(0.0f32, f32::max);
+            println!("    novelty near the start of {:<9} peak {peak:.2}, max inside {typical:.2}", name(*k));
+        }
+    }
+    // Sections: a bar and a half into each, and with two bars to go.
+    let bar = 240.0 / BPM;
+    for (i, (t0, k)) in starts.iter().enumerate() {
+        let t1 = starts.get(i + 1).map_or(end, |s| s.0);
+        for (when, t) in [("in 3.5 bars", t0 + 3.5 * bar), ("2 bars to go", t1 - 2.0 * bar)] {
+            if t <= *t0 || t >= t1 {
+                continue;
+            }
+            if let Some(r) = recs.iter().find(|r| r.time_s as f32 >= t) {
+                println!("    {:<9} {:<12} label {}  seen before {:.2}  change in {:>4.1} bars (truly {:>4.1}), sure {:.2}", name(*k), when, (b'A' + r.section_label) as char, r.seen_before, r.bars_to_change, (t1 - t) / bar, r.change_confidence);
+            }
+        }
+    }
     for (t, what, strength) in events {
         let (dist, near) = starts.iter().map(|s| (t - s.0, s.1)).min_by(|a, b| a.0.abs().partial_cmp(&b.0.abs()).unwrap()).unwrap();
         println!("    {t:>5.1} s {what:<10} strength {strength:.2}  ({:+.2} s from the start of {})", dist, name(near));
@@ -186,6 +213,6 @@ fn main() {
         file(&path);
         return;
     }
-    report("song: A, B, build, drop, breakdown, A", &[(Kind::A, 8), (Kind::B, 8), (Kind::Build, 8), (Kind::Drop, 8), (Kind::Breakdown, 4), (Kind::A, 8)]);
+    report("song: A, B, A, B, build, drop, breakdown, A, B", &[(Kind::A, 8), (Kind::B, 8), (Kind::A, 8), (Kind::B, 8), (Kind::Build, 8), (Kind::Drop, 8), (Kind::Breakdown, 4), (Kind::A, 8), (Kind::B, 8)]);
     report("groove alone", &[(Kind::A, 32)]);
 }

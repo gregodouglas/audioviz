@@ -24,8 +24,9 @@
 use std::collections::VecDeque;
 
 use crate::follow;
+use crate::sections::Sections;
 
-const DIMS: usize = 10 + 12;
+pub(crate) const DIMS: usize = 10 + 12;
 /// The novelty ring holds one averaged description every this many hops.
 const STEP_HOPS: usize = 4;
 const RECENT_S: f32 = 1.5;
@@ -40,6 +41,11 @@ pub struct ContextInput<'a> {
     pub noisiness: f32,
     pub activity: f32,
     pub chroma: &'a [f32; 12],
+    /// Seconds analysed, whether a bar starts on this hop, and how far
+    /// through the bar it is (for `sections`).
+    pub time_s: f64,
+    pub bar_started: bool,
+    pub bar_phase: f32,
 }
 
 pub struct Context {
@@ -60,6 +66,8 @@ pub struct Context {
     since_transition: f32,
     since_drop: f32,
     build_peak: f32,
+    /// The track's sections so far, and the current one.
+    pub sections: Sections,
     pub brightness_trend: f32,
     pub density_trend: f32,
     pub bass_presence: f32,
@@ -87,7 +95,7 @@ fn describe(i: &ContextInput) -> [f32; DIMS] {
     d
 }
 
-fn distance(a: &[f32; DIMS], b: &[f32; DIMS]) -> f32 {
+pub(crate) fn distance(a: &[f32; DIMS], b: &[f32; DIMS]) -> f32 {
     (a.iter().zip(b).map(|(x, y)| (x - y) * (x - y)).sum::<f32>() / DIMS as f32).sqrt()
 }
 
@@ -126,6 +134,7 @@ impl Context {
             since_transition: 0.0,
             since_drop: DROP_GAP_S,
             build_peak: 0.0,
+            sections: Sections::new(),
             brightness_trend: 0.0,
             density_trend: 0.0,
             bass_presence: 0.0,
@@ -148,6 +157,7 @@ impl Context {
         self.acc_n = 0;
         self.build = 0.0;
         self.build_peak = 0.0;
+        self.sections.reset();
     }
 
     pub fn process(&mut self, input: &ContextInput, dt: f32, silent: bool) {
@@ -165,6 +175,7 @@ impl Context {
             self.started = true;
             (self.fast, self.mid, self.slow, self.long) = (d, d, d, d);
         }
+        self.sections.on_hop(&d, input.time_s, input.bar_started, input.bar_phase);
         for k in 0..DIMS {
             self.fast[k] = follow(self.fast[k], d[k], dt, 0.4, 0.4);
             self.mid[k] = follow(self.mid[k], d[k], dt, 3.0, 3.0);
@@ -228,6 +239,7 @@ impl Context {
                 let [p1, p2] = self.prev_novelty;
                 if p1 > p2 && p1 >= novelty && level(p1) > 0.6 && self.since_transition > TRANSITION_GAP_S {
                     self.transitions = self.transitions.wrapping_add(1);
+                    self.sections.on_transition(input.time_s);
                     self.since_transition = 0.0;
                     self.transition_pulse = 1.0;
                 }

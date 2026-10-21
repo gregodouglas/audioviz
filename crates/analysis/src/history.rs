@@ -65,6 +65,12 @@ pub struct HopRecord {
     pub build: f32,
     pub drops: u32,
     pub drop_confidence: f32,
+    /// The current section (see `sections`): label (0 = A), how much it
+    /// sounds like an earlier one, bars to the expected change and how sure.
+    pub section_label: u8,
+    pub seen_before: f32,
+    pub bars_to_change: f32,
+    pub change_confidence: f32,
     pub silent: bool,
 }
 

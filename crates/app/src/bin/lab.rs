@@ -264,6 +264,11 @@ fn groove(bpm: f32, t: f32, dt: f32) -> FeatureFrame {
     f.contrast = 0.3;
     f.drop_pulse = if count % 64 == 0 && count > 0 { (-phase * 2.0).exp() } else { 0.0 };
     f.drop_confidence = 0.8;
+    f.section_label = (count / 32) % 2;
+    f.seen_before = if count >= 64 { 0.6 } else { 0.0 };
+    f.bars_to_change = 8.0 - ((count / 4) % 8) as f32 - phase / 4.0;
+    f.change_confidence = 0.5;
+    f.phrase_phase = ((count % 32) as f32 + phase) / 32.0;
     f
 }
 

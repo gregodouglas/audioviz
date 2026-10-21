@@ -1419,6 +1419,9 @@ pub struct ShaderVisual {
     link_owner: u64,
     link_runs: BTreeMap<String, crate::links::LinkRun>,
     link_tests: BTreeMap<String, f32>,
+    /// What each link set its parameter to last frame, so the panel shows
+    /// the live value on a linked slider.
+    link_values: BTreeMap<String, f32>,
     /// The build with its shared-space pipelines (with "space").
     space: Option<Arc<Built>>,
     /// Where a leading visual's camera pass writes, before it is copied to
@@ -1719,6 +1722,7 @@ impl ShaderVisual {
             link_owner: crate::links::new_owner(),
             link_runs: BTreeMap::new(),
             link_tests: BTreeMap::new(),
+            link_values: BTreeMap::new(),
             space: None,
             camera_out,
             camera_group,
@@ -2055,14 +2059,19 @@ impl Scene for ShaderVisual {
                             let int = p.kind == ParamKind::Integer;
                             let was_linked = links.iter().any(|l| l.param == p.id);
                             let mut linked = was_linked;
-                            let mut x = v.as_f64().unwrap_or(0.0) as f32;
+                            let stored = v.as_f64().unwrap_or(0.0) as f32;
+                            // Linked, the slider shows what the music sets it to now, over
+                            // the link's range; its own value waits for the link to go.
+                            let follows = links.iter().find(|l| l.param == p.id).map(|l| (l.low as f64, l.high as f64));
+                            let live = if was_linked { self.link_values.get(&p.id).copied() } else { None };
+                            let mut x = live.unwrap_or(stored);
                             let d = def.as_f64().unwrap_or(0.0) as f32;
                             let span = (p.max - p.min).abs();
                             let unit = if p.unit.is_empty() { String::new() } else { format!(" {}", p.unit) };
                             // An integer with a zero setting: 0 reads as its name, and below min snaps to min.
                             let zero = (int && !p.zero.is_empty()).then(|| p.zero.clone());
                             let (lo, low, places) = (if zero.is_some() { 0.0 } else { p.min }, p.min as f64, p.decimals);
-                            let r = crate::widgets::slider_link(ui, &p.label, &mut x, Some(d), lo..=p.max, &mut linked, move |v| match &zero {
+                            let r = crate::widgets::slider_link(ui, &p.label, &mut x, Some(d), lo..=p.max, &mut linked, follows, move |v| match &zero {
                                 Some(z) if v < 0.5 => z.clone(),
                                 Some(_) => format!("{:.0}{unit}", v.max(low)),
                                 None if places.is_some() => format!("{v:.*}{unit}", places.unwrap_or(2)),
@@ -2070,7 +2079,11 @@ impl Scene for ShaderVisual {
                                 None if span > 2.0 => format!("{v:.1}{unit}"),
                                 None => format!("{v:.2}{unit}"),
                             }, p.log);
-                            if !p.help.is_empty() {
+                            if was_linked {
+                                r.on_hover_text("Following the music: set its range with At nothing and At full below");
+                                // The stored value stays as it was.
+                                x = stored;
+                            } else if !p.help.is_empty() {
                                 r.on_hover_text(&p.help);
                             }
                             if int && !p.zero.is_empty() && x >= 0.5 {
@@ -2083,6 +2096,7 @@ impl Scene for ShaderVisual {
                             } else if !linked && was_linked {
                                 links.retain(|l| l.param != p.id);
                                 self.link_tests.remove(&p.id);
+                                self.link_values.remove(&p.id);
                             }
                             if let Some(l) = links.iter_mut().find(|l| l.param == p.id) {
                                 let test = self.link_tests.entry(p.id.clone()).or_insert(-1.0);
@@ -2213,6 +2227,7 @@ impl ShaderVisual {
                 let run = self.link_runs.entry(l.param.clone()).or_default();
                 let step = l.step(f, self.link_tests.get(&l.param).copied(), run, dt);
                 p[i / 4][i % 4] = step.value;
+                self.link_values.insert(l.param.clone(), step.value);
                 crate::links::record(self.link_owner, &l.param, f.time_s, step);
             }
         }

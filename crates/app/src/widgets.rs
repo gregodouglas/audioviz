@@ -34,19 +34,21 @@ pub fn slider_row<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &m
 /// the label is dimmed while the value sits at it, and a double-click on the
 /// slider puts it back. One line: label · slider · editable value.
 pub fn slider_def<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &mut Num, default: Option<Num>, range: std::ops::RangeInclusive<Num>, fmt: impl Fn(f64) -> String, log: bool) -> Response {
-    slider_line(ui, label, value, default, range, fmt, log, None)
+    slider_line(ui, label, value, default, range, fmt, log, None, None)
 }
 
 /// A slider row with a small button before its value that links the
 /// parameter to the music (ADR-0006 step 5): the rail gives up the room, so
-/// the row is as wide as any other. Lit when linked.
+/// the row is as wide as any other. Lit when linked. `follows` is the
+/// link's range (its values at nothing and at full), marked on the rail
+/// while linked; `value` is then the live value the link sets.
 #[allow(clippy::too_many_arguments)]
-pub fn slider_link<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &mut Num, default: Option<Num>, range: std::ops::RangeInclusive<Num>, linked: &mut bool, fmt: impl Fn(f64) -> String, log: bool) -> Response {
-    slider_line(ui, label, value, default, range, fmt, log, Some(linked))
+pub fn slider_link<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &mut Num, default: Option<Num>, range: std::ops::RangeInclusive<Num>, linked: &mut bool, follows: Option<(f64, f64)>, fmt: impl Fn(f64) -> String, log: bool) -> Response {
+    slider_line(ui, label, value, default, range, fmt, log, Some(linked), follows)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn slider_line<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &mut Num, default: Option<Num>, range: std::ops::RangeInclusive<Num>, fmt: impl Fn(f64) -> String, log: bool, mut linked: Option<&mut bool>) -> Response {
+fn slider_line<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &mut Num, default: Option<Num>, range: std::ops::RangeInclusive<Num>, fmt: impl Fn(f64) -> String, log: bool, mut linked: Option<&mut bool>, follows: Option<(f64, f64)>) -> Response {
     let at_default = default.is_some_and(|d| (value.to_f64() - d.to_f64()).abs() <= 1e-6 * (1.0 + d.to_f64().abs()));
     let (lo, hi) = (range.start().to_f64(), range.end().to_f64());
     let span = (hi - lo).abs().max(1e-9);
@@ -81,10 +83,20 @@ fn slider_line<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &mut 
                 sl = sl.logarithmic(true);
             }
             let r = ui.add(sl);
+            // Where a value sits along the rail, 0..1 (below 0 when it cannot be placed).
+            let along = |x: f64| if log && lo > 0.0 && hi > 0.0 { (x.max(1e-12).ln() - lo.ln()) / (hi.ln() - lo.ln()) } else if log { -1.0 } else { (x - lo) / span };
+            // A link's range: the stretch of the rail the music moves the value over.
+            if let Some((a, b)) = follows {
+                let (ta, tb) = (along(a).clamp(0.0, 1.0) as f32, along(b).clamp(0.0, 1.0) as f32);
+                let rail = r.rect;
+                let x = |t: f32| rail.min.x + 8.0 + (rail.width() - 16.0) * t;
+                let y = rail.center().y;
+                ui.painter().line_segment([egui::pos2(x(ta.min(tb)), y), egui::pos2(x(ta.max(tb)), y)], Stroke::new(4.0, theme::with_alpha(theme::ACCENT, 90)));
+            }
             // Default tick on the rail.
             if let Some(d) = default {
                 let d = d.to_f64();
-                let t = if log && lo > 0.0 && hi > 0.0 { (d.ln() - lo.ln()) / (hi.ln() - lo.ln()) } else if log { -1.0 } else { (d - lo) / span };
+                let t = along(d);
                 if (0.0..=1.0).contains(&t) {
                     let rail = r.rect;
                     let x = rail.min.x + 8.0 + (rail.width() - 16.0) * t as f32;

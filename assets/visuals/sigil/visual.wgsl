@@ -354,8 +354,9 @@ fn advance() -> G {
     g.spin += dt * 0.025 * dir * g.pace;
     g.orbit -= dt * 0.06 * dir * g.pace;
     g.poly_rot -= dt * 0.04 * dir * g.pace;
-    // Triangles step a twelfth of a turn every bar (four beats) and glide there.
-    let bar = floor(V.beat_count / 4.0);
+    // Triangles step a twelfth of a turn every bar and glide there (a bar
+    // is known by the beat count at its first beat, from the analysis's bar).
+    let bar = V.beat_count - beat_in_bar();
     if (bar != g.last_bar && V.confidence > 0.3) {
         g.last_bar = bar;
         g.tri_target += TAU / 12.0;
@@ -378,9 +379,10 @@ fn advance() -> G {
     }
 
     // Spread: everything outside the inner ring moves radially, and drops
-    // push it outward for a moment.
-    let k_ex = select(0.6, 0.05, flare > g.explode);
-    g.explode += (flare - g.explode) * (1.0 - exp(-dt / k_ex));
+    // push it outward for a moment (kicks a little).
+    let push = max(0.5 * flare, 1.5 * drop_pulse());
+    let k_ex = select(0.6, 0.1, push > g.explode);
+    g.explode += (push - g.explode) * (1.0 - exp(-dt / k_ex));
     g.spread = max(P.spread * (1.0 + 0.6 * P.explode * g.explode * P.react), 0.05);
     let r0 = arr_radius(0u);
     g.orbit_r = r0 + (item(ARR0).y - r0) * g.spread;

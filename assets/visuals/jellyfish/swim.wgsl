@@ -120,14 +120,14 @@ fn ease_to(level: f32, want: f32, dt: f32, rise: f32, fall: f32) -> f32 {
 
 // The groove clock (item GROOVE): what everything that waves runs on in
 // place of the plain clock. It runs a little quicker as the music gets
-// livelier (the sustained energy and the mids, by Music), and it is added
-// up frame by frame, so a change of pace never makes a wave jump. y is a
-// soft beat: rising in 80 ms, fading over 0.4 s.
+// livelier (the sustained energy, the mids and a build, by Music), and it
+// is added up frame by frame, so a change of pace never makes a wave jump.
+// y is a soft beat: rising in 80 ms, fading over 0.4 s.
 fn groove_step() -> vec4<f32> {
     let dt = clamp(V.dt, 0.0, 0.1);
     let g = item(GROOVE);
     let env = item(1u);
-    let pace = 1.0 + (0.5 * env.w + 0.3 * env.y) * music() * 0.6;
+    let pace = 1.0 + (0.5 * env.w + 0.3 * env.y + 0.5 * build()) * music() * 0.6;
     return vec4<f32>(g.x + dt * pace, ease_to(g.y, V.beat * music(), dt, 0.08, 0.4), 0.0, 0.0);
 }
 
@@ -226,21 +226,23 @@ fn jelly_step(j: u32) -> Jelly {
     let mode = P.music;
     let hit = V.hits.w > 0.5 && ev.x < 0.5;
     let low_hit = V.hits.x > 0.5 && ev.y < 0.5;
-    let drop = mode > 0.5 && V.onsets.x > 0.85 && V.swell > 1.0 && ev.z < 0.3;
+    let drop = mode > 0.5 && new_drop(ev);
     let R = radius(J);
     // In a close-up the one the camera follows mostly hovers and shows itself.
     let hero = j == 0u && P.view > 0.5;
     let home = wander_point(id, T * 0.8, (0.02 + 0.03 * P.drift) * select(1.0, 0.5, hero));
 
     // Strokes: on its own rhythm; with the music, on a beat once it is
-    // ready, in Performance also on bass hits; everyone on a drop. A jelly
-    // that wants to go down pulses seldom and sinks (it is a little heavier
-    // than water).
+    // ready (in Reactive the bar's first beat, when the bar is sure), in
+    // Performance also on bass hits; sooner in a build; everyone on a drop.
+    // A jelly that wants to go down pulses seldom and sinks (it is a little
+    // heavier than water).
     if (sp.period > 0.0) {
         let sinking = home.y < J.pos.y - 0.2;
-        let period = sp.period * mix(0.85, 1.25, h1) * select(1.0, 2.6, sinking);
+        let period = sp.period * mix(0.85, 1.25, h1) * select(1.0, 2.6, sinking) * (1.0 - 0.3 * build() * min(mk, 1.0));
         var go = J.since > period;
-        let beat = V.beat_count != J.last_beat && V.confidence > 0.3;
+        let on_bar = beat_in_bar() < 0.5 || bar_sure() < 0.4 || mode > 1.5;
+        let beat = V.beat_count != J.last_beat && V.confidence > 0.3 && on_bar;
         if (mode > 0.5 && beat && J.since > period * select(0.6, 0.35, mode > 1.5)) {
             go = true;
         }
@@ -379,6 +381,8 @@ fn jelly_step(j: u32) -> Jelly {
             J.flash = ease_to(J.flash, V.onsets.z * mk * 0.9, dt, 0.06, 0.3);
         }
     }
+    // Every species gathers light through a build and blooms on the drop.
+    J.glow += (0.3 * build() + 0.7 * drop_light(ev)) * min(mk, 1.2);
     return J;
 }
 
@@ -399,12 +403,25 @@ fn sound_step() -> vec4<f32> {
     return last + (want - last) * select(down, up, want > last);
 }
 
-// Item 2: this frame's onset hits (so each counts once) and the drop envelope.
+// Item 2: this frame's onset hits (so each counts once), the time since the
+// last drop plus one (0 before any), and the drops the analysis has found
+// in this track.
 fn events_step() -> vec4<f32> {
     let ev = item(2u);
-    let drop = V.onsets.x > 0.85 && V.swell > 1.0 && ev.z < 0.3;
-    let env = select(ev.z * exp(-clamp(V.dt, 0.0, 0.1) / 2.0), 1.0, drop);
-    return vec4<f32>(select(0.0, 1.0, V.hits.w > 0.5), select(0.0, 1.0, V.hits.x > 0.5), env, 0.0);
+    let since = select(select(0.0, min(ev.z + clamp(V.dt, 0.0, 0.1), 61.0), ev.z > 0.0), 1.0, new_drop(ev));
+    return vec4<f32>(select(0.0, 1.0, V.hits.w > 0.5), select(0.0, 1.0, V.hits.x > 0.5), since, drop_count());
+}
+
+// Whether the analysis found a drop this frame (its count went up), and
+// sure enough of it. ev is item 2 as last frame left it.
+fn new_drop(ev: vec4<f32>) -> bool {
+    return drop_count() > ev.w && drop_sure() > 0.3;
+}
+
+// A drop's light: blooming in over a fifth of a second, fading over ~2 s.
+fn drop_light(ev: vec4<f32>) -> f32 {
+    let t = ev.z - 1.0;
+    return select(0.0, smoothstep(0.0, 0.2, t) * exp(-t / 1.8), ev.z > 0.0);
 }
 
 // Item 0: started, and clocks since the last high and low onsets (the

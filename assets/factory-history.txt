@@ -135,6 +135,7 @@ visuals/jellyfish/species.wgsl b59e4095a17084d2
 visuals/jellyfish/species.wgsl d620b86c65152f47
 visuals/jellyfish/species.wgsl db4b784bd9526a88
 visuals/jellyfish/species.wgsl eb56605c8e8cddcb
+visuals/jellyfish/swim.wgsl 1ff3fe2caf43d637
 visuals/jellyfish/swim.wgsl 4d1c34c4faa03498
 visuals/jellyfish/swim.wgsl 5acfed623db94743
 visuals/jellyfish/swim.wgsl b966ed0e1fde2bec

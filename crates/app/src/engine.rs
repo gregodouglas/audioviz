@@ -12,11 +12,16 @@ use audioviz_audio::{CaptureHandle, CaptureHealth, CaptureMode, CaptureTarget, S
 use crossbeam_channel::{Receiver, Sender};
 
 const CHUNK_FRAMES: usize = 256;
+/// Seconds of audio kept for a session (ADR-0006 step 1b).
+pub const SESSION_S: usize = 120;
 
 enum Cmd {
     DelayMs(f32),
     /// A new track started (its id from the player's metadata).
     NewTrack(Option<u64>),
+    /// Save the last `SESSION_S` seconds as a session in `dir`, with the
+    /// track changes in them as (analysis time, label).
+    SaveSession { dir: std::path::PathBuf, marks: Vec<(f64, String)>, done: Sender<Result<std::path::PathBuf, String>> },
 }
 
 /// Wall-clock times of recent onset detections (after the delay line), for
@@ -68,6 +73,8 @@ impl Engine {
             records: Vec::new(),
             records_tx,
             cmd_rx,
+            ring: VecDeque::with_capacity(SESSION_S * sample_rate as usize * 2),
+            frames_heard: 0,
         };
         std::thread::Builder::new().name("engine".into()).spawn(move || worker.run())?;
 
@@ -90,6 +97,16 @@ impl Engine {
     /// How the capture is going: running counts (ADR-0006).
     pub fn capture_health(&self) -> CaptureHealth {
         self.health.lock().map(|h| h.clone()).unwrap_or_default()
+    }
+
+    /// Saves the last two minutes the analysis heard as a session (ADR-0006
+    /// step 1b): `<dir>/session-<UTC time>.wav` (16-bit stereo) and a `.json`
+    /// beside it with the app's version and where each track starts in the
+    /// WAV. Written on a thread of its own; the answer comes on the channel.
+    pub fn save_session(&self, dir: std::path::PathBuf, marks: Vec<(f64, String)>) -> Receiver<Result<std::path::PathBuf, String>> {
+        let (done, rx) = crossbeam_channel::bounded(1);
+        let _ = self.cmd_tx.send(Cmd::SaveSession { dir, marks, done });
+        rx
     }
 
     /// Tells the analysis a new track started, so the beat clock looks for
@@ -136,6 +153,10 @@ struct Worker {
     records: Vec<HopRecord>,
     records_tx: Sender<Vec<HopRecord>>,
     cmd_rx: Receiver<Cmd>,
+    /// The last `SESSION_S` seconds the analysis heard (interleaved 16-bit),
+    /// and how many frames it has heard since it started (its clock).
+    ring: VecDeque<i16>,
+    frames_heard: u64,
 }
 
 impl Worker {
@@ -145,6 +166,7 @@ impl Worker {
                 match cmd {
                     Cmd::DelayMs(ms) => self.delay_ms = ms.max(0.0),
                     Cmd::NewTrack(id) => self.analyzer.new_track(id),
+                    Cmd::SaveSession { dir, marks, done } => self.save_session(dir, marks, done),
                 }
             }
             while let Ok(m) = self.capture.mode.try_recv() {
@@ -157,6 +179,8 @@ impl Worker {
                     if chunk.sample_rate != self.sample_rate {
                         self.sample_rate = chunk.sample_rate;
                         self.analyzer = Analyzer::new(AnalyzerConfig { sample_rate: self.sample_rate, ..Default::default() });
+                        self.ring.clear();
+                        self.frames_heard = 0;
                     }
                     self.delay_line.extend(chunk.samples.iter().copied());
                     self.release();
@@ -181,6 +205,12 @@ impl Worker {
         }
         let released: Vec<f32> = self.delay_line.drain(..releasable).collect();
         self.analyzer.push(&released);
+        self.frames_heard += (released.len() / 2) as u64;
+        self.ring.extend(released.iter().map(|s| (s.clamp(-1.0, 1.0) * 32767.0) as i16));
+        let keep = SESSION_S * self.sample_rate as usize * 2;
+        if self.ring.len() > keep {
+            self.ring.drain(..self.ring.len() - keep);
+        }
         let frame = self.analyzer.frame();
         // Log low-band and overall onsets (kicks, snares) for calibration;
         // one release may span several hops, so compare counts, and debounce.
@@ -206,5 +236,77 @@ impl Worker {
         }
         // If the renderer is stalled (minimized), drop rather than block capture.
         let _ = self.points_tx.try_send(points);
+    }
+
+    /// Copies the ring and writes the session on a thread of its own, so
+    /// capture never waits on the disk.
+    fn save_session(&self, dir: std::path::PathBuf, marks: Vec<(f64, String)>, done: Sender<Result<std::path::PathBuf, String>>) {
+        let samples: Vec<i16> = self.ring.iter().copied().collect();
+        let rate = self.sample_rate;
+        // Analysis time at the WAV's first frame.
+        let start_s = (self.frames_heard - (samples.len() / 2) as u64) as f64 / rate as f64;
+        let _ = std::thread::Builder::new().name("session".into()).spawn(move || {
+            let _ = done.send(write_session(&dir, &samples, rate, start_s, &marks).map_err(|e| format!("{e:#}")));
+        });
+    }
+}
+
+/// Writes `session-<UTC time>.wav` and `.json` into `dir`.
+fn write_session(dir: &std::path::Path, samples: &[i16], rate: u32, start_s: f64, marks: &[(f64, String)]) -> anyhow::Result<std::path::PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let wav = dir.join(format!("session-{}.wav", utc_stamp(secs)));
+    let spec = hound::WavSpec { channels: 2, sample_rate: rate, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
+    let mut w = hound::WavWriter::create(&wav, spec)?;
+    for s in samples {
+        w.write_sample(*s)?;
+    }
+    w.finalize()?;
+    let seconds = (samples.len() / 2) as f64 / rate as f64;
+    // Track changes inside the WAV, and the one playing as it starts.
+    let mut tracks: Vec<serde_json::Value> = Vec::new();
+    if let Some((_, label)) = marks.iter().rev().find(|(t, _)| *t <= start_s) {
+        tracks.push(serde_json::json!({ "at_s": 0.0, "label": label, "began_before": true }));
+    }
+    for (t, label) in marks.iter().filter(|(t, _)| *t > start_s) {
+        tracks.push(serde_json::json!({ "at_s": ((t - start_s) * 1000.0).round() / 1000.0, "label": label }));
+    }
+    let meta = serde_json::json!({
+        "app": env!("CARGO_PKG_VERSION"),
+        "saved_utc": utc_stamp(secs),
+        "sample_rate": rate,
+        "seconds": (seconds * 1000.0).round() / 1000.0,
+        "tracks": tracks,
+    });
+    std::fs::write(wav.with_extension("json"), serde_json::to_string_pretty(&meta)?)?;
+    Ok(wav)
+}
+
+/// Seconds since 1970 as "20261021-145233" (UTC).
+fn utc_stamp(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    // Days to a civil date (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}{m:02}{d:02}-{:02}{:02}{:02}", rem / 3600, rem / 60 % 60, rem % 60)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn utc_stamps_read_as_dates() {
+        assert_eq!(utc_stamp(0), "19700101-000000");
+        assert_eq!(utc_stamp(1_792_593_153), "20261021-143233");
+        assert_eq!(utc_stamp(951_782_400), "20000229-000000");
     }
 }

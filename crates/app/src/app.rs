@@ -130,6 +130,8 @@ struct Running {
     last_frame: Instant,
     /// The engine's recent past and the director view over it (ADR-0006).
     history: crate::audio_view::History,
+    /// A session being written (ADR-0006 step 1b), answered on this channel.
+    session_rx: Option<crossbeam_channel::Receiver<Result<std::path::PathBuf, String>>>,
     audio_view: crate::audio_view::ViewState,
     /// Onset counts at the last frame: new ones become this frame's hits.
     onset_count: [u32; 4],
@@ -305,6 +307,7 @@ impl Running {
             last_frame: Instant::now(),
             onset_count: [0; 4],
             history: crate::audio_view::History::new(),
+            session_rx: None,
             audio_view: crate::audio_view::ViewState::new(),
             fps: 0.0,
             worst_ms: 0.0,
@@ -635,6 +638,15 @@ impl Running {
         }
         let mut features = self.engine.features();
         self.history.extend(self.engine.drain_records());
+        if let Some(r) = self.session_rx.as_ref().and_then(|rx| rx.try_recv().ok()) {
+            self.session_rx = None;
+            let text = match r {
+                Ok(p) => format!("Saved {}", p.display()),
+                Err(e) => format!("Session not saved: {e}"),
+            };
+            tracing::info!("{text}");
+            self.audio_view.notice = Some((text, Instant::now()));
+        }
         // A hit lasts one analysis hop (10.7 ms), shorter than a frame: count
         // them instead, so every onset is a hit on exactly one frame.
         for g in 0..4 {
@@ -1308,6 +1320,14 @@ impl Running {
             KeyCode::KeyN => self.settings.show_now_playing = !self.settings.show_now_playing,
             KeyCode::KeyD => self.audio_view.open = !self.audio_view.open,
             KeyCode::KeyF if self.audio_view.open => self.audio_view.toggle_freeze(&self.history),
+            KeyCode::KeyS if self.audio_view.open && self.session_rx.is_none() => {
+                // Dev runs keep sessions in the checkout's tmp; the app in its own folder.
+                let dir = if crate::factory::embedded_only() { std::env::current_dir().ok().map(|d| d.join("tmp").join("sessions")) } else { crate::factory::root().map(|d| d.join("sessions")) };
+                if let Some(dir) = dir {
+                    self.audio_view.notice = Some(("Saving the last two minutes...".into(), Instant::now()));
+                    self.session_rx = Some(self.engine.save_session(dir, self.history.marks()));
+                }
+            }
             KeyCode::Slash | KeyCode::F1 => self.show_shortcuts = !self.show_shortcuts,
             KeyCode::Digit1 => self.select_layer(0),
             KeyCode::Digit2 => self.select_layer(1),

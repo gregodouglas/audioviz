@@ -65,6 +65,11 @@ impl History {
         }
     }
 
+    /// The track changes kept, as (analysis time, label).
+    pub fn marks(&self) -> Vec<(f64, String)> {
+        self.marks.iter().cloned().collect()
+    }
+
     /// Marks the present, e.g. a new track.
     pub fn mark(&mut self, label: String) {
         self.marks.push_back((self.latest_time(), label));
@@ -102,6 +107,8 @@ impl History {
 
 pub struct ViewState {
     pub open: bool,
+    /// A line for the header for a few seconds (a session saved, or why not).
+    pub notice: Option<(String, std::time::Instant)>,
     /// The end of the view when frozen; live (following the present) when None.
     frozen_at: Option<f64>,
     span_s: f64,
@@ -128,6 +135,7 @@ impl ViewState {
         let env = std::env::var("AUDIOVIZ_AUDIO_VIEW").ok().and_then(|v| v.parse::<f64>().ok());
         Self {
             open: env.is_some_and(|v| v >= 1.0),
+            notice: None,
             frozen_at: None,
             span_s: env.filter(|v| *v >= 2.0).map_or(10.0, |v| v.min(120.0)),
             lut: heat_lut(),
@@ -221,9 +229,17 @@ impl ViewState {
             );
             let head_w = p.text(pos2(rect.left() + 10.0, rect.top() + 12.0), Align2::LEFT_CENTER, head, theme::mono(11.0), TEXT_2).width();
             // The keys, where the header leaves room for them.
-            let keys = p.layout_no_wrap("D close · F freeze · drag back · wheel zoom".into(), theme::mono(11.0), TEXT_3);
-            if head_w + keys.size().x + 40.0 < rect.width() {
-                p.galley(pos2(rect.right() - 10.0 - keys.size().x, rect.top() + 12.0 - keys.size().y * 0.5), keys, TEXT_3);
+            if let Some((text, _)) = self.notice.as_ref().filter(|(_, at)| at.elapsed().as_secs_f32() < 6.0) {
+                // A notice shows whatever the header's length, over its end.
+                let g = p.layout_no_wrap(text.clone(), theme::mono(11.0), theme::ACCENT);
+                let at = pos2(rect.right() - 10.0 - g.size().x, rect.top() + 12.0 - g.size().y * 0.5);
+                p.rect_filled(Rect::from_min_size(at - vec2(8.0, 2.0), g.size() + vec2(12.0, 4.0)), 3.0, BG);
+                p.galley(at, g, theme::ACCENT);
+            } else {
+                let keys = p.layout_no_wrap("D close · F freeze · S save session · drag back · wheel zoom".into(), theme::mono(11.0), TEXT_3);
+                if head_w + keys.size().x + 40.0 < rect.width() {
+                    p.galley(pos2(rect.right() - 10.0 - keys.size().x, rect.top() + 12.0 - keys.size().y * 0.5), keys, TEXT_3);
+                }
             }
 
             // Lanes.

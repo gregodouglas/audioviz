@@ -245,11 +245,25 @@ The packed fields behind the named functions (`V.bar`, `V.context`, `V.trends`, 
 
 The music arrives on three timescales, and a visual that feels alive answers on all three: the hit, the bar, and the song's arc.
 
-- **A hit** (the next 100 ms): `broad_attack(BASS)` or `attack(i)` for punch exactly when it lands, `V.onsets` for a pulse that decays on its own. Use it to *push* something that then eases back (a size, a glow), not to jump a shape in one frame.
+- **A hit** (the next 100 ms): `broad_attack(BASS)` or `attack(i)` for punch exactly when it lands, `V.onsets` for a pulse that decays on its own. Use it to *push* something that then eases back (a size, a glow), not to jump a shape in one frame. How late each one is, below.
 - **Breathing** (a second or so): `V.swell`, `broad(k)`, `bass_presence()`, `loudness()`. Sizes, brightness, density.
 - **The bar** (a few seconds): `bar_phase()` for sways, turns and colour drifts that land on the bar; `phrase_phase()` for an eight-bar arc. Scale their effect by `V.confidence` or `bar_sure()`, so music without a clear beat falls back to free motion rather than a stutter.
 - **The arc** (tens of seconds): `build()` to tighten, brighten or gather as tension rises, `drop_pulse()` for the release, `section()` to pick a look per section (a hue, an arrangement), so a chorus comes back looking as it did, `change_pulse()` to start the move to a new look.
 - **A spectrum picture**: `level(i)` or `level_at(t)` keeps the mix's balance (a bass-heavy track looks bass-heavy; a quiet passage looks quiet). `band(i)` makes every band dance whatever the mix, which is livelier but says less.
+
+**How late each signal is.** Measured on a made-up groove at 120 BPM (`cargo run --release -p audioviz-analysis --example delay_response`): the time from a kick's start until the signal has risen halfway, in the analysis, median of 59 kicks (a hop is 10.7 ms, so each varies by about that much).
+
+| Signal | Delay |
+|---|---|
+| `broad_attack(BASS)` | 8 ms |
+| `V.beat` | 12 ms (the beat clock predicts the beat; it can come before the kick) |
+| `attack(i)` (a low band) | 13 ms |
+| `broad(BASS)`, `broad_attack(SUB)` | 17 ms |
+| `level(i)` (a low band) | 25 ms |
+| `V.onsets.x`, `V.hits.x` | 31 ms |
+| `V.bass`, `V.mid`, `V.treble` | 65 ms (smoothed against their average) |
+
+On the way to the screen come, by estimate rather than measurement, about 10 ms of capture, up to a frame waiting for the next draw (17 ms at 60 Hz) and a frame or two to the display. The Sync section's delay (calibrated by tapping along, C) lines the whole picture up with what you hear, so what matters inside a visual is the difference between signals: a flash on `broad_attack(BASS)` lands about 20 ms before one on `V.onsets.x`.
 
 Three rules make it look musical rather than mechanical (ADR-0004):
 

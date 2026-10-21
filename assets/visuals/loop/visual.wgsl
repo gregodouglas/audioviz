@@ -9,7 +9,7 @@
 //
 // The prepare step keeps the ring history (up to 120 rings of 256 points):
 //   item 0                  (clock seconds owed, newest ring's slot, turn, beat kick)
-//   item 1                  (last beat pulse, 0, 0, 0)
+//   item 1                  (last beat pulse, the section's colour offset, how sure the beat is (both eased), 0)
 //   items 2 + s*64 + g      ring slot s, columns 4g .. 4g+3
 //   items 2 + 120*64 + s    ring slot s's level (from last frame's values)
 // Every item works out the ring clock from last frame's item 0 the same way,
@@ -111,10 +111,12 @@ fn prepare(i: u32) -> vec4<f32> {
         if (V.beat > item(1u).x + 0.4) {
             kick = 1.0;
         }
+        kick = max(kick, 1.5 * drop_pulse());
         return vec4<f32>(ck.x, ck.z, turn - TAU * floor(turn / TAU), kick);
     }
     if (i == 1u) {
-        return vec4<f32>(V.beat, 0.0, 0.0, 0.0);
+        let s = item(1u);
+        return vec4<f32>(V.beat, ease(s.y, section_seed(6.0) * 0.5 * P.sections, 3.0, 3.0), ease(s.z, V.confidence, 0.5, 1.0), 0.0);
     }
     if (i < LEVEL0) {
         let s = (i - RING0) / GROUPS;
@@ -144,7 +146,7 @@ fn ring_value(slot: u32, c: u32) -> f32 {
 }
 
 fn ring_colour(t: f32) -> vec3<f32> {
-    let x = fract(t + V.palette_shift) * 32.0;
+    let x = fract(t + V.palette_shift + item(1u).y) * 32.0;
     let i = u32(floor(x)) % 32u;
     let pal = mix(V.palette[i].rgb, V.palette[(i + 1u) % 32u].rgb, fract(x));
     return mix(V.tint.rgb, pal * 1.2, V.palette_mix);
@@ -170,7 +172,8 @@ fn point(i: u32) -> LinePoint {
     let t = f32(age) / f32(max(rings - 1u, 1u));
     let r = mix(P.inner, max(P.outer, P.inner + 0.01), t);
     let c = j % COLS;
-    let turn = state.z + radians(P.twist) * f32(age);
+    let sway = P.sway * 0.12 * sin(TAU * bar_phase()) * item(1u).z;
+    let turn = state.z + radians(P.twist) * f32(age) + sway;
     let a = TAU * f32(c) / f32(COLS) + turn;
     let rr = max(r + ring_value(slot, c) * P.amp * (1.0 + P.react * state.w), 0.0);
     q.pos = vec2<f32>(cos(a), -sin(a)) * rr;

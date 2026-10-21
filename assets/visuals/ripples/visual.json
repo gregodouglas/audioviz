@@ -14,6 +14,7 @@
     { "id": "rings", "label": "Rings on beats", "group": "Surface", "min": 0.0, "max": 3.0, "default": 1.0 },
     { "id": "tilt", "label": "Camera tilt", "group": "Surface", "min": 0.0, "max": 1.0, "default": 0.35 },
     { "id": "react", "label": "Reacts", "group": "Surface", "min": 0.0, "max": 3.0, "default": 1.0, "help": "How much the bass swells the hills." },
+    { "id": "sections", "label": "Sections", "group": "Surface", "min": 0.0, "max": 1.0, "default": 0.5, "help": "How far each section of the song moves the colours along the palette: a section that comes back gets its colours back." },
     { "id": "print", "label": "Printed as", "type": "choice", "group": "Print", "options": ["Contours", "Dots", "Grid"], "default": "contours" },
     { "id": "density", "label": "Density", "group": "Print", "min": 1.0, "max": 40.0, "default": 10.0 },
     { "id": "width", "label": "Line width", "group": "Print", "min": 0.5, "max": 5.0, "default": 1.3, "unit": "px" },

@@ -21,6 +21,8 @@
     { "id": "level", "label": "Brightness by level", "group": "Line", "min": 0.0, "max": 1.0, "default": 0.8 },
     { "id": "fade", "label": "Age fade", "group": "Line", "min": 0.0, "max": 1.0, "default": 0.6 },
     { "id": "react", "label": "Reacts", "group": "Line", "min": 0.0, "max": 3.0, "default": 0.5, "help": "Beats kick the amplitude." },
+    { "id": "sections", "label": "Sections", "group": "Line", "min": 0.0, "max": 1.0, "default": 0.5, "help": "How far each section of the song moves the colours along the palette: a section that comes back gets its colours back." },
+    { "id": "sway", "label": "Bar sway", "group": "Line", "min": 0.0, "max": 2.0, "default": 0.5, "help": "How far the rings turn to and fro once a bar, as much as the beat is sure." },
     { "id": "colour", "label": "Palette by", "type": "choice", "group": "Line", "options": ["Age", "Level"], "default": "age" }
   ]
 }

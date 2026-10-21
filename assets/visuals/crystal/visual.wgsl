@@ -1,7 +1,7 @@
 // Crystal: translucent tetrahedral shards tumbling in a group. The group
-// swells with loudness; every few beats one shard eases to a new pose
-// (rotation, scale, opacity, colour); Scatter flings the shards apart over
-// the bar. Glass facets add up; solid ones cover each other, drawn far to
+// swells with loudness and on a drop; every few beats one shard eases to a
+// new pose (rotation, scale, opacity, colour); Scatter flings the shards
+// apart over the bar, closing on its first beat. Glass facets add up; solid ones cover each other, drawn far to
 // near. Edges glow in the palette.
 //
 // After the Crystal in Felix Turner's Uberviz (https://uberviz.io). No code
@@ -186,14 +186,21 @@ struct Group {
     fling: f32,
 };
 
+// A drop's swell, 0..0.25: it rises as the drop pulse fades (peaking ~0.4 s
+// after the drop), so it blooms in rather than jumping.
+fn drop_bloom() -> f32 {
+    let d = drop_pulse();
+    return d * (1.0 - d);
+}
+
 fn group() -> Group {
     let P = params();
     var g: Group;
     g.rot = q_mul(item(2u), q_euler(item(1u).xyz));
-    g.scale = P.size * (0.55 + 0.45 * item(0u).x * min(P.react, 1.5) + 0.25 * V.onset * P.react) * 0.4;
-    // Scatter: out to the far places and back over a bar of four beats.
-    let bar = ((V.beat_count % 4.0) + clamp(V.beat_phase, 0.0, 1.0)) / 4.0;
-    g.fling = P.scatter * abs(sin(bar * 3.14159265));
+    g.scale = P.size * (0.55 + 0.45 * item(0u).x * min(P.react, 1.5) + 0.25 * V.onset * P.react + 1.2 * drop_bloom() * min(P.react, 1.5)) * 0.4;
+    // Scatter: out to the far places and back over the bar (the analysis's
+    // bar, so it closes on the first beat).
+    g.fling = P.scatter * abs(sin(bar_phase() * 3.14159265));
     return g;
 }
 

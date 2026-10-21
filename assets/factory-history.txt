@@ -1,7 +1,10 @@
 presets/crystal/Cut stone.json da62510cfc0352ce
+presets/ribbons/Deep field.json 9ffcd96c2887d75c
 presets/ribbons/Deep field.json b60d2f5bfb24f0b7
 presets/ribbons/Sparks.json 2116c67c5c5fdc38
+presets/ribbons/Sparks.json 770157e58ddc9bb5
 presets/ribbons/Starfield.json 330f6e0f5415b32b
+presets/ribbons/Starfield.json 462fb33b89201686
 presets/scope/Fine beam.json ce71f3a303c1edfd
 presets/scope/Long phosphor.json cf0c1e76fb38a328
 presets/starfield/Quiet sky.json 9d839eb910ce8b65
@@ -57,6 +60,7 @@ visuals/comet/visual.json af4fe33e5adbc2de
 visuals/comet/visual.wgsl 72cf89c4c0757c6a
 visuals/comet/visual.wgsl d94605cdbfdd7a55
 visuals/crystal/visual.json ce070f972a683422
+visuals/crystal/visual.wgsl 9086feb3bd2de539
 visuals/crystal/visual.wgsl 95b0a0089734f49d
 visuals/eclipse/visual.json 3b64408c51cb4c85
 visuals/eclipse/visual.json 4e2625cb25368fc8
@@ -179,8 +183,10 @@ visuals/kaleido/visual.json 61603cabff3e5530
 visuals/kaleido/visual.json 8bfacddf0294868c
 visuals/kaleido/visual.wgsl 069d6bcf431d8c05
 visuals/kaleido/visual.wgsl ef24a8fbd7f62407
+visuals/loop/visual.json 178bb266d3d88442
 visuals/loop/visual.json 5ba7be6418b67ffc
 visuals/loop/visual.wgsl bb9af58dbfaceaa3
+visuals/loop/visual.wgsl d9cefb9662170a55
 visuals/polygon/visual.json d64bb9c281a38d14
 visuals/polygon/visual.json f26215cab841c69e
 visuals/polygon/visual.wgsl afd98df47f322ff1
@@ -189,9 +195,13 @@ visuals/pulse/visual.json ee78e741c648b110
 visuals/pulse/visual.wgsl 5f1664cdf9538840
 visuals/pulse/visual.wgsl 945718839378ec48
 visuals/ribbons/visual.json 69b7ba5ca5fdf1f4
+visuals/ribbons/visual.json a9b3beb464efbf2b
+visuals/ribbons/visual.wgsl a824b40dba050806
 visuals/ribbons/visual.wgsl d81a0ad02d20c2b5
 visuals/ripples/visual.json 0e3915513da15719
 visuals/ripples/visual.json 3bf591ddb14b6864
+visuals/ripples/visual.json 7e834f20e37ba1f4
+visuals/ripples/visual.wgsl c88b0fc2324e4eb2
 visuals/ripples/visual.wgsl e3d319b8183efad7
 visuals/scope/visual.json 0c4af80f6715b4b4
 visuals/scope/visual.wgsl 77c4af8171c05ffe

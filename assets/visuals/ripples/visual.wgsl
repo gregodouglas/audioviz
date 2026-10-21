@@ -1,6 +1,8 @@
 // Ripples: a flowing noise-displaced plane seen from low over it, printed
 // with contour lines, dots or a grid, darkening with distance. Beats drop
-// rings into it at seeded places; the bass swells the hills.
+// rings into it at seeded places (stronger on the bar's first beat, a big
+// one in the middle on a drop); the bass swells the hills; each section of
+// the song has its own colours.
 //
 // After the Ripples in Felix Turner's Uberviz (https://uberviz.io). No code
 // used; written fresh from a description of the effect.
@@ -11,7 +13,7 @@
 //
 // Prepare items:
 //   0      (flow, slewed swell, last beat pulse, rings dropped so far)
-//   1      (next ring slot, 0, 0, 0)
+//   1      (next ring slot, drops so far, the section's colour offset (eased), 0)
 //   2..5   rings: (x, z, birth time, strength)
 
 const GRID: u32 = 160u;
@@ -23,7 +25,8 @@ const FOCAL: f32 = 1.732;   // 60 degree vertical field of view
 fn prepare(i: u32) -> vec4<f32> {
     let P = params();
     let last = item(0u);
-    let struck = V.beat > last.z + 0.4 && P.rings > 0.0;
+    let dropped = drop_count() > item(1u).y && drop_sure() > 0.3;
+    let struck = (V.beat > last.z + 0.4 || dropped) && P.rings > 0.0;
     if (i == 0u) {
         let flow = last.x + V.dt * P.speed * (0.5 + 0.5 * V.energy);
         // The bass swells the hills, slewed so it rolls rather than jumps.
@@ -34,14 +37,17 @@ fn prepare(i: u32) -> vec4<f32> {
     }
     let slot = u32(item(1u).x);
     if (i == 1u) {
-        return vec4<f32>(f32((slot + select(0u, 1u, struck)) % 4u), 0.0, 0.0, 0.0);
+        let sec = ease(item(1u).z, section_seed(5.0) * 0.5 * P.sections, 3.0, 3.0);
+        return vec4<f32>(f32((slot + select(0u, 1u, struck)) % 4u), drop_count(), sec, 0.0);
     }
     // A beat drops a ring at a seeded place in the near half of the plane.
     if (struck && i - 2u == slot) {
         let seed = vec2<f32>(V.track * 997.0, last.w + 1.0);
-        let x = (hash21(seed) * 2.0 - 1.0) * 1.2;
-        let z = 0.6 + hash21(seed + 17.3) * 1.8;
-        return vec4<f32>(x, z, V.time, P.rings * (0.6 + 0.4 * min(V.beat, 1.0)));
+        let x = select((hash21(seed) * 2.0 - 1.0) * 1.2, 0.0, dropped);
+        let z = select(0.6 + hash21(seed + 17.3) * 1.8, 1.2, dropped);
+        let first = beat_in_bar() < 0.5 && bar_sure() > 0.4;
+        let strength = select(select(1.0, 1.4, first) * (0.6 + 0.4 * min(V.beat, 1.0)), 2.0, dropped);
+        return vec4<f32>(x, z, V.time, P.rings * strength);
     }
     return item(i);
 }
@@ -123,7 +129,7 @@ fn vertex(i: u32) -> MeshVertex {
 }
 
 fn ripple_colour(t: f32) -> vec3<f32> {
-    let x = fract(t + V.palette_shift) * 32.0;
+    let x = fract(t + V.palette_shift + item(1u).z) * 32.0;
     let i = u32(floor(x)) % 32u;
     let pal = mix(V.palette[i].rgb, V.palette[(i + 1u) % 32u].rgb, fract(x));
     return mix(V.tint.rgb, pal * 1.2, V.palette_mix);

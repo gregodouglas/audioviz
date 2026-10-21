@@ -7,7 +7,8 @@
 // Each particle is two prepare items, kept from frame to frame:
 //   2k      (position x, y, previous position x, y)
 //   2k + 1  (age, life, seed, pitch class)
-// Both items of a pair run the same update, each keeping its half.
+// Both items of a pair run the same update, each keeping its half. The last
+// item (SHARED) is the section's colour offset, eased.
 
 const PARTICLES: u32 = 65536u;
 const LIFETIME: f32 = 5.0;
@@ -117,8 +118,13 @@ fn particle(k: u32) -> Particle {
     return p;
 }
 
+const SHARED: u32 = 131072u;
+
 fn prepare(i: u32) -> vec4<f32> {
     let P = params();
+    if (i == SHARED) {
+        return vec4<f32>(ease(item(SHARED).x, section_seed(4.0) * 0.5 * P.sections, 3.0, 3.0), 0.0, 0.0, 0.0);
+    }
     let k = i / 2u;
     if (k >= particle_count()) {
         return item(i);
@@ -128,7 +134,7 @@ fn prepare(i: u32) -> vec4<f32> {
         p = respawn(k, V.time, true);
     } else {
         let dt = min(V.dt, 0.05);
-        let speed = P.speed * (0.6 + 0.4 * min(V.bass, 2.0)) * (1.0 + 1.5 * V.onset);
+        let speed = P.speed * (0.6 + 0.4 * min(V.bass, 2.0)) * (1.0 + 1.5 * V.onset) * (1.0 + P.rush * build());
         p.prev = p.pos;
         p.pos += field(p.pos) * speed * dt;
         p.age += dt;
@@ -206,12 +212,13 @@ fn vertex(i: u32) -> MeshVertex {
     // its distance from the key times the spread.
     let key_hue = f32((u32(V.key) * 7u) % 12u) / 12.0;
     let class_hue = f32((u32(part.pitch) * 7u) % 12u) / 12.0;
-    let hue = fract(mix(key_hue, class_hue, 0.6));
+    let sec = item(SHARED).x;
+    let hue = fract(mix(key_hue, class_hue, 0.6) + sec);
     let fade = smoothstep(0.0, 0.6, part.age) * (1.0 - smoothstep(part.life - 1.0, part.life, part.age));
     let own = mix(V.tint.rgb, hsv2rgb(hue, P.saturation, 1.0), 0.85);
     var off = class_hue - key_hue;
     off = off - round(off);
-    let pal = palette_at(V.palette_shift + off * P.spread + (part.seed - 0.5) * 0.04 * P.spread) * 1.3;
+    let pal = palette_at(V.palette_shift + sec + off * P.spread + (part.seed - 0.5) * 0.04 * P.spread) * 1.3;
     v.colour = vec4<f32>(mix(own, pal, V.palette_mix) * fade, 0.0);
     v.data = vec4<f32>(along, across, len, 0.0);
     return v;

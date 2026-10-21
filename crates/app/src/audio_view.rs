@@ -112,6 +112,13 @@ pub struct ViewState {
     spec_tex: Option<TextureHandle>,
     band_tex: Option<TextureHandle>,
     attack_tex: Option<TextureHandle>,
+    /// The images are rings of columns pinned to time: column k holds the
+    /// records in k * ring_cw .. (k + 1) * ring_cw, in image column k mod
+    /// COLS (ring_cols says which k each holds), so a frame works out and
+    /// uploads only the columns that came into view and the newest two.
+    ring_cw: f64,
+    ring_cols: Vec<i64>,
+    ring_latest: f64,
 }
 
 impl ViewState {
@@ -130,6 +137,38 @@ impl ViewState {
             spec_tex: None,
             band_tex: None,
             attack_tex: None,
+            ring_cw: 0.0,
+            ring_cols: vec![i64::MIN; COLS],
+            ring_latest: 0.0,
+        }
+    }
+
+    /// Works out image column `slot` from the records in time column `k`
+    /// (`cw` seconds wide): the loudest record under it, or the hop it falls
+    /// in when it is finer than a hop, or black outside the history.
+    fn fill_column(&mut self, history: &History, slot: usize, k: i64, cw: f64, live_end: f64) {
+        let (t0, t1) = (k as f64 * cw, (k + 1) as f64 * cw);
+        let range = if history.records.is_empty() || t1 < history.first_time() - HOP_S || t0 > live_end {
+            0..0
+        } else {
+            let r = history.range(t0, t1);
+            if r.is_empty() {
+                let i = history.index(0.5 * (t0 + t1));
+                i..i + 1
+            } else {
+                r
+            }
+        };
+        for row in 0..SPEC_ROWS {
+            let v = range.clone().map(|i| history.records[i].spectrum[row]).max().unwrap_or(0);
+            self.spec_img.pixels[(SPEC_ROWS - 1 - row) * COLS + slot] = self.lut[v as usize];
+        }
+        for b in 0..RECORD_BANDS {
+            let row = (RECORD_BANDS - 1 - b) * COLS + slot;
+            let v = range.clone().map(|i| history.records[i].levels[b]).fold(0.0f32, f32::max);
+            self.band_img.pixels[row] = self.lut[(v.clamp(0.0, 1.0) * 255.0) as usize];
+            let a = range.clone().map(|i| history.records[i].attacks[b]).fold(0.0f32, f32::max);
+            self.attack_img.pixels[row] = self.lut[(a.clamp(0.0, 1.0) * 255.0) as usize];
         }
     }
 
@@ -192,13 +231,14 @@ impl ViewState {
             let probe = crate::links::PROBE.lock().ok().and_then(|p| p.as_ref().map(|p| (p.label.clone(), p.low, p.high, p.samples.iter().filter(|(t, _)| *t >= start - 1.0).copied().collect::<Vec<_>>())));
             let lanes = if probe.is_some() { split(plot, &[0.26, 0.09, 0.06, 0.23, 0.08, 0.08, 0.09, 0.11]) } else { split(plot, &[0.29, 0.10, 0.07, 0.26, 0.09, 0.09, 0.10]) };
             let (spec_r, band_r, attack_r, onset_r, beat_r, level_r, context_r) = (lanes[0], lanes[1], lanes[2], lanes[3], lanes[4], lanes[5], lanes[6]);
-            let x_of = |t: f64| plot.left() + ((t - start) / self.span_s) as f32 * plot.width();
+            let span = self.span_s;
+            let x_of = |t: f64| plot.left() + ((t - start) / span) as f32 * plot.width();
             // The records under each column; a column finer than a hop shows
             // the hop it falls in, and one outside the history shows nothing.
             let cols: Vec<std::ops::Range<usize>> = (0..COLS)
                 .map(|c| {
-                    let t0 = start + self.span_s * c as f64 / COLS as f64;
-                    let t1 = start + self.span_s * (c + 1) as f64 / COLS as f64;
+                    let t0 = start + span * c as f64 / COLS as f64;
+                    let t1 = start + span * (c + 1) as f64 / COLS as f64;
                     if history.records.is_empty() || t1 < history.first_time() - HOP_S || t0 > live_end {
                         return 0..0;
                     }
@@ -214,32 +254,39 @@ impl ViewState {
             let col_record = |c: usize| -> Option<&HopRecord> { history.records.get(cols[c].start).filter(|_| !cols[c].is_empty()) };
             let col_max = |c: usize, f: &dyn Fn(&HopRecord) -> f32| -> f32 { cols[c].clone().map(|i| f(&history.records[i])).fold(0.0f32, f32::max) };
 
-            // Spectrogram and bands as images: the loudest record under each column.
-            for c in 0..COLS {
-                let range = cols[c].clone();
-                for row in 0..SPEC_ROWS {
-                    let v = range.clone().map(|i| history.records[i].spectrum[row]).max().unwrap_or(0);
-                    self.spec_img.pixels[(SPEC_ROWS - 1 - row) * COLS + c] = self.lut[v as usize];
-                }
-                for b in 0..RECORD_BANDS {
-                    let row = (RECORD_BANDS - 1 - b) * COLS + c;
-                    let v = range.clone().map(|i| history.records[i].levels[b]).fold(0.0f32, f32::max);
-                    self.band_img.pixels[row] = self.lut[(v.clamp(0.0, 1.0) * 255.0) as usize];
-                    let a = range.clone().map(|i| history.records[i].attacks[b]).fold(0.0f32, f32::max);
-                    self.attack_img.pixels[row] = self.lut[(a.clamp(0.0, 1.0) * 255.0) as usize];
-                }
+            // Spectrogram and bands as images: the loudest record under each
+            // column, kept as rings (see ring_cw). A span of COLS - 2 columns
+            // leaves the partly shown columns at both ends their own slots.
+            let cw = self.span_s / (COLS - 2) as f64;
+            if cw != self.ring_cw || live_end < self.ring_latest {
+                // Zoomed, or the history started again: draw every column afresh.
+                self.ring_cw = cw;
+                self.ring_cols.fill(i64::MIN);
             }
-            let opts = TextureOptions::LINEAR;
-            let spec_tex = self.spec_tex.get_or_insert_with(|| ctx.load_texture("audio-view-spec", self.spec_img.clone(), opts));
-            spec_tex.set(self.spec_img.clone(), opts);
-            let band_tex = self.band_tex.get_or_insert_with(|| ctx.load_texture("audio-view-bands", self.band_img.clone(), opts));
-            band_tex.set(self.band_img.clone(), opts);
-            let attack_tex = self.attack_tex.get_or_insert_with(|| ctx.load_texture("audio-view-attacks", self.attack_img.clone(), opts));
-            attack_tex.set(self.attack_img.clone(), opts);
-            let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-            p.image(spec_tex.id(), spec_r, uv, Color32::WHITE);
-            p.image(band_tex.id(), band_r, uv, Color32::WHITE);
-            p.image(attack_tex.id(), attack_r, uv, Color32::WHITE);
+            self.ring_latest = live_end;
+            let (k_first, k_end, k_live) = ((start / cw).floor() as i64, (end / cw).floor() as i64, (live_end / cw).floor() as i64);
+            let mut dirty: Vec<usize> = Vec::new();
+            for k in k_first..=k_end {
+                let slot = k.rem_euclid(COLS as i64) as usize;
+                // The newest two columns are still filling.
+                if self.ring_cols[slot] == k && k < k_live - 1 {
+                    continue;
+                }
+                self.ring_cols[slot] = k;
+                self.fill_column(history, slot, k, cw, live_end);
+                dirty.push(slot);
+            }
+            let spec_tex = upload(ctx, &mut self.spec_tex, "audio-view-spec", &self.spec_img, &dirty);
+            let band_tex = upload(ctx, &mut self.band_tex, "audio-view-bands", &self.band_img, &dirty);
+            let attack_tex = upload(ctx, &mut self.attack_tex, "audio-view-attacks", &self.attack_img, &dirty);
+            // Time t sits at u = t / cw / COLS (the texture repeats); a whole
+            // number of turns is taken off so the numbers stay small.
+            let base = (k_first - k_first.rem_euclid(COLS as i64)) as f64;
+            let u = |t: f64| ((t / cw - base) / COLS as f64) as f32;
+            let uv = Rect::from_min_max(pos2(u(start), 0.0), pos2(u(end), 1.0));
+            p.image(spec_tex, spec_r, uv, Color32::WHITE);
+            p.image(band_tex, band_r, uv, Color32::WHITE);
+            p.image(attack_tex, attack_r, uv, Color32::WHITE);
             // Frequency guides on the spectrogram.
             for hz in [50.0f32, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0] {
                 let f = (hz.ln() - SPEC_LO_HZ.ln()) / (SPEC_HI_HZ.ln() - SPEC_LO_HZ.ln());
@@ -335,15 +382,19 @@ impl ViewState {
             // transitions as markers through every lane.
             let yc = |v: f32| context_r.bottom() - v.clamp(0.0, 1.0) * (context_r.height() - 2.0);
             let mut novelty = Vec::new();
+            // The build as one mesh of column-wide bars (a shape per column cost a lot to tessellate).
+            let mut build = egui::Mesh::default();
+            let half = 0.5 * plot.width() / COLS as f32 + 0.25;
             for c in 0..COLS {
                 if let Some(h) = col_record(c) {
                     let x = col_x(c);
                     if h.build > 0.01 {
-                        p.line_segment([pos2(x, yc(0.0)), pos2(x, yc(h.build))], Stroke::new(plot.width() / COLS as f32 + 0.5, theme::with_alpha(BUILD, 150)));
+                        build.add_colored_rect(Rect::from_min_max(pos2(x - half, yc(h.build)), pos2(x + half, yc(0.0))), theme::with_alpha(BUILD, 150));
                     }
                     novelty.push(pos2(x, yc(h.transition / 1.5)));
                 }
             }
+            p.add(Shape::mesh(build));
             p.add(Shape::line(novelty, Stroke::new(1.0, TEXT_2)));
             let range = history.range(start, end);
             for i in range.clone().skip(1) {
@@ -414,6 +465,34 @@ impl ViewState {
             }
         });
     }
+}
+
+/// Sends an image's changed columns to its texture (all of it the first
+/// time, or when much of it changed), repeating, and returns its id.
+fn upload(ctx: &egui::Context, tex: &mut Option<TextureHandle>, name: &str, img: &ColorImage, dirty: &[usize]) -> egui::TextureId {
+    let opts = TextureOptions::LINEAR_REPEAT;
+    match tex {
+        None => *tex = Some(ctx.load_texture(name, img.clone(), opts)),
+        Some(t) if dirty.len() > COLS / 4 => t.set(img.clone(), opts),
+        Some(t) => {
+            let mut cols = dirty.to_vec();
+            cols.sort_unstable();
+            let (w, h) = (img.size[0], img.size[1]);
+            let mut i = 0;
+            while i < cols.len() {
+                // A run of neighbouring columns goes as one piece.
+                let mut j = i + 1;
+                while j < cols.len() && cols[j] == cols[j - 1] + 1 {
+                    j += 1;
+                }
+                let (x0, n) = (cols[i], j - i);
+                let pixels = (0..h).flat_map(|y| img.pixels[y * w + x0..y * w + x0 + n].iter().copied()).collect();
+                t.set_partial([x0, 0], ColorImage::new([n, h], pixels), opts);
+                i = j;
+            }
+        }
+    }
+    tex.as_ref().map_or(egui::TextureId::default(), TextureHandle::id)
 }
 
 /// Splits a rect into horizontal lanes by fractions of its height, 3 px apart.

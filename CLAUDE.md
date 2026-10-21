@@ -30,7 +30,8 @@ Spotify-fed, Windows-first music visualizer (Rust, wgpu, WGSL). Start with `docs
   - `AUDIOVIZ_PANEL=<section>` opens the panel there and skips the welcome sheet.
   - `AUDIOVIZ_SEED=n` gives each layer the same `V.instance` every run, for snapshots of two builds (motion still drifts with build time and music).
   - `AUDIOVIZ_WAV=<path>` plays a WAV as if live, looping, in place of capture (ADR-0006's test bench; clips live in `tmp/`).
-  - `AUDIOVIZ_AUDIO_VIEW=1` opens the director view (D) at start.
+  - `AUDIOVIZ_AUDIO_VIEW=1` opens the director view (D) at start; a number of seconds opens it that wide.
+  - Measuring the analysis (ADR-0006): `cargo run --release -p audioviz-analysis --example band_response|beat_response|context_response [file.wav]`.
   - `AUDIOVIZ_REPO=<checkout>` reads that checkout's visuals and engine shaders, live, in any build (the lab sets it).
 - **UI:**
   - Labels are in proper case.

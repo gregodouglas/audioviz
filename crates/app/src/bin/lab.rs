@@ -259,6 +259,11 @@ fn groove(bpm: f32, t: f32, dt: f32) -> FeatureFrame {
     f.chroma_slow = f.chroma;
     f.key_class = ((count / 8) * 7 % 12) as u8;
     f.energy_trend = swell * 2.0 - 1.0;
+    f.build = ((count % 64) as f32 / 64.0).powi(2);
+    f.bass_presence = 0.6 + 0.2 * kick;
+    f.contrast = 0.3;
+    f.drop_pulse = if count % 64 == 0 && count > 0 { (-phase * 2.0).exp() } else { 0.0 };
+    f.drop_confidence = 0.8;
     f
 }
 

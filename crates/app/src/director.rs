@@ -562,7 +562,8 @@ pub struct Director {
     // Auto-mode state.
     last_track: Option<u64>,
     quiet_for: f32,
-    trend_peak: f32,
+    /// The analysis's drop count at the last frame (a new one is a cue).
+    last_drops: u32,
     pub last_cue: &'static str,
     pub last_error: Option<String>,
     /// The lab's view of a shared space (ADR-0003): the camera turned by
@@ -851,7 +852,7 @@ impl Director {
             last_switch: Instant::now(),
             last_track: None,
             quiet_for: 0.0,
-            trend_peak: 0.0,
+            last_drops: 0,
             last_cue: "manual",
             last_error: None,
             camera_nudge: LAB_CAMERA,
@@ -978,8 +979,9 @@ impl Director {
             self.last_track = track_id;
         }
         self.quiet_for = if f.quiet || f.silent { self.quiet_for + dt } else { 0.0 };
-        self.trend_peak = if f.energy_trend > self.trend_peak { f.energy_trend } else { self.trend_peak * (1.0 - dt * 0.2) };
-        let drop = self.trend_peak > 0.45 && f.energy_trend < -0.35;
+        // A drop after a build (ADR-0006 step 4); it was an energy fall, a breakdown.
+        let drop = f.drop_count != self.last_drops && f.drop_confidence > 0.3;
+        self.last_drops = f.drop_count;
         if !auto || self.is_fading() {
             return None;
         }
@@ -997,7 +999,6 @@ impl Director {
         };
         if let Some(c) = cue {
             self.last_cue = c;
-            self.trend_peak = 0.0;
             self.quiet_for = 0.0;
         }
         cue

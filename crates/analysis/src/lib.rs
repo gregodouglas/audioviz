@@ -10,6 +10,7 @@ pub mod bands;
 pub mod bar;
 pub mod beat;
 pub mod chroma;
+pub mod context;
 pub mod filterbank;
 pub mod history;
 pub mod loudness;
@@ -20,6 +21,7 @@ use bands::{BROAD, BandSignals};
 use bar::BarTracker;
 use beat::BeatTracker;
 use chroma::Chroma;
+use context::{Context, ContextInput};
 use filterbank::FilterBank;
 use history::{HopRecord, RECORD_BANDS, SPEC_ROWS, SpectrumMap};
 use loudness::Loudness;
@@ -126,6 +128,22 @@ pub struct FeatureFrame {
     pub key_class: u8,
     /// -1..1: negative = energy falling vs the last ~16 s, positive = building.
     pub energy_trend: f32,
+    /// Context over seconds (see `context`): brightness and density
+    /// trends (-1..1), bass presence and contrast (0..1), novelty against
+    /// its typical level (0..1.5) with a count of transitions and a pulse
+    /// (1 at one, fading over ~0.6 s), build intensity (0..1), and drops
+    /// (a count, how sure the last was, a pulse).
+    pub brightness_trend: f32,
+    pub density_trend: f32,
+    pub bass_presence: f32,
+    pub contrast: f32,
+    pub transition: f32,
+    pub transition_count: u32,
+    pub transition_pulse: f32,
+    pub build: f32,
+    pub drop_count: u32,
+    pub drop_confidence: f32,
+    pub drop_pulse: f32,
     pub quiet: bool,
     pub silent: bool,
 }
@@ -174,6 +192,17 @@ impl Default for FeatureFrame {
             chroma_slow: [0.0; 12],
             key_class: 0,
             energy_trend: 0.0,
+            brightness_trend: 0.0,
+            density_trend: 0.0,
+            bass_presence: 0.0,
+            contrast: 0.0,
+            transition: 0.0,
+            transition_count: 0,
+            transition_pulse: 0.0,
+            build: 0.0,
+            drop_count: 0,
+            drop_confidence: 0.0,
+            drop_pulse: 0.0,
             quiet: true,
             silent: true,
         }
@@ -201,6 +230,7 @@ pub struct Analyzer {
     onsets: OnsetDetector,
     beat: BeatTracker,
     bar: BarTracker,
+    context: Context,
     chroma: Chroma,
     since_hop: usize,
     hop_dt: f32,
@@ -255,6 +285,7 @@ impl Analyzer {
             onsets,
             beat: BeatTracker::new(frame_rate),
             bar: BarTracker::new(),
+            context: Context::new(cfg.hop as f32 / sr as f32),
             chroma,
             long,
             mid,
@@ -315,6 +346,7 @@ impl Analyzer {
         }
         self.beat.reset();
         self.bar.reset();
+        self.context.reset();
         if let Some(bpm) = track_id.and_then(|id| self.tempos.get(&id)) {
             self.beat.seed(*bpm);
         }
@@ -476,6 +508,21 @@ impl Analyzer {
         f.beat_in_bar = self.bar.beat_in_bar;
         f.bar_confidence = self.bar.confidence;
 
+        let input = ContextInput { lufs_m: f.lufs_m, broad_level: &f.broad_level, brightness: f.brightness, noisiness: f.noisiness, activity: f.activity, chroma: &self.chroma.raw };
+        self.context.process(&input, dt, silent);
+        let c = &self.context;
+        f.brightness_trend = c.brightness_trend;
+        f.density_trend = c.density_trend;
+        f.bass_presence = c.bass_presence;
+        f.contrast = c.contrast;
+        f.transition = c.transition;
+        f.transition_count = c.transitions;
+        f.transition_pulse = c.transition_pulse;
+        f.build = c.build;
+        f.drop_count = c.drops;
+        f.drop_confidence = c.drop_confidence;
+        f.drop_pulse = c.drop_pulse;
+
         // Remember the hop. A reader that never drains is capped at a minute.
         if self.records.len() >= 94 * 60 {
             self.records.remove(0);
@@ -521,6 +568,15 @@ impl Analyzer {
             noisiness: f.noisiness,
             activity: f.activity,
             energy_trend: f.energy_trend,
+            brightness_trend: f.brightness_trend,
+            density_trend: f.density_trend,
+            bass_presence: f.bass_presence,
+            contrast: f.contrast,
+            transition: f.transition,
+            transitions: f.transition_count,
+            build: f.build,
+            drops: f.drop_count,
+            drop_confidence: f.drop_confidence,
             silent: f.silent,
         });
         self.hops += 1;

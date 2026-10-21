@@ -31,6 +31,8 @@ const GROUP_COLOURS: [Color32; 4] = [
 ];
 const BEAT: Color32 = Color32::from_rgb(0x66, 0xff, 0x8c);
 const NOISY: Color32 = Color32::from_rgb(0xc7, 0x8b, 0xff);
+const BUILD: Color32 = Color32::from_rgb(0xff, 0x9f, 0x43);
+const DROP: Color32 = Color32::from_rgb(0xff, 0x5c, 0x7a);
 
 /// The engine's recent past, as records per hop, and the track changes in it.
 pub struct History {
@@ -114,11 +116,13 @@ pub struct ViewState {
 
 impl ViewState {
     pub fn new() -> Self {
+        // AUDIOVIZ_AUDIO_VIEW=1 opens it at start (for snapshots); a number
+        // of seconds from 2 opens it that wide.
+        let env = std::env::var("AUDIOVIZ_AUDIO_VIEW").ok().and_then(|v| v.parse::<f64>().ok());
         Self {
-            // AUDIOVIZ_AUDIO_VIEW=1 opens it at start (for snapshots).
-            open: std::env::var("AUDIOVIZ_AUDIO_VIEW").is_ok_and(|v| v == "1"),
+            open: env.is_some_and(|v| v >= 1.0),
             frozen_at: None,
-            span_s: 10.0,
+            span_s: env.filter(|v| *v >= 2.0).map_or(10.0, |v| v.min(120.0)),
             lut: heat_lut(),
             spec_img: ColorImage::filled([COLS, SPEC_ROWS], Color32::BLACK),
             band_img: ColorImage::filled([COLS, RECORD_BANDS], Color32::BLACK),
@@ -180,8 +184,8 @@ impl ViewState {
             p.text(pos2(rect.right() - 10.0, rect.top() + 12.0), Align2::RIGHT_CENTER, "D close · F freeze · drag back · wheel zoom", theme::mono(11.0), TEXT_3);
 
             // Lanes.
-            let lanes = split(plot, &[0.32, 0.11, 0.08, 0.29, 0.10, 0.10]);
-            let (spec_r, band_r, attack_r, onset_r, beat_r, level_r) = (lanes[0], lanes[1], lanes[2], lanes[3], lanes[4], lanes[5]);
+            let lanes = split(plot, &[0.29, 0.10, 0.07, 0.26, 0.09, 0.09, 0.10]);
+            let (spec_r, band_r, attack_r, onset_r, beat_r, level_r, context_r) = (lanes[0], lanes[1], lanes[2], lanes[3], lanes[4], lanes[5], lanes[6]);
             let x_of = |t: f64| plot.left() + ((t - start) / self.span_s) as f32 * plot.width();
             // The records under each column; a column finer than a hop shows
             // the hop it falls in, and one outside the history shows nothing.
@@ -320,6 +324,36 @@ impl ViewState {
             p.add(Shape::line(busy, Stroke::new(1.0, theme::with_alpha(GROUP_COLOURS[2], 170))));
             p.add(Shape::line(lvl, Stroke::new(1.5, TEXT)));
             lane_label(&p, level_r, "Level");
+
+            // Context: build intensity filled, novelty as a line, drops and
+            // transitions as markers through every lane.
+            let yc = |v: f32| context_r.bottom() - v.clamp(0.0, 1.0) * (context_r.height() - 2.0);
+            let mut novelty = Vec::new();
+            for c in 0..COLS {
+                if let Some(h) = col_record(c) {
+                    let x = col_x(c);
+                    if h.build > 0.01 {
+                        p.line_segment([pos2(x, yc(0.0)), pos2(x, yc(h.build))], Stroke::new(plot.width() / COLS as f32 + 0.5, theme::with_alpha(BUILD, 150)));
+                    }
+                    novelty.push(pos2(x, yc(h.transition / 1.5)));
+                }
+            }
+            p.add(Shape::line(novelty, Stroke::new(1.0, TEXT_2)));
+            let range = history.range(start, end);
+            for i in range.clone().skip(1) {
+                let (a, h) = (&history.records[i - 1], &history.records[i]);
+                let x = x_of(h.time_s);
+                if h.transitions != a.transitions {
+                    p.line_segment([pos2(x, spec_r.top()), pos2(x, context_r.bottom())], Stroke::new(1.0, theme::with_alpha(TEXT, 90)));
+                    p.text(pos2(x + 3.0, context_r.top()), Align2::LEFT_TOP, "change", theme::sans(10.0), TEXT_2);
+                }
+                if h.drops != a.drops {
+                    p.line_segment([pos2(x, spec_r.top()), pos2(x, context_r.bottom())], Stroke::new(2.0, theme::with_alpha(DROP, 220)));
+                    p.text(pos2(x + 3.0, context_r.top() + 12.0), Align2::LEFT_TOP, format!("Drop {:.0}%", h.drop_confidence * 100.0), theme::sans(10.0), DROP);
+                }
+            }
+            lane_label(&p, context_r, "Context");
+            p.text(pos2(context_r.left() - GUTTER + 8.0, context_r.bottom()), Align2::LEFT_BOTTOM, "build · novelty", theme::sans(9.0), TEXT_3);
             p.text(pos2(level_r.left() - GUTTER + 8.0, level_r.bottom()), Align2::LEFT_BOTTOM, "noise · busy", theme::sans(9.0), TEXT_3);
 
             // Track changes.
@@ -346,8 +380,8 @@ impl ViewState {
                         }
                     }
                     let read = format!(
-                        "{:.2} s back{hz} · onsets {:.2} {:.2} {:.2} {:.2} · {:.1} BPM, conf {:.2}, phase {:.2} · sub {:.2} bass {:.2} low mid {:.2} mid {:.2} presence {:.2} air {:.2} · {:.0} Hz centroid · noise {:.2} · busy {:.2} · width {:.2}, balance {:+.2}",
-                        live_end - h.time_s, h.onset_strength[0], h.onset_strength[1], h.onset_strength[2], h.onset_strength[3], h.bpm, h.beat_confidence, h.beat_phase, h.broad_level[0], h.broad_level[1], h.broad_level[2], h.broad_level[3], h.broad_level[4], h.broad_level[5], h.centroid_hz, h.noisiness, h.activity, h.stereo_width, h.balance
+                        "{:.2} s back{hz} · onsets {:.2} {:.2} {:.2} {:.2} · {:.1} BPM, conf {:.2}, phase {:.2} · sub {:.2} bass {:.2} low mid {:.2} mid {:.2} presence {:.2} air {:.2} · {:.0} Hz centroid · noise {:.2} · busy {:.2} · width {:.2}, balance {:+.2} · build {:.2}, bass {:.2}, contrast {:.2}",
+                        live_end - h.time_s, h.onset_strength[0], h.onset_strength[1], h.onset_strength[2], h.onset_strength[3], h.bpm, h.beat_confidence, h.beat_phase, h.broad_level[0], h.broad_level[1], h.broad_level[2], h.broad_level[3], h.broad_level[4], h.broad_level[5], h.centroid_hz, h.noisiness, h.activity, h.stereo_width, h.balance, h.build, h.bass_presence, h.contrast
                     );
                     let galley = p.layout_no_wrap(read, theme::mono(11.0), TEXT);
                     let at = pos2((pt.x + 10.0).min(rect.right() - galley.size().x - 8.0), plot.top() + 4.0);

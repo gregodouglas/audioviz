@@ -55,6 +55,16 @@ pub struct HopRecord {
     pub noisiness: f32,
     pub activity: f32,
     pub energy_trend: f32,
+    /// Context (see `context`).
+    pub brightness_trend: f32,
+    pub density_trend: f32,
+    pub bass_presence: f32,
+    pub contrast: f32,
+    pub transition: f32,
+    pub transitions: u32,
+    pub build: f32,
+    pub drops: u32,
+    pub drop_confidence: f32,
     pub silent: bool,
 }
 

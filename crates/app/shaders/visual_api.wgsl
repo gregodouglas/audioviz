@@ -60,6 +60,9 @@ struct VisualIn {
     activity: f32,      // 0..1, how busy: onsets a second over the last couple of seconds (1 = eight or more)
     brightness: f32,    // 0..1, where the sound's weight sits: 200 Hz .. 8 kHz on a log scale
     bar: vec4<f32>,     // x: 0..1 through the bar of four beats; y: which beat (0 = the first); z: how sure of the bar's first beat; w: how steady the pulse has been (0..1)
+    context: vec4<f32>, // x: build intensity 0..1; y: bass presence 0..1; z: contrast with the last minute 0..1; w: novelty against its usual (about 1 at a change)
+    trends: vec4<f32>,  // x: brightness, y: density, z: energy trend, each -1 falling .. 1 rising over seconds
+    moments: vec4<f32>, // x: 1 at a drop, fading over ~0.6 s; y: how sure that drop was; z: 1 at a transition, fading
 };
 
 @group(0) @binding(0) var<uniform> V: VisualIn;

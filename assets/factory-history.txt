@@ -52,8 +52,10 @@ scenes/Waves.json 264a255fc93b1c61
 scenes/Waves.json f17cac56fb05722c
 visuals/blackhole/visual.json c56fecbb8618b96a
 visuals/blackhole/visual.wgsl 8c2bda9bb021fa82
+visuals/comet/visual.json 3bb2fe1efb73be03
 visuals/comet/visual.json af4fe33e5adbc2de
 visuals/comet/visual.wgsl 72cf89c4c0757c6a
+visuals/comet/visual.wgsl d94605cdbfdd7a55
 visuals/crystal/visual.json ce070f972a683422
 visuals/crystal/visual.wgsl 95b0a0089734f49d
 visuals/eclipse/visual.json 3b64408c51cb4c85
@@ -63,7 +65,9 @@ visuals/eclipse/visual.wgsl a32c859c68c065d3
 visuals/eclipse/visual.wgsl b063ce848062b898
 visuals/eclipse/visual.wgsl d19bd98f6a6ffb3d
 visuals/harmonograph/visual.json 548d04f846e1fcb4
+visuals/harmonograph/visual.json 5bd9ce1822b44d0e
 visuals/harmonograph/visual.wgsl 3ea8bf81525e9a66
+visuals/harmonograph/visual.wgsl 48cd04bd435cf4b7
 visuals/harmonograph/visual.wgsl cdfe8fe68fcd9536
 visuals/jellyfish/body.wgsl 42e352a93fd1b6ed
 visuals/jellyfish/body.wgsl 5493443cc8cc6a6c
@@ -172,7 +176,9 @@ visuals/jellyfish/visual.wgsl a53cec636c4e4c2b
 visuals/jellyfish/visual.wgsl d84c33c04d3dfabc
 visuals/jellyfish/visual.wgsl f484495da1140d96
 visuals/kaleido/visual.json 61603cabff3e5530
+visuals/kaleido/visual.json 8bfacddf0294868c
 visuals/kaleido/visual.wgsl 069d6bcf431d8c05
+visuals/kaleido/visual.wgsl ef24a8fbd7f62407
 visuals/loop/visual.json 5ba7be6418b67ffc
 visuals/loop/visual.wgsl bb9af58dbfaceaa3
 visuals/polygon/visual.json d64bb9c281a38d14
@@ -192,7 +198,9 @@ visuals/scope/visual.wgsl 77c4af8171c05ffe
 visuals/sigil/visual.json d0b034c94ca53ad1
 visuals/sigil/visual.wgsl c623951ad1ae7b2b
 visuals/spiral/visual.json 034bff86ec31bd3a
+visuals/spiral/visual.json 5fc9c960e0a2b7b2
 visuals/spiral/visual.wgsl 5356d77738139725
+visuals/spiral/visual.wgsl a1f7f9f40d422e95
 visuals/waves/visual.json 51bc9b8a31515303
 visuals/waves/visual.json 5d91a19d5e6c976b
 visuals/waves/visual.wgsl 665fd2e489ad8b96

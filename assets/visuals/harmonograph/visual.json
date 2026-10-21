@@ -5,7 +5,7 @@
   "summary": "One long damped figure, its two swings tuned to the interval between the two strongest notes.",
   "credit": "After the Victorian harmonograph (two pendulums drawing one damped figure). Written fresh for audioviz.",
   "hint": "Across and up swing at the ratio of the music's two strongest pitch classes (a fifth draws 3:2), gliding when the chord changes; the figure precesses with the music and the waveform shakes the line.",
-  "items": 1,
+  "items": 2,
   "line": 6000,
   "params": [
     { "id": "turns", "label": "Turns", "type": "integer", "group": "Figure", "min": 4, "max": 120, "default": 40 },
@@ -16,6 +16,9 @@
     { "id": "span", "label": "Palette span", "group": "Line", "min": 0.0, "max": 1.0, "default": 0.6 },
     { "id": "speed", "label": "Speed", "group": "Music", "min": 0.0, "max": 2.0, "default": 0.3, "help": "How fast the figure precesses, faster when loud." },
     { "id": "glide", "label": "Glide", "group": "Music", "min": 0.05, "max": 4.0, "default": 0.8, "log": true, "unit": "s", "help": "How long a new interval takes to settle." },
+    { "id": "opens", "label": "Opens in a build", "group": "Music", "min": 0.0, "max": 1.0, "default": 0.6, "help": "How far a build lifts the damping, so the figure fills out toward the drop." },
+    { "id": "sections", "label": "Sections", "group": "Music", "min": 0.0, "max": 1.0, "default": 0.5, "help": "How far each section of the song moves the colours along the palette: a section that comes back gets its colours back." },
+    { "id": "sway", "label": "Bar sway", "group": "Music", "min": 0.0, "max": 2.0, "default": 0.5, "help": "How far the figure turns to and fro once a bar, as much as the beat is sure." },
     { "id": "wave", "label": "Waveform", "group": "Music", "min": 0.0, "max": 1.0, "default": 0.2, "help": "How much the waveform shakes the line." }
   ]
 }

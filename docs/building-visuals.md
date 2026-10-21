@@ -206,6 +206,7 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `bars_in_section()` | count | Whole bars since this section began. |
 | `bars_to_change()`, `change_sure()` | bars, 0..1 | Bars to the next expected change (an earlier section's length when this one matches it, else the next eight-bar phrase), and how sure. |
 | `phrase_phase()` | 0..1 | Where we are within the eight-bar phrase. |
+| `section_seed(salt)` | 0..1 | A value that belongs to the current section in this track: each section label has its own, so a chorus that comes back gets its value back. `salt` picks another value for another use. It steps when the section changes, so ease it. |
 
 **The spectrum and the waveform**
 
@@ -234,6 +235,7 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `V.has_art` | 0 or 1 | 1 when the track has album art. |
 | `item(i)`, `ITEMS` | vec4 | Item `i` from your `prepare` step, and how many there are (`items` in the manifest). In `shade` this frame's value; inside `prepare` last frame's. |
 | `param(i)` | | Control `i` by position, for loops over controls. Usually `params()` is clearer. |
+| `ease(last, want, rise, fall)` | | `last` moved one frame toward `want`, with time constants of `rise` and `fall` seconds. Keep the result in a prepare item and a value that steps glides instead. |
 
 Also available: `TAU` (2π), `hash21(p)` and `hash22(p)` (a pseudo-random 0..1 number or pair from a position), `noise(p)` (smooth value noise 0..1, one feature per unit), and `ign(p)` (interleaved gradient noise from a pixel position, for dithering).
 
@@ -252,7 +254,7 @@ The music arrives on three timescales, and a visual that feels alive answers on 
 Three rules make it look musical rather than mechanical (ADR-0004):
 
 1. **Entrain, do not trigger.** Let the music pull your visual's own rhythm into step (a clock that runs faster with `V.energy`, a sway on `bar_phase()`), rather than starting animations on events. When something does start on an event, it takes over from what is playing, it does not cut it.
-2. **Every level eases.** Rise over 60 to 120 ms, fall over 0.3 to 0.5 s. A value from the analysis that is already smooth (`V.swell`, `build()`, `level()`) can be used as is; anything you derive from a hit or a step (a beat count, a section label) should be eased in a prepare item: `mix(last, target, 1.0 - exp(-V.dt / tau))`.
+2. **Every level eases.** Rise over 60 to 120 ms, fall over 0.3 to 0.5 s. A value from the analysis that is already smooth (`V.swell`, `build()`, `level()`) can be used as is; anything you derive from a hit or a step (a beat count, a section label) should be eased in a prepare item with `ease(last, want, rise, fall)`. The factory visuals give each section its own look this way: `ease(item(1u).x, section_seed(1.0) * amount, 3.0, 3.0)` (Spiral's angle step, the Harmonograph's and Comet's colours).
 3. **Without music it still lives.** Everything above falls to rest in silence. Keep some motion on `V.time` or `V.flow` so the picture never freezes.
 
 To see an event once (a drop, a change, a new section), keep last frame's `drop_count()`, `change_count()` or `section()` in a prepare item and compare. The lab's made-up groove (`--groove 120`) has every signal, a build and a drop every sixteen bars and a section change every eight; `--run 6` measures the motion for jolts.

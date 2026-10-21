@@ -5,7 +5,7 @@
   "summary": "A drifting window into the album art or your photos; pair it with a Kaleidoscope effect for mirrors.",
   "credit": "",
   "hint": "A window into the picture drifts and turns with the music; the layer's kaleidoscope effect makes the mirrors. Photos fall back to the album art when the folder is empty.",
-  "items": 3,
+  "items": 4,
   "pictures": { "from": "source", "dwell": "dwell_s" },
   "params": [
     { "id": "source", "label": "Picture", "type": "choice", "options": ["Album art", "My photos"], "values": ["art", "photos"], "default": "art" },
@@ -13,6 +13,8 @@
     { "id": "zoom", "label": "Window", "min": 0.15, "max": 1.0, "default": 0.6, "help": "How much of the picture's height the window shows." },
     { "id": "drift", "label": "Drift", "min": 0.0, "max": 4.0, "default": 1.0 },
     { "id": "tumble", "label": "Tumble on onsets", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "sections", "label": "Sections", "min": 0.0, "max": 1.0, "default": 1.0, "help": "How far the window tumbles when the song moves to a new section." },
+    { "id": "sway", "label": "Bar sway", "min": 0.0, "max": 2.0, "default": 0.5, "help": "How much the window breathes in and out once a bar, as much as the beat is sure." },
     { "id": "tint_mix", "label": "Pull to tint", "min": 0.0, "max": 1.0, "default": 0.0 }
   ]
 }

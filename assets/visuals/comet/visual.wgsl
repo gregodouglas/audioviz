@@ -1,7 +1,14 @@
 // Comet: heads on looping paths with fading trails. Example 3 of
 // docs/building-visuals.md: feedback. With "feedback": true in visual.json,
 // prev(uv) is this visual's own last frame; reading it a little moved and
-// faded, then drawing on top, gives trails that last for seconds.
+// faded, then drawing on top, gives trails that last for seconds. The
+// heads flare on the bar's first beat, the paths widen through a build, and
+// each section of the song has its own colours (item 0, eased).
+
+// Item 0: the section's palette offset, eased.
+fn prepare(i: u32) -> vec4<f32> {
+    return vec4<f32>(ease(item(0u).x, section_seed(3.0) * 0.5 * params().sections, 2.5, 2.5), 0.0, 0.0, 0.0);
+}
 
 // Distance from p to the segment a..b.
 fn segment(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
@@ -41,14 +48,14 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
     // frame's place to this one's is drawn and the trail has no gaps.
     let s1 = V.flow * P.speed * 0.25;
     let s0 = (V.flow - V.dt * (0.5 + 0.5 * V.energy)) * P.speed * 0.25;
-    let radius = P.radius * (1.0 + 0.15 * V.swell);
+    let radius = P.radius * (1.0 + 0.15 * V.swell + 0.25 * P.opens * build());
     let n = u32(P.heads);
     for (var i = 0u; i < n; i++) {
         let fi = f32(i);
         let d = segment(p, path(s0, fi, P.heads, P.figure, radius), path(s1, fi, P.heads, P.figure, radius));
-        let half = 0.5 * P.size * pixel() * (1.0 + 0.5 * V.beat);
+        let half = 0.5 * P.size * pixel() * (1.0 + 0.5 * V.beat + P.flare * first_beat());
         let core = clamp((half - d) / pixel() + 0.5, 0.0, 1.0);
-        let c = colour(fi / P.heads + V.flow * 0.02) * (3.0 * core + 0.5 * max(exp(-d / (4.0 * half)) - 0.01, 0.0));
+        let c = colour(fi / P.heads + V.flow * 0.02 + item(0u).x) * (3.0 * core + 0.5 * max(exp(-d / (4.0 * half)) - 0.01, 0.0));
         // max, not +: a head resting in one place cannot pile up without bound.
         col = max(col, c);
     }

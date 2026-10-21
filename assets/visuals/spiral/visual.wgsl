@@ -3,16 +3,23 @@
 // as the step passes near simple fractions of a turn. Points sit on an
 // even-density spiral (radius by the square root of the index) or on a rose
 // curve joined in step order (a Maurer rose). The waveform pushes each point
-// in and out; beats kick it, energy speeds the drift. Colours run along the
-// line through the palette.
+// in and out; beats and drops kick it, energy speeds the drift, it sways
+// once a bar, and each section of the song glides the step to its own
+// figure. Colours run along the line through the palette.
 //
 // After the spiral family in audible-visuals by Sonia Boller, Apache-2.0.
 // The idea only; no code ported (see docs/INSPIRATION.md).
 
 // Item 0, kept from frame to frame: (drift in degrees, turn in radians,
-// beat kick 0..1, last beat pulse).
+// beat kick 0..1, last beat pulse). Item 1: (the section's step offset in
+// degrees, eased; how sure the beat is, eased).
 fn prepare(i: u32) -> vec4<f32> {
     let P = params();
+    if (i == 1u) {
+        let s = item(1u);
+        let want = (section_seed(1.0) * 2.0 - 1.0) * 12.0 * P.sections;
+        return vec4<f32>(ease(s.x, want, 3.0, 3.0), ease(s.y, V.confidence, 0.5, 1.0), 0.0, 0.0);
+    }
     let last = item(0u);
     let drift = last.x + V.dt * P.drift * max(1.0 + P.react * (V.energy - 1.0), 0.1);
     let turn = last.y + V.dt * P.spin * (0.5 + 0.5 * V.energy);
@@ -20,6 +27,7 @@ fn prepare(i: u32) -> vec4<f32> {
     if (V.beat > last.w + 0.4) {
         kick = 1.0;
     }
+    kick = max(kick, 1.5 * drop_pulse());
     return vec4<f32>(drift - 360.0 * floor(drift / 360.0), turn - TAU * floor(turn / TAU), kick, V.beat);
 }
 
@@ -45,7 +53,7 @@ fn point(i: u32) -> LinePoint {
     let t = f32(i) / f32(n - 1u);
     // The step angle is applied per index; wrap it first so a large index
     // keeps its precision.
-    let step = radians(P.step + state.x);
+    let step = radians(P.step + state.x + item(1u).x);
     let th = fract(f32(i) * (step / TAU)) * TAU;
     var r = sqrt(t);
     if (P.shape > 0.5) {
@@ -53,7 +61,7 @@ fn point(i: u32) -> LinePoint {
     }
     let w = wave_mono(1.0 - t) * P.gain;
     r = r * P.radius + w * P.amp * (1.0 + P.react * state.z);
-    let a = th + state.y;
+    let a = th + state.y + P.sway * 0.12 * sin(TAU * bar_phase()) * item(1u).y;
     q.pos = vec2<f32>(cos(a), -sin(a)) * r;
     q.width = P.width;
     q.colour = line_colour(t) * P.intensity;

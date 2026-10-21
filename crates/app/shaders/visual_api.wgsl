@@ -376,6 +376,23 @@ fn change_sure() -> f32 {
     return V.section.w;
 }
 
+// A value 0..1 that belongs to the current section in this track: each
+// section label has its own, so a section that comes back (a chorus) gets
+// its value back. salt picks another value for another use. It steps when
+// the section changes: ease it (see ease()) in a prepare item.
+fn section_seed(salt: f32) -> f32 {
+    return hash21(vec2<f32>(section() * 7.31 + salt * 17.13 + 1.0, V.track * 97.0 + salt));
+}
+
+// last moved toward want for one frame: rising with a time constant of
+// `rise` seconds, falling with `fall`. Kept in a prepare item, a value that
+// steps (a seed, a count, a choice) glides instead (ADR-0004: every level
+// eases).
+fn ease(last: f32, want: f32, rise: f32, fall: f32) -> f32 {
+    let tau = max(select(fall, rise, want > last), 1e-4);
+    return last + (want - last) * (1.0 - exp(-clamp(V.dt, 0.0, 0.1) / tau));
+}
+
 // Pitch class i (0..11, C first).
 fn chroma(i: u32) -> f32 {
     let k = i % 12u;

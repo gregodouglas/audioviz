@@ -7,6 +7,7 @@
 //   0   (slewed energy, onset kick, last onset, pictures seen)
 //   1   the current picture's window: (angle, drift phase, turn direction, 0)
 //   2   the previous picture's window, the same
+//   3   (the section last frame, how sure the beat is (eased), 0, started)
 // When a new picture arrives, the current window becomes the previous one
 // and the new picture starts at the same angle, turning the other way.
 
@@ -21,9 +22,17 @@ fn prepare(i: u32) -> vec4<f32> {
     if (V.onset > last.z + 0.25) {
         kick += 0.9 * P.tumble;
     }
+    // A new section of the song tumbles the window further.
+    let sec = item(3u);
+    if (sec.w > 0.5 && section() != sec.x) {
+        kick += 2.5 * P.sections;
+    }
     kick *= exp(-dt / 0.3);
     if (i == 0u) {
         return vec4<f32>(energy, kick, V.onset, V.picture_count);
+    }
+    if (i == 3u) {
+        return vec4<f32>(section(), ease(sec.y, V.confidence, 0.5, 1.0), 0.0, 1.0);
     }
     var cur = item(1u);
     var prv = item(2u);
@@ -59,7 +68,8 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
     let P = params();
     let aspect = V.resolution.x / V.resolution.y;
     let s = (uv * 2.0 - 1.0) * vec2<f32>(aspect, -1.0);
-    let zoom = clamp(P.zoom * (1.0 + 0.06 * clamp(V.bass - 1.0, -1.0, 1.5)), 0.1, 1.5);
+    let breathe = 0.05 * P.sway * sin(TAU * bar_phase()) * item(3u).y;
+    let zoom = clamp(P.zoom * (1.0 + 0.06 * clamp(V.bass - 1.0, -1.0, 1.5) + breathe), 0.1, 1.5);
     let now = picture(window(s, item(1u), V.picture_aspect, zoom));
     let before = picture_prev(window(s, item(2u), V.picture_prev_aspect, zoom));
     var col = mix(before, now, V.picture_fade);

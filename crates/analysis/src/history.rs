@@ -24,8 +24,14 @@ pub struct HopRecord {
     pub lufs_m: f32,
     /// dB spectrum, low to high: 0 = `SPEC_FLOOR_DB`, 255 = full scale.
     pub spectrum: [u8; SPEC_ROWS],
-    /// The bands as the visuals get them (auto-gained, smoothed), low to high.
+    /// The bands as the visuals get them (relative, smoothed), low to high,
+    /// their levels on one scale, and their attacks.
     pub bands: [f32; RECORD_BANDS],
+    pub levels: [f32; RECORD_BANDS],
+    pub attacks: [f32; RECORD_BANDS],
+    /// The six broad bands' level and attack (see `bands`).
+    pub broad_level: [f32; crate::bands::BROAD],
+    pub broad_attack: [f32; crate::bands::BROAD],
     /// Onset strength and the threshold it must peak over, on the same scale
     /// (low, mid, high, all); and which groups hit this hop, as bits.
     pub onset_strength: [f32; 4],

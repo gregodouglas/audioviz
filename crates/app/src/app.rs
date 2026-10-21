@@ -759,7 +759,8 @@ impl Running {
         let fullscreen = self.gpu.window.fullscreen().is_some();
         let maximized = self.gpu.window.is_maximized();
         let calibrating = self.calibration.is_some();
-        let empty = matches!(capture, CaptureMode::Endpoint { .. }) && self.first_run.is_none() && !calibrating;
+        // (Not under the WAV test bench, which reports itself as an endpoint.)
+        let empty = matches!(capture, CaptureMode::Endpoint { .. }) && self.first_run.is_none() && !calibrating && std::env::var_os("AUDIOVIZ_WAV").is_none();
         let ui_view = frame.texture.create_view(&wgpu::TextureViewDescriptor { format: Some(self.gpu.ui_format), ..Default::default() });
         let raw_input = self.egui_state.take_egui_input(&self.gpu.window);
         let shader_error = match (&self.director.last_error, &self.post_error) {

@@ -1,7 +1,7 @@
 //! The director view (ADR-0006): what the engine hears, laid out on one time
 //! axis for whoever makes visuals (the audience never sees it). Lanes, top to
-//! bottom: a log-frequency spectrogram in dB, the 32 bands as the visuals get
-//! them, onset strength against its threshold with the hits (low, mid, high,
+//! bottom: a log-frequency spectrogram in dB, the 32 bands' levels (one
+//! scale for all) and their attacks, onset strength against its threshold with the hits (low, mid, high,
 //! all), the beat clock (phase, confidence, the beats as a grid through every
 //! lane) and the level. It reads the engine's history, so it can be frozen
 //! (F), dragged back over the last five minutes and zoomed (the wheel).
@@ -105,8 +105,10 @@ pub struct ViewState {
     lut: [Color32; 256],
     spec_img: ColorImage,
     band_img: ColorImage,
+    attack_img: ColorImage,
     spec_tex: Option<TextureHandle>,
     band_tex: Option<TextureHandle>,
+    attack_tex: Option<TextureHandle>,
 }
 
 impl ViewState {
@@ -119,8 +121,10 @@ impl ViewState {
             lut: heat_lut(),
             spec_img: ColorImage::filled([COLS, SPEC_ROWS], Color32::BLACK),
             band_img: ColorImage::filled([COLS, RECORD_BANDS], Color32::BLACK),
+            attack_img: ColorImage::filled([COLS, RECORD_BANDS], Color32::BLACK),
             spec_tex: None,
             band_tex: None,
+            attack_tex: None,
         }
     }
 
@@ -174,8 +178,8 @@ impl ViewState {
             p.text(pos2(rect.right() - 10.0, rect.top() + 12.0), Align2::RIGHT_CENTER, "D close · F freeze · drag back · wheel zoom", theme::mono(11.0), TEXT_3);
 
             // Lanes.
-            let lanes = split(plot, &[0.36, 0.14, 0.30, 0.10, 0.10]);
-            let (spec_r, band_r, onset_r, beat_r, level_r) = (lanes[0], lanes[1], lanes[2], lanes[3], lanes[4]);
+            let lanes = split(plot, &[0.32, 0.11, 0.08, 0.29, 0.10, 0.10]);
+            let (spec_r, band_r, attack_r, onset_r, beat_r, level_r) = (lanes[0], lanes[1], lanes[2], lanes[3], lanes[4], lanes[5]);
             let x_of = |t: f64| plot.left() + ((t - start) / self.span_s) as f32 * plot.width();
             // The records under each column; a column finer than a hop shows
             // the hop it falls in, and one outside the history shows nothing.
@@ -206,8 +210,11 @@ impl ViewState {
                     self.spec_img.pixels[(SPEC_ROWS - 1 - row) * COLS + c] = self.lut[v as usize];
                 }
                 for b in 0..RECORD_BANDS {
-                    let v = range.clone().map(|i| history.records[i].bands[b]).fold(0.0f32, f32::max);
-                    self.band_img.pixels[(RECORD_BANDS - 1 - b) * COLS + c] = self.lut[((v / 1.2).clamp(0.0, 1.0) * 255.0) as usize];
+                    let row = (RECORD_BANDS - 1 - b) * COLS + c;
+                    let v = range.clone().map(|i| history.records[i].levels[b]).fold(0.0f32, f32::max);
+                    self.band_img.pixels[row] = self.lut[(v.clamp(0.0, 1.0) * 255.0) as usize];
+                    let a = range.clone().map(|i| history.records[i].attacks[b]).fold(0.0f32, f32::max);
+                    self.attack_img.pixels[row] = self.lut[(a.clamp(0.0, 1.0) * 255.0) as usize];
                 }
             }
             let opts = TextureOptions::LINEAR;
@@ -215,9 +222,12 @@ impl ViewState {
             spec_tex.set(self.spec_img.clone(), opts);
             let band_tex = self.band_tex.get_or_insert_with(|| ctx.load_texture("audio-view-bands", self.band_img.clone(), opts));
             band_tex.set(self.band_img.clone(), opts);
+            let attack_tex = self.attack_tex.get_or_insert_with(|| ctx.load_texture("audio-view-attacks", self.attack_img.clone(), opts));
+            attack_tex.set(self.attack_img.clone(), opts);
             let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
             p.image(spec_tex.id(), spec_r, uv, Color32::WHITE);
             p.image(band_tex.id(), band_r, uv, Color32::WHITE);
+            p.image(attack_tex.id(), attack_r, uv, Color32::WHITE);
             // Frequency guides on the spectrogram.
             for hz in [50.0f32, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0] {
                 let f = (hz.ln() - SPEC_LO_HZ.ln()) / (SPEC_HI_HZ.ln() - SPEC_LO_HZ.ln());
@@ -228,7 +238,8 @@ impl ViewState {
             }
             p.text(pos2(spec_r.left() - GUTTER + 8.0, spec_r.bottom()), Align2::LEFT_BOTTOM, format!("{:.0} dB", SPEC_FLOOR_DB), theme::mono(9.0), TEXT_3);
             p.text(pos2(spec_r.left() - GUTTER + 8.0, spec_r.top()), Align2::LEFT_TOP, "0 dB", theme::mono(9.0), TEXT_3);
-            lane_label(&p, band_r, "Bands");
+            lane_label(&p, band_r, "Levels");
+            lane_label(&p, attack_r, "Attacks");
 
             // Onsets: strength (bright) against threshold (dim), hits as ticks.
             let sub = split(onset_r, &[0.25; 4]);
@@ -308,10 +319,17 @@ impl ViewState {
                 if let Some(h) = history.at(t) {
                     p.line_segment([pos2(pt.x, plot.top()), pos2(pt.x, plot.bottom())], Stroke::new(1.0, theme::with_alpha(TEXT, 120)));
                     let f = (spec_r.bottom() - pt.y) / spec_r.height();
-                    let hz = if spec_r.contains(pt) { format!(" · {:.0} Hz", (SPEC_LO_HZ.ln() + f * (SPEC_HI_HZ.ln() - SPEC_LO_HZ.ln())).exp()) } else { String::new() };
+                    let mut hz = if spec_r.contains(pt) { format!(" · {:.0} Hz", (SPEC_LO_HZ.ln() + f * (SPEC_HI_HZ.ln() - SPEC_LO_HZ.ln())).exp()) } else { String::new() };
+                    // Over the band lanes: that band's three values.
+                    for r in [band_r, attack_r] {
+                        if r.contains(pt) {
+                            let b = (((r.bottom() - pt.y) / r.height() * RECORD_BANDS as f32) as usize).min(RECORD_BANDS - 1);
+                            hz = format!(" · band {b}: relative {:.2}, level {:.2}, attack {:.2}", h.bands[b], h.levels[b], h.attacks[b]);
+                        }
+                    }
                     let read = format!(
-                        "{:.2} s back{hz} · onsets {:.2} {:.2} {:.2} {:.2} · {:.1} BPM, conf {:.2}, phase {:.2} · bass {:.2} mid {:.2} treb {:.2} · {:.0} Hz centroid · width {:.2}",
-                        live_end - h.time_s, h.onset_strength[0], h.onset_strength[1], h.onset_strength[2], h.onset_strength[3], h.bpm, h.beat_confidence, h.beat_phase, h.bass, h.mid, h.treb, h.centroid_hz, h.stereo_width
+                        "{:.2} s back{hz} · onsets {:.2} {:.2} {:.2} {:.2} · {:.1} BPM, conf {:.2}, phase {:.2} · sub {:.2} bass {:.2} low mid {:.2} mid {:.2} presence {:.2} air {:.2} · {:.0} Hz centroid · width {:.2}",
+                        live_end - h.time_s, h.onset_strength[0], h.onset_strength[1], h.onset_strength[2], h.onset_strength[3], h.bpm, h.beat_confidence, h.beat_phase, h.broad_level[0], h.broad_level[1], h.broad_level[2], h.broad_level[3], h.broad_level[4], h.broad_level[5], h.centroid_hz, h.stereo_width
                     );
                     let galley = p.layout_no_wrap(read, theme::mono(11.0), TEXT);
                     let at = pos2((pt.x + 10.0).min(rect.right() - galley.size().x - 8.0), plot.top() + 4.0);

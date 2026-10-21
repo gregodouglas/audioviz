@@ -50,6 +50,11 @@ struct VisualIn {
     strengths: vec4<f32>, // onset strength now, continuous (low, mid, high, all)
     chroma_slow_v: array<vec4<f32>, 3>, // 12 pitch classes, slow profile (the chord over seconds)
     space: vec4<f32>,   // x: 1 in a shared space (in_space() reads it); y: the layer's opacity there (the engine applies it); z: the design layers shown, as bits (layer_on())
+    levels_v: array<vec4<f32>, 8>,       // the 32 bands on one scale (use level())
+    attacks_v: array<vec4<f32>, 8>,      // their attacks (use attack())
+    broad_v: array<vec4<f32>, 2>,        // six broad bands' level (use broad())
+    broad_rel_v: array<vec4<f32>, 2>,    // their value against their own average (broad_rel())
+    broad_attack_v: array<vec4<f32>, 2>, // their attacks (broad_attack())
 };
 
 @group(0) @binding(0) var<uniform> V: VisualIn;
@@ -155,6 +160,48 @@ fn band(i: u32) -> f32 {
 fn band_raw(i: u32) -> f32 {
     let k = min(i, 31u);
     return V.raw[k / 4u][k % 4u];
+}
+
+// Band i on one scale for all bands (0..1 over the 42 dB under the
+// track's loud level): a quiet band reads low however long it is quiet,
+// so the bands keep their balance. band() is each band against its own
+// recent best instead.
+fn level(i: u32) -> f32 {
+    let k = min(i, 31u);
+    return V.levels_v[k / 4u][k % 4u];
+}
+
+// How far band i rose in the last ~30 ms, 0..1, fading over ~80 ms: the
+// band's punch. A held note gives none.
+fn attack(i: u32) -> f32 {
+    let k = min(i, 31u);
+    return V.attacks_v[k / 4u][k % 4u];
+}
+
+// The six broad bands, for broad(), broad_rel() and broad_attack().
+const SUB: u32 = 0u;       // 30-60 Hz
+const BASS: u32 = 1u;      // 60-250 Hz
+const LOW_MID: u32 = 2u;   // 250-500 Hz
+const MID: u32 = 3u;       // 500 Hz-2 kHz
+const PRESENCE: u32 = 4u; // 2-6 kHz
+const AIR: u32 = 5u;       // 6-16 kHz
+
+// A broad band's level on the bands' one scale, 0..1.
+fn broad(k: u32) -> f32 {
+    let i = min(k, 5u);
+    return V.broad_v[i / 4u][i % 4u];
+}
+
+// A broad band against its own average (1 = typical, up to 3).
+fn broad_rel(k: u32) -> f32 {
+    let i = min(k, 5u);
+    return V.broad_rel_v[i / 4u][i % 4u];
+}
+
+// A broad band's attack, 0..1.
+fn broad_attack(k: u32) -> f32 {
+    let i = min(k, 5u);
+    return V.broad_attack_v[i / 4u][i % 4u];
 }
 
 // The smoothed spectrum at t (0 = lowest band, 1 = highest), interpolated.

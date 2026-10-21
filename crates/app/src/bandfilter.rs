@@ -87,14 +87,11 @@ impl BandPass {
     }
 }
 
-/// The analyzer's log band layout (see `AnalyzerConfig`).
-const BAND_LO_HZ: f32 = 30.0;
-const BAND_HI_HZ: f32 = 16_000.0;
-
-/// Centre frequency of band `i` of `n`.
-fn band_hz(i: usize, n: usize) -> f32 {
-    let (lo, hi) = (BAND_LO_HZ.ln(), BAND_HI_HZ.ln());
-    (lo + (i as f32 + 0.5) / n as f32 * (hi - lo)).exp()
+/// Centre frequency of each of `n` bands, in the analyzer's default layout.
+fn band_centres(n: usize) -> Vec<f32> {
+    use audioviz_analysis::filterbank::{band_centre_hz, band_edges};
+    let cfg = audioviz_analysis::AnalyzerConfig::default();
+    band_edges(n, cfg.band_lo_hz, cfg.band_hi_hz, cfg.band_corner_hz).into_iter().map(|e| band_centre_hz(e, cfg.band_corner_hz)).collect()
 }
 
 /// A copy of `f` as seen through the band `lo..hi` Hz: energies, onsets and
@@ -105,9 +102,10 @@ pub fn band_features(f: &FeatureFrame, lo: f32, hi: f32) -> FeatureFrame {
     if n == 0 {
         return out;
     }
+    let centres = band_centres(n);
     let (mut sum_in, mut count_in, mut sum_all) = (0.0f32, 0usize, 0.0f32);
     for (i, b) in f.bands.iter().enumerate() {
-        let hz = band_hz(i, n);
+        let hz = centres[i];
         sum_all += b;
         if hz >= lo && hz <= hi {
             sum_in += b;
@@ -115,6 +113,12 @@ pub fn band_features(f: &FeatureFrame, lo: f32, hi: f32) -> FeatureFrame {
             out.bands[i] = *b;
         } else {
             out.bands[i] = b * 0.08;
+            if let Some(l) = out.levels.get_mut(i) {
+                *l *= 0.08;
+            }
+            if let Some(a) = out.attacks.get_mut(i) {
+                *a = 0.0;
+            }
         }
     }
     let energy = if count_in > 0 { sum_in / count_in as f32 } else { 0.0 };
@@ -129,6 +133,15 @@ pub fn band_features(f: &FeatureFrame, lo: f32, hi: f32) -> FeatureFrame {
     out.treb_att = att;
     out.rms = f.rms * share.sqrt();
     out.peak = f.peak * share.sqrt().max(0.05);
+    // Broad bands that the range does not reach fade out like the bands.
+    let edges = audioviz_analysis::bands::BROAD_EDGES_HZ;
+    for k in 0..audioviz_analysis::bands::BROAD {
+        if edges[k + 1] <= lo || edges[k] >= hi {
+            out.broad_level[k] *= 0.08;
+            out.broad_relative[k] *= 0.08;
+            out.broad_attack[k] = 0.0;
+        }
+    }
     // Onsets from the transient group that covers the band's centre.
     let centre = (lo * hi).sqrt();
     let g = if centre < 250.0 { 0 } else if centre < 2000.0 { 1 } else { 2 };

@@ -993,6 +993,13 @@ struct Uniform {
     chroma_slow: [[f32; 4]; 3],
     /// (1 in a shared space, the layer's opacity there (1 otherwise), 0, 0).
     space: [f32; 4],
+    /// The bands on one scale, their attacks, and the six broad bands'
+    /// level, relative value and attack (ADR-0006 step 2).
+    levels: [[f32; 4]; 8],
+    attacks: [[f32; 4]; 8],
+    broad: [[f32; 4]; 2],
+    broad_rel: [[f32; 4]; 2],
+    broad_attack: [[f32; 4]; 2],
 }
 
 // ------------------------------------------------------------ building off the render thread
@@ -2091,6 +2098,14 @@ impl ShaderVisual {
             raw[i / 4][i % 4] = v;
             smooth[i / 4][i % 4] = self.bands[i];
         }
+        let pack32 = |v: &[f32]| -> [[f32; 4]; 8] {
+            let mut o = [[0.0f32; 4]; 8];
+            for (i, x) in v.iter().take(32).enumerate() {
+                o[i / 4][i % 4] = *x;
+            }
+            o
+        };
+        let pack6 = |v: &[f32; 6]| -> [[f32; 4]; 2] { [[v[0], v[1], v[2], v[3]], [v[4], v[5], 0.0, 0.0]] };
         let mut chroma = [[0.0f32; 4]; 3];
         for (i, c) in f.chroma.iter().enumerate() {
             chroma[i / 4][i % 4] = *c;
@@ -2149,6 +2164,11 @@ impl ShaderVisual {
             strengths: f.onset_strength,
             chroma_slow,
             space: [space.map_or(0.0, |_| 1.0), space.unwrap_or(1.0), (DESIGN_LAYERS.load(std::sync::atomic::Ordering::Relaxed) & 0xffff) as f32, 0.0],
+            levels: pack32(&f.levels),
+            attacks: pack32(&f.attacks),
+            broad: pack6(&f.broad_level),
+            broad_rel: pack6(&f.broad_relative),
+            broad_attack: pack6(&f.broad_attack),
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
         // The album art, once per track.
@@ -2451,7 +2471,9 @@ mod tests {
         assert_eq!(std::mem::offset_of!(Uniform, hits), 544 + 512 + 48);
         assert_eq!(std::mem::offset_of!(Uniform, chroma_slow), 544 + 512 + 80);
         assert_eq!(std::mem::offset_of!(Uniform, space), 544 + 512 + 128);
-        assert_eq!(std::mem::size_of::<Uniform>(), 544 + 512 + 144);
+        assert_eq!(std::mem::offset_of!(Uniform, levels), 544 + 512 + 144);
+        assert_eq!(std::mem::offset_of!(Uniform, broad_attack), 544 + 512 + 144 + 320);
+        assert_eq!(std::mem::size_of::<Uniform>(), 544 + 512 + 144 + 352);
     }
 
     #[test]

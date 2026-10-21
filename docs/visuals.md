@@ -113,7 +113,10 @@ The colour is linear HDR light (values above 1 are fine; levelling, effects and 
 | `V.confidence`, `V.silent` | how sure the beat clock is (0..1); 1 when nothing is playing |
 | `V.swell` | bass above its average plus low onsets, fast attack, slow release |
 | `V.key`, `V.quiet` | dominant pitch class (C = 0), 1 in a quiet passage |
-| `band(i)`, `band_raw(i)`, `band_at(t)` | 32 bands low to high, smoothed or raw; `band_at` interpolates t 0..1 |
+| `band(i)`, `band_raw(i)`, `band_at(t)` | 32 bands low to high, each against its own recent best (so every band moves whatever the mix), smoothed (30 ms in, 200 ms out) or as the analysis gives them (10 ms in, 90 ms out); `band_at` interpolates t 0..1. The bands come from a gammatone filterbank, even on ln(1 + f / 100 Hz) from 30 Hz to 16 kHz: four under 140 Hz, logarithmic above a few hundred hertz (ADR-0006) |
+| `level(i)` | band i on one scale for all bands: 0..1 over the 42 dB under the track's loud level, so bands keep their balance and a quiet passage reads quiet |
+| `attack(i)` | how far band i rose in the last ~30 ms, 0..1, fading over ~80 ms: its punch (5 to 15 ms after a kick); a held note gives none |
+| `broad(k)`, `broad_rel(k)`, `broad_attack(k)` | six broad bands `SUB` (30-60 Hz), `BASS` (60-250), `LOW_MID` (250-500), `MID` (500-2k), `PRESENCE` (2-6k), `AIR` (6-16k): level on the bands' scale, against their own average (1 typical), attack |
 | `chroma(i)`, `chroma_slow(i)` | 12 pitch classes, C first; the slow profile (the chord over seconds) |
 | `wave(t)`, `wave_mono(t)` | the last 1024 samples (t 0 oldest .. 1 newest), auto-gained |
 | `MeshVertex`, `MeshFragment` | a triangle corner from `vertex(i)`, and what `paint` gets per pixel |

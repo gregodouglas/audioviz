@@ -229,6 +229,14 @@ fn groove(bpm: f32, t: f32, dt: f32) -> FeatureFrame {
         let x = i as f32 / 31.0;
         (0.35 + 0.5 * kick * (1.0 - x).powi(3) + 0.3 * swell * (1.0 - (x - 0.45).abs() * 2.0).max(0.0) + 0.4 * hat * x * x).min(1.0)
     }).collect();
+    f.levels = f.bands.iter().map(|b| b * 0.8).collect();
+    f.attacks = (0..32).map(|i| {
+        let x = i as f32 / 31.0;
+        (kick * (1.0 - x).powi(3) + snare * (1.0 - (x - 0.4).abs() * 3.0).max(0.0) + hat * x * x).min(1.0)
+    }).collect();
+    f.broad_level = [0.5 + 0.4 * kick, 0.55 + 0.35 * kick, 0.5 + 0.2 * swell, 0.5 + 0.3 * swell + 0.2 * snare, 0.45 + 0.3 * hat, 0.4 + 0.4 * hat];
+    f.broad_relative = [0.8 + kick, 0.8 + 0.8 * kick, 0.8 + 0.4 * swell, 0.8 + 0.4 * swell + 0.4 * snare, 0.8 + 0.6 * hat, 0.8 + 0.6 * hat];
+    f.broad_attack = [kick, kick * 0.8, snare * 0.5, snare, hat * 0.7, hat];
     f.centroid_hz = 1200.0 + 2500.0 * hat;
     f.stereo_width = 0.4;
     f.onset_strength = [kick, snare, hat, kick.max(snare).max(hat)];

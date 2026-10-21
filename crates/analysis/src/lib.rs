@@ -1,20 +1,24 @@
 //! Real-time music feature extraction for audioviz.
 //!
 //! Sample-clocked (per hop), frame-rate independent. v1 as planned in
-//! docs/research/03-audio-analysis.md: multi-resolution STFT, log bands with
-//! per-band auto-gain, MilkDrop-style bass/mid/treb, K-weighted loudness,
+//! docs/research/03-audio-analysis.md: multi-resolution STFT, bands from a
+//! gammatone filterbank (ADR-0006) with per-band auto-gain, MilkDrop-style bass/mid/treb, K-weighted loudness,
 //! spectral-flux onsets per band group, a predictive beat clock, chroma,
 //! stereo width and a long-window energy trend.
 
+pub mod bands;
 pub mod beat;
 pub mod chroma;
+pub mod filterbank;
 pub mod history;
 pub mod loudness;
 pub mod onset;
 pub mod stft;
 
+use bands::{BROAD, BandSignals};
 use beat::BeatTracker;
 use chroma::Chroma;
+use filterbank::FilterBank;
 use history::{HopRecord, RECORD_BANDS, SPEC_ROWS, SpectrumMap};
 use loudness::Loudness;
 use onset::OnsetDetector;
@@ -27,11 +31,16 @@ pub struct AnalyzerConfig {
     pub bands: usize,
     pub band_lo_hz: f32,
     pub band_hi_hz: f32,
+    /// The bands are even on ln(1 + f / corner): logarithmic above it,
+    /// close to even in hertz below (see `filterbank`).
+    pub band_corner_hz: f32,
+    /// Edges of the six broad bands (sub, bass, low mid, mid, presence, air), Hz.
+    pub broad_edges_hz: [f32; BROAD + 1],
 }
 
 impl Default for AnalyzerConfig {
     fn default() -> Self {
-        Self { sample_rate: 48_000, hop: 512, bands: 32, band_lo_hz: 30.0, band_hi_hz: 16_000.0 }
+        Self { sample_rate: 48_000, hop: 512, bands: 32, band_lo_hz: 30.0, band_hi_hz: 16_000.0, band_corner_hz: 100.0, broad_edges_hz: bands::BROAD_EDGES_HZ }
     }
 }
 
@@ -61,8 +70,19 @@ pub struct FeatureFrame {
     pub bass_att: f32,
     pub mid_att: f32,
     pub treb_att: f32,
-    /// Log-spaced bands, per-band auto-gained and smoothed, roughly 0..1.
+    /// The bands (low to high, see `filterbank`), each against its own
+    /// recent best (relative), smoothed, roughly 0..1.
     pub bands: Vec<f32>,
+    /// The bands on one scale for all: 0..1 over the 42 dB under the
+    /// track's loud level (see `bands`).
+    pub levels: Vec<f32>,
+    /// How far each band rose over its last ~150 ms, 0..1.
+    pub attacks: Vec<f32>,
+    /// Six broad bands (sub, bass, low mid, mid, presence, air): level,
+    /// relative to their own average (1 = typical), attack.
+    pub broad_level: [f32; BROAD],
+    pub broad_relative: [f32; BROAD],
+    pub broad_attack: [f32; BROAD],
     pub centroid_hz: f32,
     /// 0 = mono, 1 = wide.
     pub stereo_width: f32,
@@ -106,6 +126,11 @@ impl Default for FeatureFrame {
             mid_att: 0.0,
             treb_att: 0.0,
             bands: Vec::new(),
+            levels: Vec::new(),
+            attacks: Vec::new(),
+            broad_level: [0.0; BROAD],
+            broad_relative: [0.0; BROAD],
+            broad_attack: [0.0; BROAD],
             centroid_hz: 0.0,
             stereo_width: 0.0,
             onset_strength: [0.0; 4],
@@ -138,15 +163,6 @@ pub fn follow(y: f32, x: f32, dt: f32, attack_tau: f32, release_tau: f32) -> f32
     y + (x - y) * (1.0 - (-dt / tau).exp())
 }
 
-struct Band {
-    src: usize, // 0 = long, 1 = mid
-    bin_lo: usize,
-    bin_hi: usize,
-    tilt: f32,
-    norm: f32,
-    value: f32,
-}
-
 pub struct Analyzer {
     cfg: AnalyzerConfig,
     ring: Ring,
@@ -163,7 +179,12 @@ pub struct Analyzer {
     acc_mid: f64,
     acc_side: f64,
     acc_peak: f32,
-    bands: Vec<Band>,
+    bands: BandSignals,
+    band_edges: Vec<(f32, f32)>,
+    filterbank: FilterBank,
+    band_power: Vec<f32>,
+    /// This hop's mono samples, for the filterbank.
+    hop_buf: Vec<f32>,
     bmt_avg: [f32; 3],
     bmt_fast: [f32; 3],
     bmt_att: [f32; 3],
@@ -185,20 +206,10 @@ impl Analyzer {
         let short = Stft::new(N_SHORT);
         let frame_rate = sr as f32 / cfg.hop as f32;
 
-        // Log-spaced bands; the lowest ones come from the long FFT for resolution.
-        let mut bands = Vec::with_capacity(cfg.bands);
-        let (lo, hi) = (cfg.band_lo_hz.ln(), cfg.band_hi_hz.ln());
-        for b in 0..cfg.bands {
-            let f0 = (lo + (hi - lo) * b as f32 / cfg.bands as f32).exp();
-            let f1 = (lo + (hi - lo) * (b + 1) as f32 / cfg.bands as f32).exp();
-            let fc = (f0 * f1).sqrt();
-            let (src, stft) = if fc < 150.0 { (0, &long) } else { (1, &mid) };
-            let bin_hz = stft.bin_hz(sr);
-            let nb = stft.bins();
-            let bin_lo = ((f0 / bin_hz).floor() as usize).clamp(1, nb - 1);
-            let bin_hi = ((f1 / bin_hz).ceil() as usize).clamp(bin_lo + 1, nb);
-            bands.push(Band { src, bin_lo, bin_hi, tilt: fc / 1000.0, norm: 1e-3, value: 0.0 });
-        }
+        let band_edges = filterbank::band_edges(cfg.bands, cfg.band_lo_hz, cfg.band_hi_hz, cfg.band_corner_hz);
+        let filterbank = FilterBank::new(&band_edges, cfg.band_corner_hz, sr);
+        let centres: Vec<f32> = band_edges.iter().map(|e| filterbank::band_centre_hz(*e, cfg.band_corner_hz)).collect();
+        let bands = BandSignals::new(&centres, &cfg.broad_edges_hz);
 
         let onsets = OnsetDetector::new(short.bins(), short.bin_hz(sr), mid.bins(), mid.bin_hz(sr), frame_rate);
         let chroma = Chroma::new(long.bins(), long.bin_hz(sr));
@@ -219,12 +230,16 @@ impl Analyzer {
             acc_side: 0.0,
             acc_peak: 0.0,
             bands,
+            band_power: vec![0.0; band_edges.len()],
+            band_edges,
+            filterbank,
+            hop_buf: Vec::with_capacity(cfg.hop),
             bmt_avg: [1e-4; 3],
             bmt_fast: [0.0; 3],
             bmt_att: [0.0; 3],
             e_short: 0.0,
             e_long: 0.0,
-            frame: FeatureFrame { bands: vec![0.0; cfg.bands], ..Default::default() },
+            frame: FeatureFrame { bands: vec![0.0; cfg.bands], levels: vec![0.0; cfg.bands], attacks: vec![0.0; cfg.bands], ..Default::default() },
             spectrum_map,
             records: Vec::with_capacity(64),
             hops: 0,
@@ -235,6 +250,11 @@ impl Analyzer {
 
     pub fn config(&self) -> &AnalyzerConfig {
         &self.cfg
+    }
+
+    /// Each band's edges in Hz, low to high.
+    pub fn band_edges(&self) -> &[(f32, f32)] {
+        &self.band_edges
     }
 
     pub fn frame(&self) -> &FeatureFrame {
@@ -258,6 +278,7 @@ impl Analyzer {
             self.acc_side += (side * side) as f64;
             self.acc_peak = self.acc_peak.max(l.abs()).max(r.abs());
             self.ring.push(mid);
+            self.hop_buf.push(mid);
             self.loudness.push(l, r);
             self.samples_seen += 1;
             self.since_hop += 1;
@@ -318,16 +339,16 @@ impl Analyzer {
         let centroid = if silent || den <= 0.0 { 0.0 } else { num / den };
         f.centroid_hz = follow(f.centroid_hz, centroid, dt, 0.2, 0.6);
 
-        // Bands.
-        for (b, out) in self.bands.iter_mut().zip(f.bands.iter_mut()) {
-            let power = if b.src == 0 { &self.long.power } else { &self.mid.power };
-            let p: f32 = power[b.bin_lo..b.bin_hi].iter().sum::<f32>() * b.tilt;
-            let v = p.max(0.0).powf(0.4);
-            b.norm = follow(b.norm, v, dt, 0.05, 8.0).max(1e-3);
-            let n = if silent { 0.0 } else { (v / b.norm).min(1.5) };
-            b.value = follow(b.value, n, dt, 0.010, 0.200);
-            *out = b.value;
-        }
+        // Bands, from the filterbank.
+        self.filterbank.process(&self.hop_buf, &mut self.band_power);
+        self.hop_buf.clear();
+        self.bands.update(&self.band_power, dt, silent);
+        f.bands.copy_from_slice(&self.bands.relative);
+        f.levels.copy_from_slice(&self.bands.level);
+        f.attacks.copy_from_slice(&self.bands.attack);
+        f.broad_level = self.bands.broad_level;
+        f.broad_relative = self.bands.broad_relative;
+        f.broad_attack = self.bands.broad_attack;
 
         // bass / mid / treb relative to running average (mid spectrum).
         let ranges = [(30.0, 200.0), (200.0, 2000.0), (2000.0, 16000.0)];
@@ -372,10 +393,14 @@ impl Analyzer {
         }
         let mut spectrum = [0u8; SPEC_ROWS];
         self.spectrum_map.column(&self.long, &self.mid, &mut spectrum);
-        let mut bands = [0.0f32; RECORD_BANDS];
-        for (o, b) in bands.iter_mut().zip(&f.bands) {
-            *o = *b;
-        }
+        let copy = |v: &[f32]| -> [f32; RECORD_BANDS] {
+            let mut o = [0.0f32; RECORD_BANDS];
+            for (o, b) in o.iter_mut().zip(v) {
+                *o = *b;
+            }
+            o
+        };
+        let (bands, levels, attacks) = (copy(&f.bands), copy(&f.levels), copy(&f.attacks));
         let hits = self.onsets.hit.iter().enumerate().fold(0u8, |m, (g, h)| m | ((*h as u8) << g));
         self.records.push(HopRecord {
             hop: self.hops,
@@ -384,6 +409,10 @@ impl Analyzer {
             lufs_m: f.lufs_m,
             spectrum,
             bands,
+            levels,
+            attacks,
+            broad_level: f.broad_level,
+            broad_attack: f.broad_attack,
             onset_strength: f.onset_strength,
             onset_threshold: self.onsets.threshold,
             onset_hits: hits,

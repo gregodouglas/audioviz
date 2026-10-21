@@ -11,6 +11,8 @@ Written 2026-10-18 with Greg, to settle the words before the directors grew. Eve
 5. **Effect.** One pass over the layer's picture, run in chain order, each with its own band, mix (wet/dry) and parameters: Kaleidoscope (fold), Fractal, Luminescence, Feedback, Polar, Ripple, Edge, Chroma split, Mask, Palette (grade), Halftone, Warp, Scanlines, Mirror, Glow, Vignette, Colorify. Effects are engine-level and visual-agnostic: any effect goes on any layer, in any order. In the code an effect is a `Modifier`.
 6. **Picture.** The one pass over the composited scene: exposure, auto exposure, bloom, grain, saturation, look (Film or Neon), reduce flashing. Saved with the scene. In the code this is the post stack.
 
+**Links.** A visual's slider can be **linked** to the music (the small level-meter button on its row): it then follows a signal (a band's level or attack, onsets, the beat or bar, loudness, brightness, noisiness, activity, width, balance, build, bass presence, contrast, a drop or a change, the phrase), set between its value at nothing and at full, through a response curve, rise and fall smoothing, a threshold with hysteresis and, for inferred signals, a confidence it must have. A link belongs to the visual's parameters on the layer (`"links"` in its block), so it saves with the scene and travels in presets. The **director view** (D, or Sync > Director view) is the tool for making them: what the engine hears on one time axis, and, for the link whose editor is open, the signal, what the link makes of it, and the value it sets (ADR-0006).
+
 What is *not* a level: the effects are not a second layer of the scene. They live inside a layer, between its visual and the composite. The only scene-wide pass is the Picture.
 
 ## The directors

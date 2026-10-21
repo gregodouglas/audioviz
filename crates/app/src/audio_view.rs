@@ -180,11 +180,17 @@ impl ViewState {
                 "Director view · {state} · {:.0} s across{groove} · capture: {} glitches, {} late, {} dropped, {} clipped, {} reopens",
                 self.span_s, health.discontinuities, health.late_packets, health.dropped_chunks, health.clipped_samples, health.reopens
             );
-            p.text(pos2(rect.left() + 10.0, rect.top() + 12.0), Align2::LEFT_CENTER, head, theme::mono(11.0), TEXT_2);
-            p.text(pos2(rect.right() - 10.0, rect.top() + 12.0), Align2::RIGHT_CENTER, "D close · F freeze · drag back · wheel zoom", theme::mono(11.0), TEXT_3);
+            let head_w = p.text(pos2(rect.left() + 10.0, rect.top() + 12.0), Align2::LEFT_CENTER, head, theme::mono(11.0), TEXT_2).width();
+            // The keys, where the header leaves room for them.
+            let keys = p.layout_no_wrap("D close · F freeze · drag back · wheel zoom".into(), theme::mono(11.0), TEXT_3);
+            if head_w + keys.size().x + 40.0 < rect.width() {
+                p.galley(pos2(rect.right() - 10.0 - keys.size().x, rect.top() + 12.0 - keys.size().y * 0.5), keys, TEXT_3);
+            }
 
             // Lanes.
-            let lanes = split(plot, &[0.29, 0.10, 0.07, 0.26, 0.09, 0.09, 0.10]);
+            // A link in focus gets a lane of its own at the bottom.
+            let probe = crate::links::PROBE.lock().ok().and_then(|p| p.as_ref().map(|p| (p.label.clone(), p.low, p.high, p.samples.iter().filter(|(t, _)| *t >= start - 1.0).copied().collect::<Vec<_>>())));
+            let lanes = if probe.is_some() { split(plot, &[0.26, 0.09, 0.06, 0.23, 0.08, 0.08, 0.09, 0.11]) } else { split(plot, &[0.29, 0.10, 0.07, 0.26, 0.09, 0.09, 0.10]) };
             let (spec_r, band_r, attack_r, onset_r, beat_r, level_r, context_r) = (lanes[0], lanes[1], lanes[2], lanes[3], lanes[4], lanes[5], lanes[6]);
             let x_of = |t: f64| plot.left() + ((t - start) / self.span_s) as f32 * plot.width();
             // The records under each column; a column finer than a hop shows
@@ -356,6 +362,20 @@ impl ViewState {
                 }
             }
             lane_label(&p, context_r, "Context");
+
+            // The link: the signal as it came (dim), past the gate and the
+            // threshold (mid), shaped and smoothed (bright), and the value.
+            if let (Some((label, low, high, samples)), Some(link_r)) = (&probe, lanes.get(7).copied()) {
+                let y = |v: f32| link_r.bottom() - v.clamp(0.0, 1.0) * (link_r.height() - 2.0);
+                let line = |f: &dyn Fn(&crate::links::Step) -> f32| -> Vec<Pos2> { samples.iter().filter(|(t, _)| *t >= start && *t <= end).map(|(t, s)| pos2(x_of(*t), y(f(s)))).collect() };
+                p.add(Shape::line(line(&|s| s.raw), Stroke::new(1.0, theme::with_alpha(TEXT, 60))));
+                p.add(Shape::line(line(&|s| s.passed), Stroke::new(1.0, theme::with_alpha(TEXT, 130))));
+                p.add(Shape::line(line(&|s| s.shaped), Stroke::new(1.5, theme::ACCENT)));
+                lane_label(&p, link_r, "Link");
+                let last = samples.iter().rev().find(|(t, _)| *t <= end).map_or(String::new(), |(_, s)| format!(" = {:.2}", s.value));
+                p.text(pos2(link_r.left() + 4.0, link_r.top() + 1.0), Align2::LEFT_TOP, format!("{label} ({low:.2} .. {high:.2}){last}"), theme::sans(10.5), TEXT);
+                p.text(pos2(link_r.left() - GUTTER + 8.0, link_r.bottom()), Align2::LEFT_BOTTOM, "in · gated · out", theme::sans(9.0), TEXT_3);
+            }
             p.text(pos2(context_r.left() - GUTTER + 8.0, context_r.bottom()), Align2::LEFT_BOTTOM, "build · novelty", theme::sans(9.0), TEXT_3);
             p.text(pos2(level_r.left() - GUTTER + 8.0, level_r.bottom()), Align2::LEFT_BOTTOM, "noise · busy", theme::sans(9.0), TEXT_3);
 

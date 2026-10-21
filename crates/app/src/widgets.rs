@@ -34,6 +34,19 @@ pub fn slider_row<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &m
 /// the label is dimmed while the value sits at it, and a double-click on the
 /// slider puts it back. One line: label · slider · editable value.
 pub fn slider_def<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &mut Num, default: Option<Num>, range: std::ops::RangeInclusive<Num>, fmt: impl Fn(f64) -> String, log: bool) -> Response {
+    slider_line(ui, label, value, default, range, fmt, log, None)
+}
+
+/// A slider row with a small button before its value that links the
+/// parameter to the music (ADR-0006 step 5): the rail gives up the room, so
+/// the row is as wide as any other. Lit when linked.
+#[allow(clippy::too_many_arguments)]
+pub fn slider_link<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &mut Num, default: Option<Num>, range: std::ops::RangeInclusive<Num>, linked: &mut bool, fmt: impl Fn(f64) -> String, log: bool) -> Response {
+    slider_line(ui, label, value, default, range, fmt, log, Some(linked))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn slider_line<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &mut Num, default: Option<Num>, range: std::ops::RangeInclusive<Num>, fmt: impl Fn(f64) -> String, log: bool, mut linked: Option<&mut bool>) -> Response {
     let at_default = default.is_some_and(|d| (value.to_f64() - d.to_f64()).abs() <= 1e-6 * (1.0 + d.to_f64().abs()));
     let (lo, hi) = (range.start().to_f64(), range.end().to_f64());
     let span = (hi - lo).abs().max(1e-9);
@@ -54,7 +67,8 @@ pub fn slider_def<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &m
             if r.hovered() && ui.painter().layout_no_wrap(label.to_string(), theme::sans(12.5), TEXT).size().x > label_w {
                 r.on_hover_text(label);
             }
-            let sw = (ui.available_width() - value_w - 8.0).max(40.0);
+            let link_w = if linked.is_some() { 22.0 } else { 0.0 };
+            let sw = (ui.available_width() - value_w - 8.0 - link_w).max(40.0);
             ui.spacing_mut().slider_width = sw;
             ui.spacing_mut().interact_size.y = 16.0;
             // The rail: visible on the panel, the travelled part in the accent.
@@ -78,6 +92,19 @@ pub fn slider_def<Num: egui::emath::Numeric>(ui: &mut Ui, label: &str, value: &m
                 }
                 if r.double_clicked() {
                     *value = d_as(d, default);
+                }
+            }
+            if let Some(on) = linked.as_deref_mut() {
+                // The link button: three bars of a level meter.
+                let (b, resp) = ui.allocate_exact_size(vec2(14.0, 16.0), Sense::click());
+                let c = if *on { theme::ACCENT } else if resp.hovered() { TEXT } else { TEXT_3 };
+                for (k, h) in [5.0f32, 10.0, 7.0].iter().enumerate() {
+                    let x = b.left() + 3.0 + k as f32 * 4.0;
+                    ui.painter().line_segment([egui::pos2(x, b.center().y + 5.0), egui::pos2(x, b.center().y + 5.0 - h)], Stroke::new(2.0, c));
+                }
+                let resp = resp.on_hover_text(if *on { "Following the music: click to unlink" } else { "Link to the music" });
+                if resp.clicked() {
+                    *on = !*on;
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

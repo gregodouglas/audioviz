@@ -621,7 +621,12 @@ impl ShaderDef {
     pub fn params_json(&self, stored: Option<&Value>) -> Value {
         let obj = stored.and_then(Value::as_object);
         // Buttons are not saved.
-        Value::Object(self.params.iter().filter(|p| p.kind != ParamKind::Button).map(|p| (p.id.clone(), p.value(obj.and_then(|o| o.get(&p.id))))).collect())
+        let mut out: Map<String, Value> = self.params.iter().filter(|p| p.kind != ParamKind::Button).map(|p| (p.id.clone(), p.value(obj.and_then(|o| o.get(&p.id))))).collect();
+        // Links to the music travel with the values (ADR-0006 step 5).
+        if let Some(l) = obj.and_then(|o| o.get("links")) {
+            out.insert("links".into(), l.clone());
+        }
+        Value::Object(out)
     }
 
     /// The WGSL the engine adds between the API and the visual's code.
@@ -1406,6 +1411,12 @@ pub struct ShaderVisual {
     mirror: wgpu::Sampler,
     /// How many times each button control was pressed (what the shader sees).
     presses: BTreeMap<String, u32>,
+    /// Links to the music (ADR-0006 step 5): who runs them (for the
+    /// director view's probe), each one's state, and the test inputs set in
+    /// the panel (standing in for the signal while set).
+    link_owner: u64,
+    link_runs: BTreeMap<String, crate::links::LinkRun>,
+    link_tests: BTreeMap<String, f32>,
     /// The build with its shared-space pipelines (with "space").
     space: Option<Arc<Built>>,
     /// Where a leading visual's camera pass writes, before it is copied to
@@ -1703,6 +1714,9 @@ impl ShaderVisual {
                 ..Default::default()
             }),
             presses: BTreeMap::new(),
+            link_owner: crate::links::new_owner(),
+            link_runs: BTreeMap::new(),
+            link_tests: BTreeMap::new(),
             space: None,
             camera_out,
             camera_group,
@@ -1980,7 +1994,7 @@ impl Scene for ShaderVisual {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, layer: &mut Layer) {
-        use crate::widgets::{dropdown, ghost_button, group, hint, segmented, slider_def, small_caps, toggle_row};
+        use crate::widgets::{dropdown, ghost_button, group, hint, segmented, small_caps, toggle_row};
         if let Some(e) = &self.error {
             ui.label(egui::RichText::new(format!("Shader error, showing the last good version:\n{e}")).color(crate::theme::WARN).size(11.5));
             ui.add_space(6.0);
@@ -1990,6 +2004,7 @@ impl Scene for ShaderVisual {
             Value::Object(m) => m,
             _ => Map::new(),
         };
+        let mut links = crate::links::read(layer.params.get(&id));
         // The controls of the variant the values pick (it may still be building).
         let shown = self.top.variant_for(layer.params.get(&id)).params.clone();
         let mut groups: Vec<&str> = Vec::new();
@@ -2036,6 +2051,8 @@ impl Scene for ShaderVisual {
                         }
                         ParamKind::Integer | ParamKind::Slider => {
                             let int = p.kind == ParamKind::Integer;
+                            let was_linked = links.iter().any(|l| l.param == p.id);
+                            let mut linked = was_linked;
                             let mut x = v.as_f64().unwrap_or(0.0) as f32;
                             let d = def.as_f64().unwrap_or(0.0) as f32;
                             let span = (p.max - p.min).abs();
@@ -2043,7 +2060,7 @@ impl Scene for ShaderVisual {
                             // An integer with a zero setting: 0 reads as its name, and below min snaps to min.
                             let zero = (int && !p.zero.is_empty()).then(|| p.zero.clone());
                             let (lo, low, places) = (if zero.is_some() { 0.0 } else { p.min }, p.min as f64, p.decimals);
-                            let r = slider_def(ui, &p.label, &mut x, Some(d), lo..=p.max, move |v| match &zero {
+                            let r = crate::widgets::slider_link(ui, &p.label, &mut x, Some(d), lo..=p.max, &mut linked, move |v| match &zero {
                                 Some(z) if v < 0.5 => z.clone(),
                                 Some(_) => format!("{:.0}{unit}", v.max(low)),
                                 None if places.is_some() => format!("{v:.*}{unit}", places.unwrap_or(2)),
@@ -2058,6 +2075,21 @@ impl Scene for ShaderVisual {
                                 x = x.max(p.min);
                             }
                             values.insert(p.id.clone(), if int { Value::from(x.round() as i64) } else { Value::from(x as f64) });
+                            if linked && !was_linked {
+                                // A new link moves the parameter from where it is up to its top.
+                                links.push(crate::links::Link::new(&p.id, x, if (p.max - x).abs() > 1e-6 { p.max } else { lo }));
+                            } else if !linked && was_linked {
+                                links.retain(|l| l.param != p.id);
+                                self.link_tests.remove(&p.id);
+                            }
+                            if let Some(l) = links.iter_mut().find(|l| l.param == p.id) {
+                                let test = self.link_tests.entry(p.id.clone()).or_insert(-1.0);
+                                link_editor(ui, &p.label, l, (lo, p.max), test);
+                                if *test < 0.0 {
+                                    self.link_tests.remove(&p.id);
+                                }
+                                crate::links::focus(self.link_owner, l, &p.label);
+                            }
                         }
                     }
                 }
@@ -2076,6 +2108,7 @@ impl Scene for ShaderVisual {
         ui.horizontal(|ui| {
             if ghost_button(ui, &format!("Reset {}", self.live.short.to_lowercase()), false).clicked() {
                 values = Map::new();
+                links.clear();
             }
             if let Some(d) = &self.def.dir {
                 if ghost_button(ui, "Open its folder", false).on_hover_text("visual.json and visual.wgsl: save either and it reloads").clicked() {
@@ -2085,8 +2118,51 @@ impl Scene for ShaderVisual {
                 }
             }
         });
+        crate::links::write(&mut values, &links);
         layer.params.insert(id, Value::Object(values));
     }
+}
+
+/// The editor under a linked slider: which signal, the values at nothing
+/// and at full, the response, the smoothing, the threshold, the gate, and a
+/// test input (`test` below 0 when off) that stands in for the signal.
+fn link_editor(ui: &mut egui::Ui, label: &str, l: &mut crate::links::Link, range: (f32, f32), test: &mut f32) {
+    use crate::links::Signal;
+    use crate::widgets::{dropdown, hint, slider_def, toggle_row};
+    let frame = egui::Frame::new().fill(crate::theme::with_alpha(crate::theme::RAISED, 140)).corner_radius(4.0).inner_margin(egui::Margin { left: 10, right: 6, top: 6, bottom: 6 });
+    frame.show(ui, |ui| {
+        let labels: Vec<String> = Signal::ALL.iter().map(|(s, g)| format!("{g}: {}", s.label())).collect();
+        let refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+        let cur = Signal::ALL.iter().position(|(s, _)| *s == l.signal);
+        if let Some(i) = dropdown(ui, "Follows", &refs, cur) {
+            l.signal = Signal::ALL[i].0;
+        }
+        let (lo, hi) = range;
+        let fmt = |v: f64| if (hi - lo).abs() > 20.0 { format!("{v:.0}") } else { format!("{v:.2}") };
+        slider_def(ui, "At nothing", &mut l.low, None, lo..=hi, fmt, false);
+        slider_def(ui, "At full", &mut l.high, None, lo..=hi, fmt, false);
+        slider_def(ui, "Response", &mut l.curve, Some(1.0), 0.25..=4.0, |v| if v < 0.95 { format!("early {v:.2}") } else if v > 1.05 { format!("late {v:.2}") } else { "straight".into() }, true)
+            .on_hover_text("Under 1 rises early (sensitive to small signals), over 1 rises late (only big ones move it)");
+        slider_def(ui, "Rise", &mut l.attack_ms, Some(0.0), 0.0..=2000.0, |v| format!("{v:.0} ms"), false).on_hover_text("How fast it follows the signal up");
+        slider_def(ui, "Fall", &mut l.release_ms, Some(150.0), 0.0..=4000.0, |v| format!("{v:.0} ms"), false).on_hover_text("How fast it follows the signal down");
+        slider_def(ui, "Threshold", &mut l.threshold, Some(0.0), 0.0..=1.0, |v| if v <= 0.0 { "off".into() } else { format!("{v:.2}") }, false).on_hover_text("Under it the signal counts as nothing");
+        if l.threshold > 0.0 {
+            slider_def(ui, "Hysteresis", &mut l.hysteresis, Some(0.0), 0.0..=0.5, |v| format!("{v:.2}"), false).on_hover_text("Once over the threshold, it stays on until the signal falls this far under it");
+        }
+        if l.signal.has_confidence() {
+            slider_def(ui, "Only when sure", &mut l.gate, Some(0.0), 0.0..=1.0, |v| if v <= 0.0 { "always".into() } else { format!("{v:.2}") }, false).on_hover_text("Under this confidence the link rests at its value at nothing");
+        }
+        let mut testing = *test >= 0.0;
+        toggle_row(ui, "Test input", &mut testing).on_hover_text("A slider stands in for the music, to try the link");
+        if testing {
+            let mut t = test.max(0.0);
+            slider_def(ui, "Signal", &mut t, None, 0.0..=1.0, |v| format!("{v:.2}"), false);
+            *test = t;
+        } else {
+            *test = -1.0;
+        }
+        hint(ui, &format!("{label} follows {}. The director view (D) shows the signal, what the link makes of it, and the value.", l.signal.label().to_lowercase()));
+    });
 }
 
 impl ShaderVisual {
@@ -2128,6 +2204,15 @@ impl ShaderVisual {
         let mut p = [[0.0f32; 4]; MAX_PARAMS / 4];
         for (i, d) in self.live.params.iter().enumerate().take(MAX_PARAMS) {
             p[i / 4][i % 4] = if d.kind == ParamKind::Button { self.presses.get(&d.id).copied().unwrap_or(0) as f32 } else { d.number(stored.and_then(|o| o.get(&d.id))) };
+        }
+        // Links: a parameter following the music takes its value from it.
+        for l in crate::links::read(layer.params.get(&self.def.id)) {
+            if let Some(i) = self.live.params.iter().take(MAX_PARAMS).position(|d| d.id == l.param) {
+                let run = self.link_runs.entry(l.param.clone()).or_default();
+                let step = l.step(f, self.link_tests.get(&l.param).copied(), run, dt);
+                p[i / 4][i % 4] = step.value;
+                crate::links::record(self.link_owner, &l.param, f.time_s, step);
+            }
         }
         let mut chroma_slow = [[0.0f32; 4]; 3];
         for (i, c) in f.chroma_slow.iter().enumerate() {

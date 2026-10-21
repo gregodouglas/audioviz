@@ -14,6 +14,7 @@ pub mod factory;
 pub mod gpu;
 pub mod gpu_timer;
 pub mod hittest;
+pub mod links;
 pub mod overlays;
 pub mod panel;
 pub mod pictures;

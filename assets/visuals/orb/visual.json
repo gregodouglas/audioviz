@@ -1,0 +1,27 @@
+{
+  "id": "orb",
+  "name": "Textured sphere",
+  "short": "Sphere",
+  "summary": "A marbled sphere that swells and distorts with the bass, its surface boiling slowly, spikes rising with the highs, over its own reflection if you like.",
+  "credit": "After vizz.fm's Textured Sphere (https://vizz.fm). No code used; written fresh.",
+  "hint": "The bass swells the sphere and stirs its surface; each beat gives it a kick; the highs raise spikes. The texture turns with the sphere and flows with the music: marble, bands like a gas giant's, or contour lines. Colours come from the palette.",
+  "items": 3,
+  "triangles": 221184,
+  "antialias": true,
+  "params": [
+    { "id": "size", "label": "Size", "group": "Sphere", "min": 0.2, "max": 1.0, "default": 0.55 },
+    { "id": "spin", "label": "Spin", "group": "Sphere", "min": -2.0, "max": 2.0, "default": 0.3 },
+    { "id": "distort", "label": "Distortion", "group": "Sphere", "min": 0.0, "max": 2.0, "default": 0.8, "help": "How far the surface bulges and dents." },
+    { "id": "detail", "label": "Lumps", "group": "Sphere", "min": 0.5, "max": 5.0, "default": 1.6, "log": true, "help": "Few big lumps or many small ones." },
+    { "id": "spikes", "label": "Spikes", "group": "Sphere", "min": 0.0, "max": 1.0, "default": 0.0, "help": "Sharp ridges that rise with the highs." },
+    { "id": "skin", "label": "Texture", "type": "choice", "group": "Texture", "options": ["Marble", "Bands", "Lines"], "default": "marble", "help": "Marble: swirled veins. Bands: stripes stirred like a gas giant's. Lines: contour lines of the marble, glowing." },
+    { "id": "scale", "label": "Scale", "group": "Texture", "min": 0.5, "max": 6.0, "default": 1.8, "log": true },
+    { "id": "flow", "label": "Flow", "group": "Texture", "min": 0.0, "max": 2.0, "default": 0.5, "help": "How fast the texture swirls, faster with the mids." },
+    { "id": "swell", "label": "Bass swell", "group": "Music", "min": 0.0, "max": 2.0, "default": 1.0, "help": "How much the bass makes the sphere bigger." },
+    { "id": "react", "label": "Bass stir", "group": "Music", "min": 0.0, "max": 2.0, "default": 1.0, "help": "How much the bass deepens the distortion." },
+    { "id": "kick", "label": "Beat kick", "group": "Music", "min": 0.0, "max": 2.0, "default": 0.6 },
+    { "id": "light", "label": "Light", "group": "Look", "min": 0.0, "max": 1.0, "default": 0.6, "help": "How much a light from above left shapes it; at 0 it glows evenly." },
+    { "id": "rim", "label": "Rim glow", "group": "Look", "min": 0.0, "max": 2.0, "default": 0.8 },
+    { "id": "reflection", "label": "Reflection", "group": "Look", "min": 0.0, "max": 1.0, "default": 0.0, "help": "The sphere hovering over a dark floor that mirrors it." }
+  ]
+}

@@ -60,6 +60,7 @@ scenes/Starfield.json 6f6e83ee11d7769b
 scenes/Starfield.json da5f7b79b7670354
 scenes/Studio.json 3266d1f806409187
 scenes/Studio.json 66e9b219a2785c68
+scenes/Textured sphere.json 1bc32239a6f1582b
 scenes/Tunnel.json 405dc4521ce5751b
 scenes/Waves.json 264a255fc93b1c61
 scenes/Waves.json f17cac56fb05722c
@@ -211,6 +212,8 @@ visuals/loop/visual.wgsl bb9af58dbfaceaa3
 visuals/loop/visual.wgsl d9cefb9662170a55
 visuals/meshgrid/visual.json a7a8ab73c3dd9100
 visuals/meshgrid/visual.wgsl 748d37c8bb7a7ab3
+visuals/orb/visual.json 7b533ef486ad41b7
+visuals/orb/visual.wgsl e59399c292525c09
 visuals/polygon/visual.json d64bb9c281a38d14
 visuals/polygon/visual.json f26215cab841c69e
 visuals/polygon/visual.wgsl afd98df47f322ff1

@@ -4,7 +4,7 @@
   "short": "Waves",
   "summary": "Waveform or spectrum rows receding in perspective, the Unknown Pleasures landscape.",
   "credit": "The stacked-waveform landscape made famous by the Unknown Pleasures cover (Peter Saville, after a pulsar plot by Harold Craft): the look only.",
-  "hint": "Each row is one slice of the signal; rows march toward the horizon and hide what is behind them. With a palette, age runs the colours front to back, or level colours the loud rows.",
+  "hint": "Each row is one slice of the signal; rows march toward the horizon and hide what is behind them (or, Solid off, glow through each other). With a palette, age runs the colours front to back, or level colours the loud rows.",
   "items": 10402,
   "triangles": 163200,
   "params": [
@@ -17,9 +17,11 @@
     { "id": "perspective", "label": "Perspective", "group": "Landscape", "min": 0.0, "max": 1.0, "default": 0.6 },
     { "id": "horizon", "label": "Horizon", "group": "Landscape", "min": 0.0, "max": 1.0, "default": 0.72 },
     { "id": "near", "label": "Near edge", "group": "Landscape", "min": 0.0, "max": 1.0, "default": 0.2 },
+    { "id": "solid", "label": "Solid", "type": "toggle", "group": "Landscape", "default": true, "help": "On: each row hides what is behind it. Off: the rows are see-through lines that add up as light, like stacked oscilloscope traces." },
     { "id": "width", "label": "Width", "group": "Line", "min": 0.5, "max": 6.0, "default": 1.5, "unit": "px" },
     { "id": "gain", "label": "Gain", "group": "Line", "min": 0.1, "max": 4.0, "default": 1.0, "log": true },
     { "id": "smooth", "label": "Smoothing", "type": "integer", "group": "Line", "min": 0, "max": 8, "default": 2 },
+    { "id": "glow", "label": "Glow", "group": "Line", "min": 0.0, "max": 1.0, "default": 0.0, "help": "A soft halo round each line." },
     { "id": "fade", "label": "Distance fade", "group": "Line", "min": 0.0, "max": 1.0, "default": 0.7 },
     { "id": "colour", "label": "Palette by", "type": "choice", "group": "Line", "options": ["Age", "Level"], "default": "age" }
   ]

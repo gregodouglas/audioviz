@@ -2,7 +2,8 @@
 // the Unknown Pleasures landscape. A new row is cut every 1/Rate seconds at
 // the front; older rows march toward the horizon, smaller and dimmer. Each
 // row is drawn as a black fill down to its baseline, then its line, far rows
-// first, so every row hides what is behind it.
+// first, so every row hides what is behind it; with Solid off there is no
+// fill and the lines add up as light, like stacked oscilloscope traces.
 //
 // The prepare step keeps the rows (up to 160 of 256 points):
 //   item 0                 (clock seconds owed, newest row's slot, 0, 0)
@@ -177,7 +178,11 @@ fn vertex(i: u32) -> MeshVertex {
     let amp = P.height * scale;
     let a = vec2<f32>(x0, base_y + row_value(slot, seg) * amp);
     let b = vec2<f32>(x1, base_y + row_value(slot, seg + 1u) * amp);
+    let solid = P.solid > 0.5;
     if (part == 0u) {
+        if (!solid) {
+            return v;
+        }
         // The fill: opaque black down to the baseline.
         var p: vec2<f32>;
         switch (vi) {
@@ -203,7 +208,8 @@ fn vertex(i: u32) -> MeshVertex {
     let len = length(d);
     if (len < 1e-4) { d = vec2<f32>(1.0, 0.0); } else { d = d / len; }
     let n = vec2<f32>(-d.y, d.x);
-    let w = P.width * 0.5 + 1.5;
+    // Room round the line for its antialiasing and its glow.
+    let w = P.width * 0.5 + 1.5 + P.glow * 8.0;
     var along: f32;
     var across: f32;
     switch (vi) {
@@ -218,7 +224,8 @@ fn vertex(i: u32) -> MeshVertex {
     let ndc = vec2<f32>(px.x / res.x * 2.0 - 1.0, 1.0 - px.y / res.y * 2.0);
     v.pos = vec4<f32>(from_ndc(ndc), 0.0, 1.0);
     v.colour = vec4<f32>(colour, 1.0);
-    v.data = vec4<f32>(along, across, len, 1.0);
+    // data.w: 1 a solid row's line (covers), 2 a see-through one's (adds).
+    v.data = vec4<f32>(along, across, len, select(2.0, 1.0, solid));
     return v;
 }
 
@@ -230,5 +237,14 @@ fn paint(f: MeshFragment) -> vec4<f32> {
     let dist = length(vec2<f32>(f.data.x - along, f.data.y));
     let half = max(params().width, 0.5) * 0.5;
     let cov = 1.0 - smoothstep(half - 0.5, half + 0.8, dist);
-    return vec4<f32>(f.colour.rgb * cov, cov);
+    let glow = params().glow * 0.35 * exp(-dist * dist / max(16.0 * half * half, 4.0)) * (1.0 - cov);
+    if (f.data.w > 1.5) {
+        // Added light: segments end square, without round caps, which would
+        // overlap the neighbour's body and light every joint twice.
+        if (f.data.x < 0.0 || f.data.x > f.data.z) {
+            return vec4<f32>(0.0);
+        }
+        return vec4<f32>(f.colour.rgb * (cov + glow), 0.0);
+    }
+    return vec4<f32>(f.colour.rgb * (cov + glow), cov);
 }

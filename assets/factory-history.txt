@@ -9,6 +9,7 @@ presets/scope/Fine beam.json ce71f3a303c1edfd
 presets/scope/Long phosphor.json cf0c1e76fb38a328
 presets/starfield/Quiet sky.json 9d839eb910ce8b65
 presets/waves/Spectrum ridge.json 33aa29b02a0eb9c3
+presets/waves/Spectrum ridge.json b0f8362eaa37e191
 presets/waves/Spectrum ridge.json d307ca2c5e853ff5
 presets/wheel/Rays only.json 4a22989164256cb2
 presets/wheel/Rays only.json c3b5644514836c02
@@ -66,6 +67,7 @@ scenes/Textured sphere.json 1bc32239a6f1582b
 scenes/Tunnel.json 405dc4521ce5751b
 scenes/Waves.json 264a255fc93b1c61
 scenes/Waves.json f17cac56fb05722c
+scenes/Wavy form.json a736bc6b06c8e8d2
 visuals/bars/visual.json c8fcd1a7a7f9dbe1
 visuals/bars/visual.wgsl f4ebadd160333d63
 visuals/blackhole/visual.json c56fecbb8618b96a
@@ -257,10 +259,12 @@ visuals/spiral/visual.wgsl 891ffbabb283daba
 visuals/spiral/visual.wgsl a1f7f9f40d422e95
 visuals/tunnel/visual.json 41f0ad52b97683c0
 visuals/tunnel/visual.wgsl 744e250385a74b43
+visuals/waves/visual.json 33c50af9ba2c63db
 visuals/waves/visual.json 51bc9b8a31515303
 visuals/waves/visual.json 5d91a19d5e6c976b
 visuals/waves/visual.wgsl 665fd2e489ad8b96
 visuals/waves/visual.wgsl b489e62bc8465d04
+visuals/waves/visual.wgsl edd481dd870f2872
 visuals/wheel/visual.json 3e12321ce65881ba
 visuals/wheel/visual.json f92248a65301629c
 visuals/wheel/visual.wgsl 7eff940dd6d1d65e

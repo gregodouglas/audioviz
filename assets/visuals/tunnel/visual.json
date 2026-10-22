@@ -1,0 +1,22 @@
+{
+  "id": "tunnel",
+  "name": "Audio tunnel",
+  "short": "Tunnel",
+  "summary": "Rings of light rush toward you down a winding tunnel, each shaped by the spectrum at the moment it was born.",
+  "credit": "After vizz.fm's Audio Tunnel (https://vizz.fm). No code used; written fresh.",
+  "hint": "A new ring is born every Spacing at the far end, shaped by the spectrum then (the lows at the top, mirrored down both sides), and travels toward you, faster with the energy and on each beat. The tunnel winds by Wind and turns by Twist.",
+  "items": 578,
+  "line": 8256,
+  "params": [
+    { "id": "rings", "label": "Rings", "type": "integer", "group": "Tunnel", "min": 8, "max": 64, "default": 40 },
+    { "id": "spacing", "label": "Spacing", "group": "Tunnel", "min": 0.05, "max": 0.6, "default": 0.18 },
+    { "id": "speed", "label": "Speed", "group": "Tunnel", "min": 0.1, "max": 4.0, "default": 1.0, "log": true },
+    { "id": "shape", "label": "Spectrum shape", "group": "Tunnel", "min": 0.0, "max": 1.5, "default": 0.9, "help": "How far the spectrum pushes each ring out." },
+    { "id": "wind", "label": "Wind", "group": "Tunnel", "min": 0.0, "max": 1.0, "default": 0.4, "help": "How much the tunnel curves away as it goes." },
+    { "id": "twist", "label": "Twist", "group": "Tunnel", "min": -2.0, "max": 2.0, "default": 0.3 },
+    { "id": "kick", "label": "Beat kick", "group": "Music", "min": 0.0, "max": 2.0, "default": 1.0, "help": "How much each beat surges the rings forward." },
+    { "id": "width", "label": "Line width", "group": "Look", "min": 0.5, "max": 6.0, "default": 2.0, "unit": "px" },
+    { "id": "fog", "label": "Fog", "group": "Look", "min": 0.0, "max": 1.0, "default": 0.6, "help": "How far rings fade with distance." },
+    { "id": "colouring", "label": "Colour by", "type": "choice", "group": "Look", "options": ["Age", "Angle", "Level"], "values": ["age", "angle", "level"], "default": "age" }
+  ]
+}

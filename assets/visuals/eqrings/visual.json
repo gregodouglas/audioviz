@@ -1,0 +1,23 @@
+{
+  "id": "eqrings",
+  "name": "Equalizer rings",
+  "short": "EQ rings",
+  "summary": "Concentric rings of equalizer dashes turning round a glowing core, each ring its own slice of the spectrum.",
+  "credit": "After vizz.fm's Equalizer Rings (https://vizz.fm). No code used; written fresh.",
+  "hint": "The innermost ring is the lows, the outermost the highs; round each ring its dashes thicken with their part of that slice (mirrored about the top). Neighbouring rings turn opposite ways; the core swirls and swells with the bass.",
+  "items": 1,
+  "params": [
+    { "id": "rings", "label": "Rings", "type": "integer", "group": "Rings", "min": 2, "max": 12, "default": 6 },
+    { "id": "dashes", "label": "Dashes", "type": "integer", "group": "Rings", "min": 12, "max": 128, "default": 48 },
+    { "id": "inner", "label": "Inner radius", "group": "Rings", "min": 0.05, "max": 0.6, "default": 0.22 },
+    { "id": "outer", "label": "Outer radius", "group": "Rings", "min": 0.4, "max": 1.6, "default": 0.95 },
+    { "id": "gap", "label": "Gap", "group": "Rings", "min": 0.0, "max": 0.8, "default": 0.35 },
+    { "id": "spin", "label": "Spin", "group": "Rings", "min": 0.0, "max": 2.0, "default": 0.4 },
+    { "id": "core", "label": "Core", "group": "Look", "min": 0.0, "max": 2.0, "default": 1.0, "help": "The swirling core's brightness." },
+    { "id": "glow", "label": "Glow", "group": "Look", "min": 0.0, "max": 2.0, "default": 0.7 },
+    { "id": "colouring", "label": "Colour by", "type": "choice", "group": "Look", "options": ["Ring", "Level", "Angle"], "values": ["ring", "level", "angle"], "default": "ring" },
+    { "id": "gain", "label": "Gain", "group": "Music", "min": 0.25, "max": 4.0, "default": 1.0, "log": true, "unit": "x" },
+    { "id": "range", "label": "Range", "group": "Music", "min": 18.0, "max": 72.0, "default": 40.0, "unit": "dB", "decimals": 0 },
+    { "id": "pulse", "label": "Bass pulse", "group": "Music", "min": 0.0, "max": 2.0, "default": 1.0 }
+  ]
+}

@@ -19,10 +19,13 @@ scenes/Deep field.json 2ac1b63faf77d969
 scenes/Deep field.json 654b5fabf89e6fed
 scenes/Deep sea.json 73387f84016fdf87
 scenes/Deep sea.json ba043e924a162e3c
+scenes/Dot grid.json 894008f3ec1c11e7
+scenes/EQ rings.json 9da261406cfe6667
 scenes/Eclipse.json 5d27bd8aff9e5f85
 scenes/Eclipse.json b88e1fe1ea1400b6
 scenes/Giants.json 7af8d9a15f4e77d1
 scenes/Giants.json dccbd49a91cec7a0
+scenes/Hallway.json 839b1695bfeec61b
 scenes/Harmonograph.json fefa1b43690af818
 scenes/Jellyfish.json 2b12d0c4bed87def
 scenes/Jellyfish.json 699e2ac77c171828
@@ -54,6 +57,7 @@ scenes/Starfield.json 6f6e83ee11d7769b
 scenes/Starfield.json da5f7b79b7670354
 scenes/Studio.json 3266d1f806409187
 scenes/Studio.json 66e9b219a2785c68
+scenes/Tunnel.json 405dc4521ce5751b
 scenes/Waves.json 264a255fc93b1c61
 scenes/Waves.json f17cac56fb05722c
 visuals/bars/visual.json c8fcd1a7a7f9dbe1
@@ -67,12 +71,18 @@ visuals/comet/visual.wgsl d94605cdbfdd7a55
 visuals/crystal/visual.json ce070f972a683422
 visuals/crystal/visual.wgsl 9086feb3bd2de539
 visuals/crystal/visual.wgsl 95b0a0089734f49d
+visuals/dotgrid/visual.json fb82139a54086f21
+visuals/dotgrid/visual.wgsl 5ad534bc924338b7
 visuals/eclipse/visual.json 3b64408c51cb4c85
 visuals/eclipse/visual.json 4e2625cb25368fc8
 visuals/eclipse/visual.json bd94daa2bfb77c12
 visuals/eclipse/visual.wgsl a32c859c68c065d3
 visuals/eclipse/visual.wgsl b063ce848062b898
 visuals/eclipse/visual.wgsl d19bd98f6a6ffb3d
+visuals/eqrings/visual.json 628c9fee49edbb41
+visuals/eqrings/visual.wgsl b89623259c6e1253
+visuals/hallway/visual.json 674e6d4e49b49041
+visuals/hallway/visual.wgsl b6d0b7ef75cdd0d7
 visuals/harmonograph/visual.json 548d04f846e1fcb4
 visuals/harmonograph/visual.json 5bd9ce1822b44d0e
 visuals/harmonograph/visual.wgsl 3ea8bf81525e9a66
@@ -223,6 +233,8 @@ visuals/spiral/visual.json 034bff86ec31bd3a
 visuals/spiral/visual.json 5fc9c960e0a2b7b2
 visuals/spiral/visual.wgsl 5356d77738139725
 visuals/spiral/visual.wgsl a1f7f9f40d422e95
+visuals/tunnel/visual.json 41f0ad52b97683c0
+visuals/tunnel/visual.wgsl 744e250385a74b43
 visuals/waves/visual.json 51bc9b8a31515303
 visuals/waves/visual.json 5d91a19d5e6c976b
 visuals/waves/visual.wgsl 665fd2e489ad8b96

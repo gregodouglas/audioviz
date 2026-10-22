@@ -1,0 +1,234 @@
+{
+  "name": "Hallway",
+  "tint": [
+    0.4,
+    1.0,
+    0.55
+  ],
+  "tint_from_art": false,
+  "picture": {
+    "exposure": 1.0,
+    "auto_exposure": true,
+    "bloom": 0.25,
+    "grain": 0.15,
+    "look": "neon",
+    "saturation": 1.0
+  },
+  "layers": [
+    {
+      "visual": "hallway",
+      "enabled": true,
+      "opacity": 1.0,
+      "blend": "add",
+      "band": {
+        "enabled": false,
+        "lo_hz": 20.0,
+        "hi_hz": 400.0
+      },
+      "tint": {
+        "mode": "scene",
+        "color": [
+          0.4,
+          1.0,
+          0.55
+        ]
+      },
+      "palette": {
+        "name": "rave",
+        "custom": [
+          {
+            "t": 0.0,
+            "rgb": [
+              0.101960786,
+              0.043137256,
+              0.23921569
+            ]
+          },
+          {
+            "t": 0.5,
+            "rgb": [
+              0.4,
+              1.0,
+              0.54901963
+            ]
+          },
+          {
+            "t": 1.0,
+            "rgb": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "amount": 1.0,
+        "cycle": 0.0,
+        "cyclic": true,
+        "react": 1.0
+      },
+      "modifiers": [
+        {
+          "kind": "glow",
+          "enabled": true,
+          "mix": 1.0,
+          "band": null,
+          "pinned": true,
+          "amount": 0.8,
+          "size": 1.0,
+          "threshold": 0.2,
+          "react": 0.5
+        }
+      ],
+      "director": {
+        "mode": "manual",
+        "every": 4,
+        "live": 1,
+        "rest": 0.5,
+        "fade_s": 0.6
+      },
+      "hallway": {}
+    },
+    {
+      "visual": "ribbons",
+      "enabled": false,
+      "opacity": 0.4,
+      "blend": "add",
+      "band": {
+        "enabled": false,
+        "lo_hz": 20.0,
+        "hi_hz": 400.0
+      },
+      "tint": {
+        "mode": "scene",
+        "color": [
+          0.4,
+          1.0,
+          0.55
+        ]
+      },
+      "palette": {
+        "name": "none",
+        "custom": [
+          {
+            "t": 0.0,
+            "rgb": [
+              0.101960786,
+              0.043137256,
+              0.23921569
+            ]
+          },
+          {
+            "t": 0.5,
+            "rgb": [
+              0.4,
+              1.0,
+              0.54901963
+            ]
+          },
+          {
+            "t": 1.0,
+            "rgb": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "amount": 1.0,
+        "cycle": 0.0,
+        "cyclic": true,
+        "react": 1.0
+      },
+      "modifiers": [],
+      "director": {
+        "mode": "manual",
+        "every": 4,
+        "live": 1,
+        "rest": 0.5,
+        "fade_s": 0.6
+      },
+      "ribbons": {
+        "speed": 0.3,
+        "scale": 1.5,
+        "curl": 1.0,
+        "vortex": 1.0,
+        "width": 1.0,
+        "intensity": 1.0,
+        "persistence": 0.3,
+        "saturation": 0.45,
+        "count": 12000,
+        "spread": 0.3
+      }
+    },
+    {
+      "visual": "scope",
+      "enabled": false,
+      "opacity": 0.5,
+      "blend": "add",
+      "band": {
+        "enabled": false,
+        "lo_hz": 20.0,
+        "hi_hz": 400.0
+      },
+      "tint": {
+        "mode": "scene",
+        "color": [
+          0.4,
+          1.0,
+          0.55
+        ]
+      },
+      "palette": {
+        "name": "none",
+        "custom": [
+          {
+            "t": 0.0,
+            "rgb": [
+              0.101960786,
+              0.043137256,
+              0.23921569
+            ]
+          },
+          {
+            "t": 0.5,
+            "rgb": [
+              0.4,
+              1.0,
+              0.54901963
+            ]
+          },
+          {
+            "t": 1.0,
+            "rgb": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "amount": 1.0,
+        "cycle": 0.0,
+        "cyclic": true,
+        "react": 1.0
+      },
+      "modifiers": [],
+      "director": {
+        "mode": "manual",
+        "every": 4,
+        "live": 1,
+        "rest": 0.5,
+        "fade_s": 0.6
+      },
+      "scope": {
+        "colour": "key",
+        "gain": 0.85,
+        "auto_gain": true,
+        "rotation_deg": 45.0,
+        "beam_width": 1.2,
+        "beam_intensity": 1.0,
+        "persistence": 0.05,
+        "beat_pulse": 0.3
+      }
+    }
+  ]
+}

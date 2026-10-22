@@ -1,0 +1,19 @@
+{
+  "id": "dotgrid",
+  "name": "Dot grid",
+  "short": "Dots",
+  "summary": "A grid of dots that swell in waves spreading out from the middle: each kick a ring travelling outward.",
+  "credit": "After vizz.fm's Dot Grid (https://vizz.fm). No code used; written fresh.",
+  "hint": "Waves: each dot shows the sound as it was a moment ago, the farther from the middle the longer ago, so every kick spreads out as a ring (the bass sets the size, the highs the colour). Spectrum: distance from the middle is frequency, the lows in the middle.",
+  "items": 241,
+  "params": [
+    { "id": "mode", "label": "Mode", "type": "choice", "group": "Grid", "options": ["Waves", "Spectrum"], "default": "waves" },
+    { "id": "spacing", "label": "Spacing", "group": "Grid", "min": 0.02, "max": 0.2, "default": 0.07 },
+    { "id": "speed", "label": "Wave speed", "group": "Grid", "min": 0.2, "max": 3.0, "default": 0.9, "log": true, "help": "How fast the waves spread, in heights of the frame a second." },
+    { "id": "shape", "label": "Dots", "type": "choice", "group": "Grid", "options": ["Round", "Square", "Diamond"], "default": "round" },
+    { "id": "size", "label": "Size", "group": "Look", "min": 0.2, "max": 1.5, "default": 0.85 },
+    { "id": "rest", "label": "At rest", "group": "Look", "min": 0.0, "max": 0.6, "default": 0.12, "help": "How big a dot is in silence, as a share of a full one." },
+    { "id": "glow", "label": "Glow", "group": "Look", "min": 0.0, "max": 2.0, "default": 0.5 },
+    { "id": "gain", "label": "Gain", "group": "Music", "min": 0.25, "max": 4.0, "default": 1.0, "log": true, "unit": "x" }
+  ]
+}

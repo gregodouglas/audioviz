@@ -5,14 +5,20 @@
 //! all), the beat clock (phase, confidence, the beats as a grid through every
 //! lane) and the level. It reads the engine's history, so it can be frozen
 //! (F), dragged back over the last five minutes and zoomed (the wheel).
-//! D opens and closes it.
+//! D opens and closes it. The spectrogram's frequency axis is linear (the
+//! default: the highs in detail, where pictures hidden in a track's spectrum
+//! live) or logarithmic (L, or click the scale's name); the wheel over its
+//! frequency gutter zooms the range, a drag there moves it, a double click
+//! resets it. Dragging the view's top edge sets its height, and dragging the
+//! line under the spectrogram its share.
 
 use std::collections::VecDeque;
 
-use audioviz_analysis::history::{HopRecord, RECORD_BANDS, SPEC_FLOOR_DB, SPEC_HI_HZ, SPEC_LO_HZ, SPEC_ROWS};
+use audioviz_analysis::history::{HopRecord, LIN_HI_HZ, LIN_ROWS, RECORD_BANDS, SPEC_FLOOR_DB, SPEC_HI_HZ, SPEC_LO_HZ, SPEC_ROWS};
 use audioviz_audio::CaptureHealth;
 use egui::{Align2, Color32, ColorImage, Pos2, Rect, Sense, Shape, Stroke, TextureHandle, TextureOptions, pos2, vec2};
 
+use crate::settings::DirectorView;
 use crate::theme::{self, BG, HAIRLINE, TEXT, TEXT_2, TEXT_3};
 
 /// Seconds per analysis hop (512 samples at 48 kHz).
@@ -107,6 +113,8 @@ impl History {
 
 pub struct ViewState {
     pub open: bool,
+    /// Layout and scale, saved with the settings.
+    pub prefs: DirectorView,
     /// A line for the header for a few seconds (a session saved, or why not).
     pub notice: Option<(String, std::time::Instant)>,
     /// The end of the view when frozen; live (following the present) when None.
@@ -114,9 +122,11 @@ pub struct ViewState {
     span_s: f64,
     lut: [Color32; 256],
     spec_img: ColorImage,
+    lin_img: ColorImage,
     band_img: ColorImage,
     attack_img: ColorImage,
     spec_tex: Option<TextureHandle>,
+    lin_tex: Option<TextureHandle>,
     band_tex: Option<TextureHandle>,
     attack_tex: Option<TextureHandle>,
     /// The images are rings of columns pinned to time: column k holds the
@@ -129,20 +139,23 @@ pub struct ViewState {
 }
 
 impl ViewState {
-    pub fn new() -> Self {
+    pub fn new(prefs: DirectorView) -> Self {
         // AUDIOVIZ_AUDIO_VIEW=1 opens it at start (for snapshots); a number
         // of seconds from 2 opens it that wide.
         let env = std::env::var("AUDIOVIZ_AUDIO_VIEW").ok().and_then(|v| v.parse::<f64>().ok());
         Self {
             open: env.is_some_and(|v| v >= 1.0),
+            prefs,
             notice: None,
             frozen_at: None,
             span_s: env.filter(|v| *v >= 2.0).map_or(10.0, |v| v.min(120.0)),
             lut: heat_lut(),
             spec_img: ColorImage::filled([COLS, SPEC_ROWS], Color32::BLACK),
+            lin_img: ColorImage::filled([COLS, LIN_ROWS], Color32::BLACK),
             band_img: ColorImage::filled([COLS, RECORD_BANDS], Color32::BLACK),
             attack_img: ColorImage::filled([COLS, RECORD_BANDS], Color32::BLACK),
             spec_tex: None,
+            lin_tex: None,
             band_tex: None,
             attack_tex: None,
             ring_cw: 0.0,
@@ -171,6 +184,10 @@ impl ViewState {
             let v = range.clone().map(|i| history.records[i].spectrum[row]).max().unwrap_or(0);
             self.spec_img.pixels[(SPEC_ROWS - 1 - row) * COLS + slot] = self.lut[v as usize];
         }
+        for row in 0..LIN_ROWS {
+            let v = range.clone().map(|i| history.records[i].linear[row]).max().unwrap_or(0);
+            self.lin_img.pixels[(LIN_ROWS - 1 - row) * COLS + slot] = self.lut[v as usize];
+        }
         for b in 0..RECORD_BANDS {
             let row = (RECORD_BANDS - 1 - b) * COLS + slot;
             let v = range.clone().map(|i| history.records[i].levels[b]).fold(0.0f32, f32::max);
@@ -191,8 +208,9 @@ impl ViewState {
     /// of the right edge (the panel) and `bottom` above it (the strip).
     pub fn draw(&mut self, ctx: &egui::Context, history: &History, health: &CaptureHealth, right: f32, bottom: f32) {
         let screen = ctx.content_rect();
-        let h = (screen.height() * 0.5).clamp(260.0, 560.0);
-        let rect = Rect::from_min_max(pos2(screen.left(), screen.bottom() - bottom - h), pos2(screen.right() - right, screen.bottom() - bottom));
+        let floor = screen.bottom() - bottom;
+        let h = (screen.height() * self.prefs.height).clamp(200.0, (floor - screen.top() - 40.0).max(200.0));
+        let rect = Rect::from_min_max(pos2(screen.left(), floor - h), pos2(screen.right() - right, floor));
         egui::Area::new(egui::Id::unique("audio-view")).fixed_pos(rect.min).order(egui::Order::Foreground).show(ctx, |ui| {
             let (rect, response) = ui.allocate_exact_size(rect.size(), Sense::click_and_drag());
             let p = ui.painter_at(rect);
@@ -201,15 +219,68 @@ impl ViewState {
 
             let live_end = history.latest_time();
             let earliest = history.first_time() + self.span_s.min(live_end - history.first_time());
-            // Wheel zooms, a drag scrolls back (and freezes); back at the present it follows again.
-            if response.hovered() {
+            let plot = Rect::from_min_max(pos2(rect.left() + GUTTER, rect.top() + 24.0), pos2(rect.right() - 8.0, rect.bottom() - 6.0));
+            // Lanes. A link in focus gets a lane of its own at the bottom.
+            let has_probe = crate::links::PROBE.lock().ok().is_some_and(|p| p.is_some());
+            let lanes = lanes(plot, self.prefs.spec_share, has_probe);
+            let (spec_r, band_r, attack_r, onset_r, beat_r, level_r, context_r) = (lanes[0], lanes[1], lanes[2], lanes[3], lanes[4], lanes[5], lanes[6]);
+
+            // The view's top edge sets its height; the line under the spectrogram its share.
+            let top_handle = Rect::from_min_max(rect.left_top(), pos2(rect.right(), rect.top() + 6.0));
+            let top = ui.interact(top_handle, ui.scope_id().with("height"), Sense::drag());
+            if top.hovered() || top.dragged() {
+                ctx.set_cursor_icon(egui::CursorIcon::ResizeVertical);
+                p.line_segment([rect.left_top(), rect.right_top()], Stroke::new(2.0, theme::ACCENT));
+            }
+            if let (true, Some(pt)) = (top.dragged(), top.interact_pointer_pos()) {
+                self.prefs.height = ((floor - pt.y) / screen.height()).clamp(0.2, 0.92);
+            }
+            let split_handle = Rect::from_min_max(pos2(plot.left(), spec_r.bottom() - 2.0), pos2(plot.right(), spec_r.bottom() + 4.0));
+            let share = ui.interact(split_handle, ui.scope_id().with("spec-share"), Sense::drag());
+            if share.hovered() || share.dragged() {
+                ctx.set_cursor_icon(egui::CursorIcon::ResizeVertical);
+                p.line_segment([pos2(plot.left(), spec_r.bottom() + 1.0), pos2(plot.right(), spec_r.bottom() + 1.0)], Stroke::new(2.0, theme::ACCENT));
+            }
+            if let (true, Some(pt)) = (share.dragged(), share.interact_pointer_pos()) {
+                self.prefs.spec_share = ((pt.y - plot.top()) / plot.height()).clamp(0.12, 0.8);
+            }
+            // The scale's name, at the top of the frequency gutter, switches it.
+            let scale_r = Rect::from_min_size(pos2(rect.left() + 4.0, spec_r.top()), vec2(GUTTER - 10.0, 14.0));
+            let scale = ui.interact(scale_r, ui.scope_id().with("scale"), Sense::click());
+            if scale.clicked() {
+                self.prefs.linear = !self.prefs.linear;
+            }
+            let scale = scale.on_hover_text("Linear: every hertz the same height (the highs in detail). Log: every octave the same. L switches.");
+            // The frequency gutter: the wheel zooms the range, a drag moves it, a double click resets it.
+            let gutter_r = Rect::from_min_max(pos2(rect.left(), spec_r.top() + 15.0), pos2(spec_r.left(), spec_r.bottom()));
+            let gutter = ui.interact(gutter_r, ui.scope_id().with("freq"), Sense::click_and_drag());
+            let axis = FreqAxis::of(&self.prefs, spec_r);
+            if gutter.hovered() {
+                ctx.set_cursor_icon(egui::CursorIcon::ResizeVertical);
+                let dy = ui.input(|i| i.smooth_scroll_delta.y);
+                if dy != 0.0 {
+                    if let Some(pt) = gutter.hover_pos() {
+                        axis.zoom(&mut self.prefs, pt.y, (-dy * 0.003).exp());
+                    }
+                }
+            }
+            if gutter.dragged() {
+                axis.pan(&mut self.prefs, gutter.drag_delta().y);
+            }
+            if gutter.double_clicked() {
+                axis.reset(&mut self.prefs);
+            }
+            let gutter_busy = gutter.hovered() || gutter.dragged();
+            let axis = FreqAxis::of(&self.prefs, spec_r);
+
+            // Wheel zooms time, a drag scrolls back (and freezes); back at the present it follows again.
+            if response.hovered() && !gutter_busy {
                 let dy = ui.input(|i| i.smooth_scroll_delta.y);
                 if dy != 0.0 {
                     self.span_s = (self.span_s * (-dy as f64 * 0.002).exp()).clamp(2.0, 120.0);
                 }
             }
-            let plot = Rect::from_min_max(pos2(rect.left() + GUTTER, rect.top() + 24.0), pos2(rect.right() - 8.0, rect.bottom() - 6.0));
-            if response.dragged() {
+            if response.dragged() && !gutter_busy && !top.dragged() && !share.dragged() {
                 let dx = response.drag_delta().x as f64;
                 let end = self.frozen_at.unwrap_or(live_end) - dx / plot.width() as f64 * self.span_s;
                 self.frozen_at = if end >= live_end { None } else { Some(end.max(earliest)) };
@@ -236,17 +307,13 @@ impl ViewState {
                 p.rect_filled(Rect::from_min_size(at - vec2(8.0, 2.0), g.size() + vec2(12.0, 4.0)), 3.0, BG);
                 p.galley(at, g, theme::ACCENT);
             } else {
-                let keys = p.layout_no_wrap("D close · F freeze · S save session · drag back · wheel zoom".into(), theme::mono(11.0), TEXT_3);
+                let keys = p.layout_no_wrap("D close · F freeze · S save session · L lin/log · drag back · wheel zoom".into(), theme::mono(11.0), TEXT_3);
                 if head_w + keys.size().x + 40.0 < rect.width() {
                     p.galley(pos2(rect.right() - 10.0 - keys.size().x, rect.top() + 12.0 - keys.size().y * 0.5), keys, TEXT_3);
                 }
             }
 
-            // Lanes.
-            // A link in focus gets a lane of its own at the bottom.
             let probe = crate::links::PROBE.lock().ok().and_then(|p| p.as_ref().map(|p| (p.label.clone(), p.low, p.high, p.samples.iter().filter(|(t, _)| *t >= start - 1.0).copied().collect::<Vec<_>>())));
-            let lanes = if probe.is_some() { split(plot, &[0.26, 0.09, 0.06, 0.23, 0.08, 0.08, 0.09, 0.11]) } else { split(plot, &[0.29, 0.10, 0.07, 0.26, 0.09, 0.09, 0.10]) };
-            let (spec_r, band_r, attack_r, onset_r, beat_r, level_r, context_r) = (lanes[0], lanes[1], lanes[2], lanes[3], lanes[4], lanes[5], lanes[6]);
             let span = self.span_s;
             let x_of = |t: f64| plot.left() + ((t - start) / span) as f32 * plot.width();
             // The records under each column; a column finer than a hop shows
@@ -292,7 +359,13 @@ impl ViewState {
                 self.fill_column(history, slot, k, cw, live_end);
                 dirty.push(slot);
             }
-            let spec_tex = upload(ctx, &mut self.spec_tex, "audio-view-spec", &self.spec_img, &dirty);
+            let spec_tex = if self.prefs.linear { upload(ctx, &mut self.lin_tex, "audio-view-linear", &self.lin_img, &dirty) } else { upload(ctx, &mut self.spec_tex, "audio-view-spec", &self.spec_img, &dirty) };
+            // The other spectrogram keeps up too, so switching scales shows it at once.
+            if self.prefs.linear {
+                upload(ctx, &mut self.spec_tex, "audio-view-spec", &self.spec_img, &dirty);
+            } else {
+                upload(ctx, &mut self.lin_tex, "audio-view-linear", &self.lin_img, &dirty);
+            }
             let band_tex = upload(ctx, &mut self.band_tex, "audio-view-bands", &self.band_img, &dirty);
             let attack_tex = upload(ctx, &mut self.attack_tex, "audio-view-attacks", &self.attack_img, &dirty);
             // Time t sits at u = t / cw / COLS (the texture repeats); a whole
@@ -300,19 +373,21 @@ impl ViewState {
             let base = (k_first - k_first.rem_euclid(COLS as i64)) as f64;
             let u = |t: f64| ((t / cw - base) / COLS as f64) as f32;
             let uv = Rect::from_min_max(pos2(u(start), 0.0), pos2(u(end), 1.0));
-            p.image(spec_tex, spec_r, uv, Color32::WHITE);
+            // The spectrogram shows the axis's frequency range of its image.
+            let (v0, v1) = axis.image_v();
+            p.image(spec_tex, spec_r, Rect::from_min_max(pos2(uv.min.x, v0), pos2(uv.max.x, v1)), Color32::WHITE);
             p.image(band_tex, band_r, uv, Color32::WHITE);
             p.image(attack_tex, attack_r, uv, Color32::WHITE);
-            // Frequency guides on the spectrogram.
-            for hz in [50.0f32, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0] {
-                let f = (hz.ln() - SPEC_LO_HZ.ln()) / (SPEC_HI_HZ.ln() - SPEC_LO_HZ.ln());
-                let y = spec_r.bottom() - f * spec_r.height();
+            // Frequency guides on the spectrogram, the scale's name and the dB range.
+            for hz in axis.guides() {
+                let y = axis.y_of(hz);
                 p.line_segment([pos2(spec_r.left(), y), pos2(spec_r.left() + 6.0, y)], Stroke::new(1.0, TEXT_3));
                 let label = if hz >= 1000.0 { format!("{}k", hz / 1000.0) } else { format!("{hz}") };
                 p.text(pos2(spec_r.left() - 6.0, y), Align2::RIGHT_CENTER, label, theme::mono(9.0), TEXT_3);
             }
-            p.text(pos2(spec_r.left() - GUTTER + 8.0, spec_r.bottom()), Align2::LEFT_BOTTOM, format!("{:.0} dB", SPEC_FLOOR_DB), theme::mono(9.0), TEXT_3);
-            p.text(pos2(spec_r.left() - GUTTER + 8.0, spec_r.top()), Align2::LEFT_TOP, "0 dB", theme::mono(9.0), TEXT_3);
+            let scale_c = if scale.hovered() { TEXT } else { theme::ACCENT };
+            p.text(scale_r.left_top(), Align2::LEFT_TOP, if self.prefs.linear { "Linear" } else { "Log" }, theme::sans(10.5), scale_c);
+            p.text(pos2(spec_r.left() - GUTTER + 8.0, spec_r.bottom()), Align2::LEFT_BOTTOM, format!("{:.0}..0 dB", SPEC_FLOOR_DB), theme::mono(9.0), TEXT_3);
             lane_label(&p, band_r, "Levels");
             lane_label(&p, attack_r, "Attacks");
 
@@ -460,8 +535,7 @@ impl ViewState {
                 let t = start + ((pt.x - plot.left()) / plot.width()) as f64 * self.span_s;
                 if let Some(h) = history.at(t) {
                     p.line_segment([pos2(pt.x, plot.top()), pos2(pt.x, plot.bottom())], Stroke::new(1.0, theme::with_alpha(TEXT, 120)));
-                    let f = (spec_r.bottom() - pt.y) / spec_r.height();
-                    let mut hz = if spec_r.contains(pt) { format!(" · {:.0} Hz", (SPEC_LO_HZ.ln() + f * (SPEC_HI_HZ.ln() - SPEC_LO_HZ.ln())).exp()) } else { String::new() };
+                    let mut hz = if spec_r.contains(pt) { format!(" · {:.0} Hz", axis.hz_at(pt.y)) } else { String::new() };
                     // Over the band lanes: that band's three values.
                     for r in [band_r, attack_r] {
                         if r.contains(pt) {
@@ -509,6 +583,121 @@ fn upload(ctx: &egui::Context, tex: &mut Option<TextureHandle>, name: &str, img:
         }
     }
     tex.as_ref().map_or(egui::TextureId::default(), TextureHandle::id)
+}
+
+/// The lanes: the spectrogram's share of the plot first, the others sharing
+/// the rest as they always have, a link lane last when one is in focus.
+fn lanes(plot: Rect, spec_share: f32, probe: bool) -> Vec<Rect> {
+    let rest: &[f32] = if probe { &[0.09, 0.06, 0.23, 0.08, 0.08, 0.09, 0.11] } else { &[0.10, 0.07, 0.26, 0.09, 0.09, 0.10] };
+    let total: f32 = rest.iter().sum();
+    let s = spec_share.clamp(0.05, 0.95);
+    let fractions: Vec<f32> = std::iter::once(s).chain(rest.iter().map(|f| f / total * (1.0 - s))).collect();
+    split(plot, &fractions)
+}
+
+/// The spectrogram's frequency axis: its scale and range and the lane it
+/// is drawn in.
+struct FreqAxis {
+    linear: bool,
+    lo: f32,
+    hi: f32,
+    lane: Rect,
+}
+
+impl FreqAxis {
+    fn of(prefs: &DirectorView, lane: Rect) -> Self {
+        let (lo, hi) = if prefs.linear { (prefs.lin_lo_hz, prefs.lin_hi_hz) } else { (prefs.log_lo_hz, prefs.log_hi_hz) };
+        Self { linear: prefs.linear, lo, hi, lane }
+    }
+
+    /// Hertz to the scale's own measure (linear, or ln).
+    fn m(&self, hz: f32) -> f32 {
+        if self.linear { hz } else { hz.max(1.0).ln() }
+    }
+
+    fn unm(&self, m: f32) -> f32 {
+        if self.linear { m } else { m.exp() }
+    }
+
+    fn y_of(&self, hz: f32) -> f32 {
+        let f = (self.m(hz) - self.m(self.lo)) / (self.m(self.hi) - self.m(self.lo)).max(1e-6);
+        self.lane.bottom() - f * self.lane.height()
+    }
+
+    fn hz_at(&self, y: f32) -> f32 {
+        let f = (self.lane.bottom() - y) / self.lane.height();
+        self.unm(self.m(self.lo) + f * (self.m(self.hi) - self.m(self.lo)))
+    }
+
+    /// The image's v range for the range shown (the image's top row is the
+    /// highest frequency).
+    fn image_v(&self) -> (f32, f32) {
+        if self.linear {
+            (1.0 - self.hi / LIN_HI_HZ, 1.0 - self.lo / LIN_HI_HZ)
+        } else {
+            let span = SPEC_HI_HZ.ln() - SPEC_LO_HZ.ln();
+            let v = |hz: f32| 1.0 - (hz.ln() - SPEC_LO_HZ.ln()) / span;
+            (v(self.hi), v(self.lo))
+        }
+    }
+
+    /// The scale's limits and the narrowest range it shows.
+    fn limits(&self) -> (f32, f32, f32) {
+        if self.linear { (0.0, LIN_HI_HZ, 500.0) } else { (SPEC_LO_HZ.ln(), SPEC_HI_HZ.ln(), 1.5f32.ln()) }
+    }
+
+    fn set(&self, prefs: &mut DirectorView, m_lo: f32, m_hi: f32) {
+        let (min, max, narrowest) = self.limits();
+        let width = (m_hi - m_lo).clamp(narrowest, max - min);
+        let lo = m_lo.clamp(min, max - width);
+        let (lo, hi) = (self.unm(lo), self.unm(lo + width));
+        if self.linear {
+            (prefs.lin_lo_hz, prefs.lin_hi_hz) = (lo, hi);
+        } else {
+            (prefs.log_lo_hz, prefs.log_hi_hz) = (lo, hi);
+        }
+    }
+
+    /// Zooms by `factor` (under 1 narrows) about the frequency at `y`.
+    fn zoom(&self, prefs: &mut DirectorView, y: f32, factor: f32) {
+        let at = self.m(self.hz_at(y));
+        let (lo, hi) = (self.m(self.lo), self.m(self.hi));
+        self.set(prefs, at - (at - lo) * factor, at + (hi - at) * factor);
+    }
+
+    /// Moves the range by a drag of `dy` points (down shows higher).
+    fn pan(&self, prefs: &mut DirectorView, dy: f32) {
+        let per_point = (self.m(self.hi) - self.m(self.lo)) / self.lane.height().max(1.0);
+        self.set(prefs, self.m(self.lo) + dy * per_point, self.m(self.hi) + dy * per_point);
+    }
+
+    fn reset(&self, prefs: &mut DirectorView) {
+        let d = DirectorView::default();
+        if self.linear {
+            (prefs.lin_lo_hz, prefs.lin_hi_hz) = (d.lin_lo_hz, d.lin_hi_hz);
+        } else {
+            (prefs.log_lo_hz, prefs.log_hi_hz) = (d.log_lo_hz, d.log_hi_hz);
+        }
+    }
+
+    /// Where to put labelled guides: round numbers, about five to nine of them.
+    fn guides(&self) -> Vec<f32> {
+        if self.linear {
+            let span = self.hi - self.lo;
+            let step = [50.0f32, 100.0, 200.0, 250.0, 500.0, 1000.0, 2000.0, 2500.0, 5000.0].into_iter().find(|s| span / s <= 9.0).unwrap_or(5000.0);
+            let first = (self.lo / step).ceil() as i32;
+            let last = (self.hi / step).floor() as i32;
+            (first..=last).map(|k| k as f32 * step).filter(|hz| *hz > self.lo + 1.0).collect()
+        } else {
+            let all: Vec<f32> = [10.0f32, 100.0, 1000.0, 10_000.0].iter().flat_map(|d| [1.0, 2.0, 3.0, 5.0].map(|k| k * d)).filter(|hz| *hz >= self.lo && *hz <= self.hi).collect();
+            // Thin to at most nine, keeping the 1-2-5 ones first.
+            if all.len() <= 9 {
+                all
+            } else {
+                all.into_iter().filter(|hz| { let m = hz / 10f32.powf(hz.log10().floor()); (m - 3.0).abs() > 0.01 }).collect()
+            }
+        }
+    }
 }
 
 /// Splits a rect into horizontal lanes by fractions of its height, 3 px apart.

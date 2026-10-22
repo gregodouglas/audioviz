@@ -192,7 +192,7 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("A", "Auto scene director"),
     ("N", "Show what is playing"),
     ("C", "Calibrate audio delay"),
-    ("D", "Director view: what the engine hears (F freezes, S saves the last two minutes)"),
+    ("D", "Director view: what the engine hears (F freezes, L linear or log, S saves the last two minutes)"),
     ("Enter", "Apply calibration"),
     ("F11", "Fullscreen on this monitor"),
     ("F5", "Reload shaders (dev)"),

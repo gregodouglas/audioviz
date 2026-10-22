@@ -1449,6 +1449,31 @@ impl Section {
     }
 }
 
+/// The director view's layout and its spectrogram's scale (ADR-0006), kept
+/// between runs.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DirectorView {
+    /// The spectrogram's frequency axis: linear (every hertz the same
+    /// height, the highs in detail) or logarithmic (every octave the same).
+    pub linear: bool,
+    /// The frequency range shown on each scale, Hz.
+    pub lin_lo_hz: f32,
+    pub lin_hi_hz: f32,
+    pub log_lo_hz: f32,
+    pub log_hi_hz: f32,
+    /// The view's height as a share of the window, and the spectrogram's
+    /// share of the lanes.
+    pub height: f32,
+    pub spec_share: f32,
+}
+
+impl Default for DirectorView {
+    fn default() -> Self {
+        Self { linear: true, lin_lo_hz: 0.0, lin_hi_hz: 20_000.0, log_lo_hz: 30.0, log_hi_hz: 16_000.0, height: 0.5, spec_share: 0.29 }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -1479,6 +1504,8 @@ pub struct Settings {
     // ---- accessibility ----
     pub reduce_flashing: bool,
     pub flash_rise: f32,
+    /// The director view's layout and spectrogram scale.
+    pub director_view: DirectorView,
     // ---- audio ----
     pub audio_delay_ms: f32,
     /// What the visualizer listens to: a player on this PC or the room.
@@ -1594,6 +1621,7 @@ impl Default for Settings {
             auto_skip: Vec::new(),
             reduce_flashing: true,
             flash_rise: 2.0,
+            director_view: DirectorView::default(),
             audio_delay_ms: 0.0,
             source: AudioSourceKind::Player,
             target_process: "Spotify.exe".into(),

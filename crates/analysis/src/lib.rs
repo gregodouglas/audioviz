@@ -553,6 +553,8 @@ impl Analyzer {
         }
         let mut spectrum = [0u8; SPEC_ROWS];
         self.spectrum_map.column(&self.long, &self.mid, &mut spectrum);
+        let mut linear = [0u8; history::LIN_ROWS];
+        self.spectrum_map.linear(&self.mid, &mut linear);
         let copy = |v: &[f32]| -> [f32; RECORD_BANDS] {
             let mut o = [0.0f32; RECORD_BANDS];
             for (o, b) in o.iter_mut().zip(v) {
@@ -568,6 +570,7 @@ impl Analyzer {
             rms: f.rms,
             lufs_m: f.lufs_m,
             spectrum,
+            linear,
             bands,
             levels,
             attacks,
@@ -662,6 +665,28 @@ mod tests {
         // A half-scale sine is -6 dB.
         let db = history::SPEC_FLOOR_DB * (1.0 - last.spectrum[row] as f32 / 255.0);
         assert!((db + 6.0).abs() < 1.5, "{db} dB");
+    }
+
+    #[test]
+    fn records_carry_a_linear_column() {
+        // A tone lands on its row of the linear column, low or high.
+        for hz in [1000.0f32, 12_000.0] {
+            let cfg = AnalyzerConfig::default();
+            let mut a = Analyzer::new(cfg.clone());
+            let buf: Vec<f32> = (0..cfg.sample_rate as usize / 2).flat_map(|i| {
+                let s = sine(hz, 0.5, cfg.sample_rate, i);
+                [s, s]
+            }).collect();
+            a.push(&buf);
+            let mut recs = Vec::new();
+            a.drain_records(&mut recs);
+            let last = recs.last().unwrap();
+            let (row, v) = last.linear.iter().enumerate().fold((0, 0u8), |m, (i, v)| if *v > m.1 { (i, *v) } else { m });
+            let want = hz / (history::LIN_HI_HZ / history::LIN_ROWS as f32);
+            assert!((row as f32 + 0.5 - want).abs() <= 1.0, "{hz} Hz at row {row}, want about {want}");
+            let db = history::SPEC_FLOOR_DB * (1.0 - v as f32 / 255.0);
+            assert!((db + 6.0).abs() < 1.5, "{hz} Hz: {db} dB");
+        }
     }
 
     #[test]

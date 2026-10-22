@@ -280,6 +280,7 @@ impl Running {
         hittest::install_on(&window);
 
         let first_run = (!settings.onboarded).then(FirstRun::default);
+        let director_view = settings.director_view;
         let mut running = Self {
             gpu,
             director,
@@ -308,7 +309,7 @@ impl Running {
             onset_count: [0; 4],
             history: crate::audio_view::History::new(),
             session_rx: None,
-            audio_view: crate::audio_view::ViewState::new(),
+            audio_view: crate::audio_view::ViewState::new(director_view),
             fps: 0.0,
             worst_ms: 0.0,
             points_per_sec: 0.0,
@@ -638,6 +639,10 @@ impl Running {
         }
         let mut features = self.engine.features();
         self.history.extend(self.engine.drain_records());
+        // The director view's layout and scale are saved with the settings.
+        if self.settings.director_view != self.audio_view.prefs {
+            self.settings.director_view = self.audio_view.prefs;
+        }
         if let Some(r) = self.session_rx.as_ref().and_then(|rx| rx.try_recv().ok()) {
             self.session_rx = None;
             let text = match r {
@@ -1320,6 +1325,7 @@ impl Running {
             KeyCode::KeyN => self.settings.show_now_playing = !self.settings.show_now_playing,
             KeyCode::KeyD => self.audio_view.open = !self.audio_view.open,
             KeyCode::KeyF if self.audio_view.open => self.audio_view.toggle_freeze(&self.history),
+            KeyCode::KeyL if self.audio_view.open => self.audio_view.prefs.linear = !self.audio_view.prefs.linear,
             KeyCode::KeyS if self.audio_view.open && self.session_rx.is_none() => {
                 // Dev runs keep sessions in the checkout's tmp; the app in its own folder.
                 let dir = if crate::factory::embedded_only() { std::env::current_dir().ok().map(|d| d.join("tmp").join("sessions")) } else { crate::factory::root().map(|d| d.join("sessions")) };

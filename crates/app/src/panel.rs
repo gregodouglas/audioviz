@@ -1477,7 +1477,7 @@ fn sync_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelSta
 
     ui.add_space(12.0);
     small_caps(ui, "Director view");
-    hint(ui, "What the engine hears, for making visuals: a live spectrogram, the bands' levels and attacks, onsets against their thresholds, the beat grid. F freezes it, a drag scrolls back over the last five minutes, the wheel zooms. S saves the last two minutes of sound as a session (a WAV and the track names beside it, in the sessions folder of your audioviz folder): send one when the music and what the engine made of it disagree.");
+    hint(ui, "What the engine hears, for making visuals: a live spectrogram, the bands' levels and attacks, onsets against their thresholds, the beat grid. F freezes it, a drag scrolls back over the last five minutes, the wheel zooms. The spectrogram is linear (the highs in detail) or log (L, or click the scale's name); the wheel over its frequency labels zooms the range, a drag there moves it, a double click resets it. Drag the view's top edge to make it taller, and the line under the spectrogram to give it more room. S saves the last two minutes of sound as a session (a WAV and the track names beside it, in the sessions folder of your audioviz folder): send one when the music and what the engine made of it disagree.");
     ui.add_space(4.0);
     if ghost_button(ui, "Open or close the director view (D)", false).clicked() {
         a.audio_view_toggle = true;

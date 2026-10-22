@@ -1,7 +1,8 @@
 //! The per-hop record the engine remembers (ADR-0006): one compact entry
 //! per analysis hop with everything a director view or a later prediction
-//! needs to look back on, including a log-frequency dB spectrum column for
-//! a spectrogram.
+//! needs to look back on, including dB spectrum columns for a spectrogram:
+//! one log-spaced (the low end in detail) and one linear (the highs in
+//! detail, where pictures hidden in a track's spectrum live).
 
 use crate::stft::Stft;
 
@@ -9,6 +10,10 @@ use crate::stft::Stft;
 pub const SPEC_ROWS: usize = 160;
 pub const SPEC_LO_HZ: f32 = 30.0;
 pub const SPEC_HI_HZ: f32 = 16_000.0;
+/// Rows of the linear column, evenly spaced from 0 Hz to `LIN_HI_HZ` (about
+/// 47 Hz a row, two bins of the 2048-point transform).
+pub const LIN_ROWS: usize = 512;
+pub const LIN_HI_HZ: f32 = 24_000.0;
 /// The column's floor: 0 in `spectrum` is this many dB below full scale, 255 is 0 dB.
 pub const SPEC_FLOOR_DB: f32 = -96.0;
 /// Bands kept per record (the analyzer's default count).
@@ -24,6 +29,9 @@ pub struct HopRecord {
     pub lufs_m: f32,
     /// dB spectrum, low to high: 0 = `SPEC_FLOOR_DB`, 255 = full scale.
     pub spectrum: [u8; SPEC_ROWS],
+    /// The same, linear in frequency: row r is r * LIN_HI_HZ / LIN_ROWS Hz up
+    /// (rows past the sample rate's limit stay 0).
+    pub linear: [u8; LIN_ROWS],
     /// The bands as the visuals get them (relative, smoothed), low to high,
     /// their levels on one scale, and their attacks.
     pub bands: [f32; RECORD_BANDS],
@@ -74,9 +82,12 @@ pub struct HopRecord {
     pub silent: bool,
 }
 
-/// Which spectrum and which bins feed each row of the column.
+/// Which spectrum and which bins feed each row of the columns.
 pub(crate) struct SpectrumMap {
     rows: Vec<Row>,
+    /// The linear column's bins in the mid transform (an empty range past
+    /// the sample rate's limit).
+    lin: Vec<(usize, usize)>,
 }
 
 struct Row {
@@ -103,7 +114,31 @@ impl SpectrumMap {
                 Row { long: long_row, lo, hi }
             })
             .collect();
-        Self { rows }
+        let bin_hz = mid.bin_hz(sample_rate);
+        let n = mid.bins();
+        let lin = (0..LIN_ROWS)
+            .map(|r| {
+                let f0 = LIN_HI_HZ * r as f32 / LIN_ROWS as f32;
+                let f1 = LIN_HI_HZ * (r + 1) as f32 / LIN_ROWS as f32;
+                let lo = ((f0 / bin_hz).round() as usize).min(n);
+                let hi = ((f1 / bin_hz).round() as usize).clamp(lo, n);
+                (lo, hi.max((lo + 1).min(n)))
+            })
+            .collect();
+        Self { rows, lin }
+    }
+
+    /// The linear column: the loudest bin under each row, in dB, quantised.
+    pub(crate) fn linear(&self, mid: &Stft, out: &mut [u8; LIN_ROWS]) {
+        for (&(lo, hi), o) in self.lin.iter().zip(out.iter_mut()) {
+            if lo >= hi {
+                *o = 0;
+                continue;
+            }
+            let p = mid.power[lo..hi].iter().fold(0.0f32, |m, v| m.max(*v));
+            let db = 10.0 * p.max(1e-12).log10();
+            *o = ((db - SPEC_FLOOR_DB) / -SPEC_FLOOR_DB * 255.0).clamp(0.0, 255.0) as u8;
+        }
     }
 
     /// The loudest bin under each row, in dB, quantised.

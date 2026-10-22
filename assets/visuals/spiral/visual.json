@@ -9,7 +9,7 @@
   "line": 4096,
   "line_count": "points",
   "params": [
-    { "id": "shape", "label": "Shape", "type": "choice", "group": "Figure", "options": ["Spiral", "Rose"], "default": "spiral" },
+    { "id": "shape", "label": "Shape", "type": "choice", "group": "Figure", "options": ["Spiral", "Rose", "Wavy", "Flower", "Circle"], "default": "spiral", "help": "Spiral and Rose follow the angle step. Wavy and Flower scatter the points into rosettes that morph as the angle drifts; Circle is a ring seen from above, lifted by the waveform (the last three after Sonia Boller's spiral page)." },
     { "id": "points", "label": "Points", "type": "integer", "group": "Figure", "min": 64, "max": 4096, "default": 1500, "log": true },
     { "id": "step", "label": "Angle step", "group": "Figure", "min": 0.0, "max": 360.0, "default": 137.5, "unit": "°" },
     { "id": "drift", "label": "Drift", "group": "Figure", "min": -2.0, "max": 2.0, "default": 0.1, "unit": "°/s" },

@@ -1,0 +1,23 @@
+{
+  "id": "spikes",
+  "name": "Spike sphere",
+  "short": "Spikes",
+  "summary": "An urchin: a turning sphere of spikes, each reaching out with its own slice of the spectrum, coloured by how far it reaches.",
+  "credit": "After the sphere in Sonia Boller's audible-visuals (https://github.com/soniaboller/audible-visuals, Apache License 2.0). The idea only; no code ported.",
+  "hint": "Each spike follows one slice of the spectrum: Scattered gives every spike a slice at random (a fuzzy urchin); By latitude puts the lows at the poles and the highs round the equator. Short spikes are yellow, longer red, the longest pink (Classic), or along the palette.",
+  "items": 1,
+  "line": 6144,
+  "params": [
+    { "id": "count", "label": "Spikes", "type": "integer", "group": "Sphere", "min": 128, "max": 2048, "default": 1024, "log": true },
+    { "id": "radius", "label": "Radius", "group": "Sphere", "min": 0.1, "max": 0.8, "default": 0.38 },
+    { "id": "reach", "label": "Reach", "group": "Sphere", "min": 0.1, "max": 2.0, "default": 0.9, "help": "How far a full spike reaches out, in radii." },
+    { "id": "mapping", "label": "Slices", "type": "choice", "group": "Sphere", "options": ["Scattered", "By latitude"], "values": ["scattered", "latitude"], "default": "scattered" },
+    { "id": "spin", "label": "Spin", "group": "Sphere", "min": -1.0, "max": 1.0, "default": 0.15 },
+    { "id": "tilt", "label": "Tilt", "group": "Sphere", "min": -1.0, "max": 1.0, "default": 0.35 },
+    { "id": "colours", "label": "Colours", "type": "choice", "group": "Look", "options": ["Classic", "Palette"], "default": "classic", "help": "Classic: yellow, red and pink by reach, as in the original. Palette: along the layer's palette by reach." },
+    { "id": "width", "label": "Line width", "group": "Look", "min": 0.5, "max": 4.0, "default": 1.2, "unit": "px" },
+    { "id": "hide", "label": "Hide below", "group": "Look", "min": 0.0, "max": 0.5, "default": 0.06, "help": "Spikes reaching less than this (a share of a full one) are not drawn." },
+    { "id": "gain", "label": "Gain", "group": "Music", "min": 0.25, "max": 4.0, "default": 1.0, "log": true, "unit": "x" },
+    { "id": "range", "label": "Range", "group": "Music", "min": 18.0, "max": 72.0, "default": 40.0, "unit": "dB", "decimals": 0 }
+  ]
+}

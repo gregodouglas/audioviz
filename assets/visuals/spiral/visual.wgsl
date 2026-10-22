@@ -55,14 +55,34 @@ fn point(i: u32) -> LinePoint {
     // keeps its precision.
     let step = radians(P.step + state.x + item(1u).x);
     let th = fract(f32(i) * (step / TAU)) * TAU;
+    let shape = u32(P.shape + 0.5);
     var r = sqrt(t);
-    if (P.shape > 0.5) {
+    if (shape == 1u) {
         r = cos(clamp(P.petals, 1.0, 24.0) * th);
+    } else if (shape == 3u) {
+        // Flower: a circle the scatter spreads into petals.
+        r = 0.6;
     }
     let w = wave_mono(1.0 - t) * P.gain;
-    r = r * P.radius + w * P.amp * (1.0 + P.react * state.z);
+    let push = w * P.amp * (1.0 + P.react * state.z);
+    r = r * P.radius + push;
     let a = th + state.y + P.sway * 0.12 * sin(TAU * bar_phase()) * item(1u).y;
     q.pos = vec2<f32>(cos(a), -sin(a)) * r;
+    if (shape == 2u || shape == 3u) {
+        // Wavy and Flower: a scatter whose frequency along the line is so
+        // high that the points alias into rosettes, which morph as its
+        // period drifts (after Sonia Boller's wavy spiral and flower).
+        let base = select(2.44, 2.86, shape == 3u);
+        let k = 100.0 / (base + 0.025 * sin(radians(state.x) * 20.0));
+        let ph = fract(f32(i) * k / TAU) * TAU;
+        q.pos += vec2<f32>(sin(ph), cos(ph)) * select(0.07, 0.32, shape == 3u) * P.radius;
+    } else if (shape == 4u) {
+        // Circle: a ring seen from above at an angle, the waveform lifting it.
+        let c = t * TAU + state.y;
+        // The lift eases to nothing at both ends, so the ring closes.
+        let seam = smoothstep(0.0, 0.06, t) * smoothstep(1.0, 0.94, t);
+        q.pos = vec2<f32>(sin(c), 0.45 * cos(c)) * P.radius + vec2<f32>(0.0, 2.0 * push * seam);
+    }
     q.width = P.width;
     q.colour = line_colour(t) * P.intensity;
     return q;

@@ -1,0 +1,22 @@
+{
+  "id": "lines",
+  "name": "Spectrum lines",
+  "short": "Lines",
+  "summary": "Three traces: the spectrum above, the waveform through the middle, and the spectrum mirrored below.",
+  "credit": "After the lines in Sonia Boller's audible-visuals (https://github.com/soniaboller/audible-visuals, Apache License 2.0). The idea only; no code ported.",
+  "hint": "The top trace is the spectrum on a linear axis up to Highest, the middle one the waveform, the bottom one the spectrum again, upside down and running the other way. Classic colours go from white to magenta as a point gets louder.",
+  "items": 1,
+  "line": 4608,
+  "params": [
+    { "id": "style", "label": "Style", "type": "choice", "group": "Traces", "options": ["Lines", "Dots"], "default": "dots" },
+    { "id": "points", "label": "Points", "type": "integer", "group": "Traces", "min": 64, "max": 512, "default": 512, "log": true },
+    { "id": "highest", "label": "Highest", "group": "Traces", "min": 2000.0, "max": 24000.0, "default": 12000.0, "log": true, "unit": "Hz", "decimals": 0 },
+    { "id": "height", "label": "Height", "group": "Traces", "min": 0.1, "max": 1.0, "default": 0.45, "help": "How tall a full spectrum peak stands." },
+    { "id": "spread", "label": "Spread", "group": "Traces", "min": 0.0, "max": 0.8, "default": 0.3, "help": "How far the spectrum traces sit from the middle." },
+    { "id": "wave", "label": "Waveform", "group": "Traces", "min": 0.0, "max": 1.0, "default": 0.25, "help": "The middle trace's height (0 hides it)." },
+    { "id": "width", "label": "Width", "group": "Look", "min": 0.5, "max": 5.0, "default": 1.6, "unit": "px" },
+    { "id": "colours", "label": "Colours", "type": "choice", "group": "Look", "options": ["Classic", "Palette"], "default": "classic", "help": "Classic: white going to magenta as a point gets louder. Palette: along the layer's palette by level." },
+    { "id": "gain", "label": "Gain", "group": "Music", "min": 0.25, "max": 4.0, "default": 1.0, "log": true, "unit": "x" },
+    { "id": "range", "label": "Range", "group": "Music", "min": 18.0, "max": 72.0, "default": 44.0, "unit": "dB", "decimals": 0 }
+  ]
+}

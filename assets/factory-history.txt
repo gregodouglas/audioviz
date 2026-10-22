@@ -51,6 +51,8 @@ scenes/Scope.json ce6b72bea48ae6a4
 scenes/Sigil.json d5d8279dc02b4d00
 scenes/Sigil.json ff696700d78c1356
 scenes/Spectrogram.json 3cbd764affad31f8
+scenes/Spectrum lines.json d632ebca22960bb3
+scenes/Spike sphere.json 7d247d5b7878944c
 scenes/Spiral.json 0b46b4ef3a6f4928
 scenes/Spiral.json ce99d327c5c0d013
 scenes/Starfield.json 6f6e83ee11d7769b
@@ -198,6 +200,8 @@ visuals/kaleido/visual.json 61603cabff3e5530
 visuals/kaleido/visual.json 8bfacddf0294868c
 visuals/kaleido/visual.wgsl 069d6bcf431d8c05
 visuals/kaleido/visual.wgsl ef24a8fbd7f62407
+visuals/lines/visual.json 6860b7c47c8b875b
+visuals/lines/visual.wgsl 07a4599efbb4cf83
 visuals/loop/visual.json 178bb266d3d88442
 visuals/loop/visual.json 5ba7be6418b67ffc
 visuals/loop/visual.wgsl bb9af58dbfaceaa3
@@ -229,9 +233,13 @@ visuals/sigil/visual.wgsl b4e67a313cf3de95
 visuals/sigil/visual.wgsl c623951ad1ae7b2b
 visuals/spectrogram/visual.json 49d7b8983773853a
 visuals/spectrogram/visual.wgsl f78508ab54d7a8ab
+visuals/spikes/visual.json 4eb26b93cf81d8e3
+visuals/spikes/visual.wgsl 122fed998ac021a6
 visuals/spiral/visual.json 034bff86ec31bd3a
 visuals/spiral/visual.json 5fc9c960e0a2b7b2
+visuals/spiral/visual.json 82d21b93c02ceda1
 visuals/spiral/visual.wgsl 5356d77738139725
+visuals/spiral/visual.wgsl 891ffbabb283daba
 visuals/spiral/visual.wgsl a1f7f9f40d422e95
 visuals/tunnel/visual.json 41f0ad52b97683c0
 visuals/tunnel/visual.wgsl 744e250385a74b43

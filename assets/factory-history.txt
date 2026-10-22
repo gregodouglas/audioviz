@@ -13,6 +13,7 @@ presets/waves/Spectrum ridge.json d307ca2c5e853ff5
 presets/wheel/Rays only.json 4a22989164256cb2
 presets/wheel/Rays only.json c3b5644514836c02
 scenes/Bars.json 2e9c8cc18718a616
+scenes/Bug eyed.json 064d296c77d6a1ab
 scenes/Crystal.json 5a598fbbd8cebbbe
 scenes/Crystal.json 8772c78b51b38be8
 scenes/Deep field.json 2ac1b63faf77d969
@@ -86,6 +87,8 @@ visuals/eclipse/visual.wgsl b063ce848062b898
 visuals/eclipse/visual.wgsl d19bd98f6a6ffb3d
 visuals/eqrings/visual.json 628c9fee49edbb41
 visuals/eqrings/visual.wgsl b89623259c6e1253
+visuals/eyes/visual.json 7ecd0076d41d4366
+visuals/eyes/visual.wgsl 188e6546810cc572
 visuals/hallway/visual.json 2d5a0b74aa84baa6
 visuals/hallway/visual.json 674e6d4e49b49041
 visuals/hallway/visual.wgsl 7999f9a09e1e0d17

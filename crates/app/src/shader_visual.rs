@@ -1124,6 +1124,7 @@ fn shared(device: &wgpu::Device) -> Arc<Shared> {
                     entry(9, texture),
                     entry(10, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }),
                     entry(11, texture),
+                    entry(12, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }),
                 ],
             });
             let out_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1375,6 +1376,8 @@ pub struct ShaderVisual {
     msaa: Option<wgpu::TextureView>,
     uniform: wgpu::Buffer,
     wave_buf: wgpu::Buffer,
+    /// The fine spectrum, (as found, smoothed) per row (binding 12).
+    spec_buf: wgpu::Buffer,
     sampler: wgpu::Sampler,
     out: [wgpu::TextureView; 2],
     /// The trail's two textures (with "trail"), paired with `out`.
@@ -1679,6 +1682,7 @@ impl ShaderVisual {
             last_poll: Instant::now(),
             uniform: scene::uniform_buffer(device, &format!("{} params", def.id), std::mem::size_of::<Uniform>() as u64),
             wave_buf: device.create_buffer(&wgpu::BufferDescriptor { label: Some("loaded visual wave"), size: (WAVE * 8) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false }),
+            spec_buf: device.create_buffer(&wgpu::BufferDescriptor { label: Some("loaded visual spectrum"), size: (audioviz_analysis::history::LIN_ROWS * 8) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false }),
             sampler: scene::linear_sampler(device),
             out: [hdr_texture(device, &format!("{} a", def.id), width, height), hdr_texture(device, &format!("{} b", def.id), width, height)],
             trail: live.trail.then(|| trail_textures(device, &def.id, width, height)),
@@ -1758,6 +1762,7 @@ impl ShaderVisual {
                     wgpu::BindGroupEntry { binding: 9, resource: wgpu::BindingResource::TextureView(trail) },
                     wgpu::BindGroupEntry { binding: 10, resource: sh.camera.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 11, resource: wgpu::BindingResource::TextureView(&self.seen) },
+                    wgpu::BindGroupEntry { binding: 12, resource: self.spec_buf.as_entire_binding() },
                 ],
             })
         };
@@ -2325,6 +2330,10 @@ impl ShaderVisual {
             wave[off + i] = *s;
         }
         queue.write_buffer(&self.wave_buf, 0, bytemuck::cast_slice(&wave));
+        // The fine spectrum (zeros where a frame has none, as the lab's groove may not).
+        let rows = audioviz_analysis::history::LIN_ROWS;
+        let spec: Vec<[f32; 2]> = (0..rows).map(|i| [f.spectrum.get(i).copied().unwrap_or(0.0), f.spectrum_smooth.get(i).copied().unwrap_or(0.0)]).collect();
+        queue.write_buffer(&self.spec_buf, 0, bytemuck::cast_slice(&spec));
         if self.pipeline.is_none() {
             if space.is_none() {
                 scene::clear_pass(encoder, "loaded visual (no shader)", &self.out[self.cur]);

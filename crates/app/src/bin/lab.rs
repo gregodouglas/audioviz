@@ -230,6 +230,22 @@ fn groove(bpm: f32, t: f32, dt: f32) -> FeatureFrame {
         (0.35 + 0.5 * kick * (1.0 - x).powi(3) + 0.3 * swell * (1.0 - (x - 0.45).abs() * 2.0).max(0.0) + 0.4 * hat * x * x).min(1.0)
     }).collect();
     f.levels = f.bands.iter().map(|b| b * 0.8).collect();
+    // The fine spectrum: the bands spread over the rows on a log axis, dipping between harmonics.
+    let rows = audioviz_analysis::history::LIN_ROWS;
+    let row_hz = audioviz_analysis::history::LIN_HI_HZ / rows as f32;
+    f.spectrum = (0..rows)
+        .map(|r| {
+            let hz = (r as f32 + 0.5) * row_hz;
+            if hz > 20_000.0 {
+                return 0.0;
+            }
+            let t = ((hz.max(30.0) / 30.0).ln() / (16_000.0f32 / 30.0).ln()).clamp(0.0, 1.0) * 31.0;
+            let (i, fr) = (t.floor() as usize, t.fract());
+            let b = f.bands[i.min(31)] * (1.0 - fr) + f.bands[(i + 1).min(31)] * fr;
+            (0.25 + 0.55 * b) * (0.85 + 0.15 * (hz / 220.0 * std::f32::consts::TAU).cos())
+        })
+        .collect();
+    f.spectrum_smooth = f.spectrum.clone();
     f.attacks = (0..32).map(|i| {
         let x = i as f32 / 31.0;
         (kick * (1.0 - x).powi(3) + snare * (1.0 - (x - 0.4).abs() * 3.0).max(0.0) + hat * x * x).min(1.0)

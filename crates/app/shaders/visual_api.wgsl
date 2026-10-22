@@ -85,6 +85,8 @@ struct VisualIn {
 @group(0) @binding(10) var<storage, read> scene_cam: array<vec4<f32>, 2>;
 // What the layer's light goes through on its way to the screen (see steady()).
 @group(0) @binding(11) var seen_tex: texture_2d<f32>;
+// The fine spectrum, (as found, smoothed) per row (see spectrum_row()).
+@group(0) @binding(12) var<storage, read> spec_buf: array<vec2<f32>>;
 
 const TAU: f32 = 6.2831853;
 
@@ -236,6 +238,55 @@ fn attack_at(t: f32) -> f32 {
     let x = clamp(t, 0.0, 1.0) * 31.0;
     let i = u32(floor(x));
     return mix(attack(i), attack(min(i + 1u, 31u)), fract(x));
+}
+
+// The fine spectrum: SPECTRUM_ROWS rows evenly spaced from 0 Hz to
+// SPECTRUM_HZ (about 47 Hz each), each 0..1 from -80 dB to full scale. For
+// bars, spectrograms and anything that wants more detail than 32 bands.
+const SPECTRUM_ROWS: u32 = 512u;
+const SPECTRUM_HZ: f32 = 24000.0;
+
+// Row i, smoothed (15 ms up, 180 ms down).
+fn spectrum_row(i: u32) -> f32 {
+    return spec_buf[min(i, SPECTRUM_ROWS - 1u)].y;
+}
+
+// Row i as this hop found it: jumpier, for spectrograms.
+fn spectrum_row_raw(i: u32) -> f32 {
+    return spec_buf[min(i, SPECTRUM_ROWS - 1u)].x;
+}
+
+// The smoothed spectrum at a frequency, interpolated between rows.
+fn spectrum_hz(hz: f32) -> f32 {
+    let x = clamp(hz / SPECTRUM_HZ * f32(SPECTRUM_ROWS) - 0.5, 0.0, f32(SPECTRUM_ROWS - 1u));
+    let i = u32(floor(x));
+    return mix(spectrum_row(i), spectrum_row(min(i + 1u, SPECTRUM_ROWS - 1u)), fract(x));
+}
+
+// The smoothed spectrum at t 0..1 on a log axis from 30 Hz to 16 kHz (as
+// ears hear it): what a classic analyser shows.
+fn spectrum_log(t: f32) -> f32 {
+    return spectrum_hz(30.0 * pow(16000.0 / 30.0, clamp(t, 0.0, 1.0)));
+}
+
+// The loudest smoothed row between two frequencies (one bar's worth),
+// interpolated when the range is narrower than a row. It loops over the
+// rows in the range (at most 64 looked at): call it once per bar in a
+// prepare step rather than per pixel.
+fn spectrum_peak(lo_hz: f32, hi_hz: f32) -> f32 {
+    let a = clamp(lo_hz / SPECTRUM_HZ * f32(SPECTRUM_ROWS), 0.0, f32(SPECTRUM_ROWS - 1u));
+    let b = clamp(hi_hz / SPECTRUM_HZ * f32(SPECTRUM_ROWS), a, f32(SPECTRUM_ROWS));
+    if (b - a < 1.0) {
+        return spectrum_hz(0.5 * (lo_hz + hi_hz));
+    }
+    let i0 = u32(floor(a));
+    let i1 = min(u32(ceil(b)), SPECTRUM_ROWS);
+    let step = max((i1 - i0) / 64u, 1u);
+    var m = 0.0;
+    for (var i = i0; i < i1; i += step) {
+        m = max(m, spectrum_row(i));
+    }
+    return m;
 }
 
 // The sound's character, 0..1 unless said.

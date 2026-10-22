@@ -121,6 +121,15 @@ pub fn band_features(f: &FeatureFrame, lo: f32, hi: f32) -> FeatureFrame {
             }
         }
     }
+    // The fine spectrum outside the range sinks toward nothing (as dB it scales down).
+    let row_hz = audioviz_analysis::history::LIN_HI_HZ / audioviz_analysis::history::LIN_ROWS as f32;
+    for (r, (s, m)) in out.spectrum.iter_mut().zip(out.spectrum_smooth.iter_mut()).enumerate() {
+        let hz = (r as f32 + 0.5) * row_hz;
+        if hz < lo || hz > hi {
+            *s *= 0.3;
+            *m *= 0.3;
+        }
+    }
     let energy = if count_in > 0 { sum_in / count_in as f32 } else { 0.0 };
     let share = if sum_all > 1e-6 { sum_in / sum_all } else { 0.0 };
     // Band energy stands in for every "how loud is it" feature the visuals read.

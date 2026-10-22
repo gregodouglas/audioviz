@@ -14,6 +14,9 @@ pub const SPEC_HI_HZ: f32 = 16_000.0;
 /// 47 Hz a row, two bins of the 2048-point transform).
 pub const LIN_ROWS: usize = 512;
 pub const LIN_HI_HZ: f32 = 24_000.0;
+/// The visuals' fine spectrum (`FeatureFrame::spectrum`) runs 0..1 from
+/// this many dB to full scale.
+pub const VIS_FLOOR_DB: f32 = -80.0;
 /// The column's floor: 0 in `spectrum` is this many dB below full scale, 255 is 0 dB.
 pub const SPEC_FLOOR_DB: f32 = -96.0;
 /// Bands kept per record (the analyzer's default count).
@@ -126,6 +129,19 @@ impl SpectrumMap {
             })
             .collect();
         Self { rows, lin }
+    }
+
+    /// The linear rows as the visuals get them: the loudest bin under each
+    /// row, 0..1 from `VIS_FLOOR_DB` to full scale.
+    pub(crate) fn linear_levels(&self, mid: &Stft, out: &mut [f32]) {
+        for (&(lo, hi), o) in self.lin.iter().zip(out.iter_mut()) {
+            *o = if lo >= hi {
+                0.0
+            } else {
+                let p = mid.power[lo..hi].iter().fold(0.0f32, |m, v| m.max(*v));
+                ((10.0 * p.max(1e-12).log10() - VIS_FLOOR_DB) / -VIS_FLOOR_DB).clamp(0.0, 1.0)
+            };
+        }
     }
 
     /// The linear column: the loudest bin under each row, in dB, quantised.

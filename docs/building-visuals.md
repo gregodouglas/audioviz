@@ -215,6 +215,9 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `band(i)` | ~0..1 | Band `i` of 32 from 30 Hz (0) to 16 kHz (31), each against its own recent best, smoothed with a 30 ms attack and 200 ms release. Every band moves, whatever the mix. |
 | `band_raw(i)` | ~0..1 | The same without smoothing: jumpier, better for flashes. |
 | `band_at(t)` | ~0..1 | The smoothed spectrum at `t` 0..1 (low to high), interpolated between bands. The easy way to map a position to a frequency. |
+| `spectrum_row(i)`, `spectrum_row_raw(i)` | 0..1 | The fine spectrum: `SPECTRUM_ROWS` (512) rows evenly spaced from 0 Hz to `SPECTRUM_HZ` (24 kHz), about 47 Hz each, 0..1 from -80 dB to full scale; smoothed (15 ms up, 180 ms down) or as each hop found it. For bars and spectrograms, where 32 bands are too coarse. |
+| `spectrum_hz(hz)`, `spectrum_log(t)` | 0..1 | The smoothed fine spectrum at a frequency (interpolated), or at `t` 0..1 on a log axis from 30 Hz to 16 kHz, as an analyser shows it. |
+| `spectrum_peak(lo_hz, hi_hz)` | 0..1 | The loudest smoothed row between two frequencies: one bar's worth. It loops over the rows (up to 64), so call it once per bar in a prepare step, not per pixel. Spectrum Bars measures each bar against the loudest of the row followed over seconds, and lifts the highs by a tilt: music is quieter up there. |
 | `level(i)`, `level_at(t)` | 0..1 | Band `i` on one scale for all bands (0..1 over the 42 dB under the track's loud level): the spectrum in balance, quiet bands low however long they are quiet. |
 | `wave(t)` | ~-1..1 | The last 1024 samples (`t` 0 oldest, 1 newest) as (left, right), auto-gained. |
 | `wave_mono(t)` | ~-1..1 | Their average. |

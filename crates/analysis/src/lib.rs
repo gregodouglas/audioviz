@@ -83,6 +83,12 @@ pub struct FeatureFrame {
     pub levels: Vec<f32>,
     /// How far each band rose over its last ~150 ms, 0..1.
     pub attacks: Vec<f32>,
+    /// The fine spectrum: `history::LIN_ROWS` rows evenly spaced from 0 Hz
+    /// to `history::LIN_HI_HZ` (about 47 Hz each), 0..1 from
+    /// `history::VIS_FLOOR_DB` to full scale, as this hop found it and
+    /// smoothed (15 ms up, 180 ms down). Rows past the sample rate's limit stay 0.
+    pub spectrum: Vec<f32>,
+    pub spectrum_smooth: Vec<f32>,
     /// Six broad bands (sub, bass, low mid, mid, presence, air): level,
     /// relative to their own average (1 = typical), attack.
     pub broad_level: [f32; BROAD],
@@ -177,6 +183,8 @@ impl Default for FeatureFrame {
             bands: Vec::new(),
             levels: Vec::new(),
             attacks: Vec::new(),
+            spectrum: Vec::new(),
+            spectrum_smooth: Vec::new(),
             broad_level: [0.0; BROAD],
             broad_relative: [0.0; BROAD],
             broad_attack: [0.0; BROAD],
@@ -325,7 +333,7 @@ impl Analyzer {
             bmt_att: [0.0; 3],
             e_short: 0.0,
             e_long: 0.0,
-            frame: FeatureFrame { bands: vec![0.0; cfg.bands], levels: vec![0.0; cfg.bands], attacks: vec![0.0; cfg.bands], ..Default::default() },
+            frame: FeatureFrame { bands: vec![0.0; cfg.bands], levels: vec![0.0; cfg.bands], attacks: vec![0.0; cfg.bands], spectrum: vec![0.0; history::LIN_ROWS], spectrum_smooth: vec![0.0; history::LIN_ROWS], ..Default::default() },
             spectrum_map,
             records: Vec::with_capacity(64),
             hops: 0,
@@ -443,6 +451,12 @@ impl Analyzer {
         self.long.compute(&self.ring);
         self.mid.compute(&self.ring);
         self.short.compute(&self.ring);
+
+        // The fine spectrum for the visuals.
+        self.spectrum_map.linear_levels(&self.mid, &mut f.spectrum);
+        for (s, x) in f.spectrum_smooth.iter_mut().zip(&f.spectrum) {
+            *s = follow(*s, *x, dt, 0.015, 0.18);
+        }
 
         // Centroid from the mid spectrum.
         let bin_hz = self.mid.bin_hz(sr);

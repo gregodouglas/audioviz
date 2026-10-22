@@ -37,6 +37,7 @@ scenes/Lantern.json 27024442b45c9071
 scenes/Lantern.json f79e7f1d810fd98f
 scenes/Loop.json 454f15bf0f1c7f10
 scenes/Loop.json eb5a56734e91635f
+scenes/Mesh grid.json f0edc2ebbc3db446
 scenes/Night.json 5a924f65e5817d4c
 scenes/Night.json fa16ab31e44a317d
 scenes/Party.json a6fb5b612a552bdd
@@ -206,6 +207,8 @@ visuals/loop/visual.json 178bb266d3d88442
 visuals/loop/visual.json 5ba7be6418b67ffc
 visuals/loop/visual.wgsl bb9af58dbfaceaa3
 visuals/loop/visual.wgsl d9cefb9662170a55
+visuals/meshgrid/visual.json a7a8ab73c3dd9100
+visuals/meshgrid/visual.wgsl 748d37c8bb7a7ab3
 visuals/polygon/visual.json d64bb9c281a38d14
 visuals/polygon/visual.json f26215cab841c69e
 visuals/polygon/visual.wgsl afd98df47f322ff1

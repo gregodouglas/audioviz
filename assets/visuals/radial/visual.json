@@ -1,0 +1,29 @@
+{
+  "id": "radial",
+  "name": "Radial bars",
+  "short": "Radial",
+  "summary": "Spectrum bars round a ring that breathes with the bass, mirrored or all the way round, with the album art or a dark disc in the middle.",
+  "credit": "The circular spectrum of music-channel videos and vizz.fm's ring visuals. Written fresh.",
+  "hint": "One bar per slice of the spectrum round a ring: mirrored, the lows sit at the top and both halves match. The ring swells with the bass; bars stand out, in or both ways, as bars, a closed line through their tips, or dots.",
+  "items": 257,
+  "params": [
+    { "id": "count", "label": "Bars", "type": "integer", "group": "Ring", "min": 16, "max": 256, "default": 96, "log": true },
+    { "id": "arrangement", "label": "Arrangement", "type": "choice", "group": "Ring", "options": ["Mirrored", "Full circle"], "values": ["mirrored", "full"], "default": "mirrored" },
+    { "id": "radius", "label": "Radius", "group": "Ring", "min": 0.1, "max": 0.9, "default": 0.38 },
+    { "id": "length", "label": "Bar length", "group": "Ring", "min": 0.05, "max": 1.0, "default": 0.42 },
+    { "id": "direction", "label": "Bars point", "type": "choice", "group": "Ring", "options": ["Out", "In", "Both"], "default": "out" },
+    { "id": "gap", "label": "Gap", "group": "Ring", "min": 0.0, "max": 0.8, "default": 0.3 },
+    { "id": "spin", "label": "Spin", "group": "Ring", "min": -1.0, "max": 1.0, "default": 0.03 },
+    { "id": "style", "label": "Style", "type": "choice", "group": "Look", "options": ["Bars", "Line", "Dots"], "default": "bars" },
+    { "id": "centre", "label": "Centre", "type": "choice", "group": "Look", "options": ["Disc", "Album art", "Open"], "values": ["disc", "art", "open"], "default": "disc", "help": "What fills the ring: a dark disc with a rim, the playing track's album art (a disc without art), or nothing." },
+    { "id": "colouring", "label": "Colour by", "type": "choice", "group": "Look", "options": ["Angle", "Height", "One colour"], "values": ["angle", "height", "one"], "default": "angle" },
+    { "id": "glow", "label": "Glow", "group": "Look", "min": 0.0, "max": 2.0, "default": 0.8 },
+    { "id": "pulse", "label": "Bass pulse", "group": "Music", "min": 0.0, "max": 2.0, "default": 1.0, "help": "How far the ring swells with the bass." },
+    { "id": "gain", "label": "Gain", "group": "Music", "min": 0.25, "max": 4.0, "default": 1.0, "log": true, "unit": "x" },
+    { "id": "range", "label": "Range", "group": "Music", "min": 18.0, "max": 72.0, "default": 38.0, "unit": "dB", "decimals": 0, "help": "How far below the loudest slice the bars reach." },
+    { "id": "tilt", "label": "Tilt", "group": "Music", "min": 0.0, "max": 1.0, "default": 0.7, "help": "Lifts the highs, which are quieter in most music." },
+    { "id": "lowest", "label": "Lowest", "group": "Music", "min": 20.0, "max": 500.0, "default": 35.0, "log": true, "unit": "Hz", "decimals": 0 },
+    { "id": "highest", "label": "Highest", "group": "Music", "min": 1000.0, "max": 20000.0, "default": 14000.0, "log": true, "unit": "Hz", "decimals": 0 },
+    { "id": "fall", "label": "Fall", "group": "Music", "min": 0.2, "max": 6.0, "default": 2.0, "log": true, "unit": "/s" }
+  ]
+}

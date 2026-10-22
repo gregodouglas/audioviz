@@ -38,6 +38,7 @@ scenes/Night.json 5a924f65e5817d4c
 scenes/Night.json fa16ab31e44a317d
 scenes/Party.json a6fb5b612a552bdd
 scenes/Party.json ca4369b52c4b2028
+scenes/Radial.json 1eee38afdb6c3840
 scenes/Ribbons.json 98f75dec815dae68
 scenes/Ribbons.json c86018b331dbb81f
 scenes/Ripples.json d12f0ded36354106
@@ -46,6 +47,7 @@ scenes/Scope.json c7c18e592328e309
 scenes/Scope.json ce6b72bea48ae6a4
 scenes/Sigil.json d5d8279dc02b4d00
 scenes/Sigil.json ff696700d78c1356
+scenes/Spectrogram.json 3cbd764affad31f8
 scenes/Spiral.json 0b46b4ef3a6f4928
 scenes/Spiral.json ce99d327c5c0d013
 scenes/Starfield.json 6f6e83ee11d7769b
@@ -197,6 +199,8 @@ visuals/pulse/visual.json 68b8a4e53955c8c6
 visuals/pulse/visual.json ee78e741c648b110
 visuals/pulse/visual.wgsl 5f1664cdf9538840
 visuals/pulse/visual.wgsl 945718839378ec48
+visuals/radial/visual.json ad43ba0d296d5aa9
+visuals/radial/visual.wgsl be1c30a0bcb3a5a4
 visuals/ribbons/visual.json 69b7ba5ca5fdf1f4
 visuals/ribbons/visual.json a9b3beb464efbf2b
 visuals/ribbons/visual.wgsl a824b40dba050806
@@ -213,6 +217,8 @@ visuals/sigil/visual.json d0b034c94ca53ad1
 visuals/sigil/visual.wgsl 2e8516e43310444d
 visuals/sigil/visual.wgsl b4e67a313cf3de95
 visuals/sigil/visual.wgsl c623951ad1ae7b2b
+visuals/spectrogram/visual.json 49d7b8983773853a
+visuals/spectrogram/visual.wgsl f78508ab54d7a8ab
 visuals/spiral/visual.json 034bff86ec31bd3a
 visuals/spiral/visual.json 5fc9c960e0a2b7b2
 visuals/spiral/visual.wgsl 5356d77738139725

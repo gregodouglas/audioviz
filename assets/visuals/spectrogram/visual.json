@@ -1,0 +1,23 @@
+{
+  "id": "spectrogram",
+  "name": "Spectrogram",
+  "short": "Spectrogram",
+  "summary": "The spectrum over time, scrolling: every frequency's loudness as colour. Linear shows the highs in detail, where some tracks hide pictures.",
+  "credit": "The classic scrolling spectrogram and waterfall display. Written fresh.",
+  "hint": "Time runs across (or up or down), frequency the other way; brightness is loudness. Linear gives every hertz the same room, so pictures drawn into a track's highs (DOOM's pentagrams) show; log gives every octave the same, as ears hear it. Floor hides the quiet, Gain brightens the rest.",
+  "trail": true,
+  "levelling": "bright",
+  "items": 1,
+  "params": [
+    { "id": "scroll", "label": "Scroll", "type": "choice", "group": "Layout", "options": ["Left", "Up", "Down"], "default": "left", "help": "Left: the newest sound at the right edge, moving left. Up and Down: a waterfall, the newest at the bottom or the top." },
+    { "id": "seconds", "label": "Seconds across", "group": "Layout", "min": 2.0, "max": 60.0, "default": 10.0, "log": true, "unit": "s", "decimals": 1 },
+    { "id": "axis", "label": "Frequency axis", "type": "choice", "group": "Layout", "options": ["Linear", "Log"], "default": "linear" },
+    { "id": "lowest", "label": "Lowest", "group": "Layout", "min": 0.0, "max": 8000.0, "default": 0.0, "unit": "Hz", "decimals": 0, "help": "On the log axis, at least 20 Hz." },
+    { "id": "highest", "label": "Highest", "group": "Layout", "min": 1000.0, "max": 24000.0, "default": 16000.0, "unit": "Hz", "decimals": 0 },
+    { "id": "guides", "label": "Frequency guides", "type": "toggle", "group": "Layout", "default": false },
+    { "id": "colours", "label": "Colours", "type": "choice", "group": "Look", "options": ["Palette", "Heat", "Mono"], "default": "palette", "help": "Palette: the layer's palette from quiet to loud. Heat: black through violet and orange to pale yellow. Mono: the layer's colour by brightness." },
+    { "id": "floor", "label": "Floor", "group": "Look", "min": 0.0, "max": 0.8, "default": 0.3, "help": "How quiet a frequency must be to show black (0.3 is -56 dB)." },
+    { "id": "gain", "label": "Gain", "group": "Look", "min": 0.5, "max": 4.0, "default": 1.4, "log": true, "unit": "x" },
+    { "id": "contrast", "label": "Contrast", "group": "Look", "min": 0.5, "max": 3.0, "default": 1.6, "help": "Brightness is the level to this power: higher darkens the quiet more." }
+  ]
+}

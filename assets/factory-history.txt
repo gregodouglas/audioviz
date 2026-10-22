@@ -84,7 +84,9 @@ visuals/eclipse/visual.wgsl b063ce848062b898
 visuals/eclipse/visual.wgsl d19bd98f6a6ffb3d
 visuals/eqrings/visual.json 628c9fee49edbb41
 visuals/eqrings/visual.wgsl b89623259c6e1253
+visuals/hallway/visual.json 2d5a0b74aa84baa6
 visuals/hallway/visual.json 674e6d4e49b49041
+visuals/hallway/visual.wgsl 7999f9a09e1e0d17
 visuals/hallway/visual.wgsl b6d0b7ef75cdd0d7
 visuals/harmonograph/visual.json 548d04f846e1fcb4
 visuals/harmonograph/visual.json 5bd9ce1822b44d0e

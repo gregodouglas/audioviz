@@ -6,7 +6,7 @@
   "credit": "After vizz.fm's Frequency Hallway (https://vizz.fm). No code used; written fresh.",
   "hint": "Every Spacing a new row of bars is born at the far end from the spectrum then: on each surface the lows in the middle, the highs toward the corners. Rows ride toward you, faster with the energy and on each beat. The view sways a little with the bar.",
   "items": 434,
-  "triangles": 6144,
+  "triangles": 30720,
   "params": [
     { "id": "rows", "label": "Rows", "type": "integer", "group": "Hallway", "min": 8, "max": 48, "default": 24 },
     { "id": "spacing", "label": "Spacing", "group": "Hallway", "min": 0.1, "max": 0.8, "default": 0.4 },
@@ -16,6 +16,8 @@
     { "id": "surfaces", "label": "Surfaces", "type": "choice", "group": "Hallway", "options": ["All four", "Floor and ceiling", "Walls"], "values": ["all", "floors", "walls"], "default": "all" },
     { "id": "kick", "label": "Beat kick", "group": "Music", "min": 0.0, "max": 2.0, "default": 1.0 },
     { "id": "sway", "label": "Sway", "group": "Music", "min": 0.0, "max": 2.0, "default": 0.6, "help": "How far the view sways once a bar, as much as the beat is sure." },
+    { "id": "build", "label": "Bars", "type": "choice", "group": "Look", "options": ["Boxes", "Flat"], "values": ["boxes", "flat"], "default": "boxes", "help": "Boxes: each bar a glass box in 3D, edges bright. Flat: each bar a soft glowing strip facing you." },
+    { "id": "depth", "label": "Box depth", "group": "Look", "min": 0.05, "max": 1.0, "default": 0.35, "help": "With Boxes: how deep a box is, as a share of the gap between rows." },
     { "id": "thickness", "label": "Bar width", "group": "Look", "min": 0.1, "max": 1.0, "default": 0.3 },
     { "id": "fog", "label": "Fog", "group": "Look", "min": 0.0, "max": 1.0, "default": 0.7 },
     { "id": "colouring", "label": "Colour by", "type": "choice", "group": "Look", "options": ["Frequency", "Depth", "Level"], "values": ["frequency", "depth", "level"], "default": "frequency" }

@@ -4,14 +4,18 @@
 // the energy and on each beat) and are reborn behind it. On each surface
 // 16 bars, mirrored about its middle (the lows there, the highs toward the
 // corners), stand out from it toward the corridor's middle by their level.
-// Each bar is a quad facing the eye, painted as a soft glowing bar.
+// Flat: each bar is a quad facing the eye, painted as a soft glowing bar.
+// Boxes: each bar is a box in perspective, a row's depth deep by Box depth:
+// five faces of glass (added light, so no sorting), bright at the edges and
+// faintly lit across, the top brightest.
 //
 // Items, every one working out the same clock from last frame's:
 //   0                 (distance travelled, distance at the last birth, births, 0)
 //   1                 (last beat pulse, beat kick, 1 once started, sway's sureness)
 //   BANDS0 + 8s + g   row slot s's bands 4g .. 4g+3, as born
 //   META0 + s         row slot s: (distance at its birth, 0, 0, 0)
-// Triangles: row r's bar b (64 a row: 16 a surface) is quad r * 64 + b.
+// Triangles: row r's bar b (64 a row: 16 a surface) is quads
+// (r * 64 + b) * 5 .. + 4: Flat uses the first, Boxes all five faces.
 
 const MAX_ROWS: u32 = 48u;
 const BANDS0: u32 = 2u;
@@ -115,8 +119,13 @@ fn vertex(i: u32) -> MeshVertex {
     v.data = vec4<f32>(0.0);
     let quad = i / 6u;
     let corner = i % 6u;
-    let r = quad / 64u;
-    let bar = quad % 64u;
+    let face = quad % 5u;
+    let r = quad / 320u;
+    let bar = (quad / 5u) % 64u;
+    let boxes = P.build < 0.5;
+    if (!boxes && face > 0u) {
+        return v;
+    }
     let surface = bar / 16u;
     let k = bar % 16u;
     if (r >= row_count() || !surface_on(surface)) {
@@ -124,7 +133,8 @@ fn vertex(i: u32) -> MeshVertex {
     }
     let d = item(0u).x;
     let z = far() - (d - item(META0 + r).x);
-    if (z <= Z_NEAR) {
+    let dz = select(0.0, 0.5 * P.spacing * clamp(P.depth, 0.05, 1.0), boxes);
+    if (z - dz <= Z_NEAR) {
         return v;
     }
     // Mirrored about the surface's middle: 8 a side, the lows in the middle.
@@ -159,32 +169,70 @@ fn vertex(i: u32) -> MeshVertex {
         case 4u: { c = vec2<f32>(1.0, 1.0); }
         default: { c = vec2<f32>(-1.0, 1.0); }
     }
+    // The view sways once a bar.
+    let sway0 = P.sway * 0.12 * sin(TAU * bar_phase()) * item(1u).w;
+    let cam0 = vec2<f32>(sway0, 0.15 * sway0);
+    var tone = colour(t);
+    if (P.colouring > 1.5) {
+        tone = colour(0.15 + 0.8 * level);
+    } else if (P.colouring > 0.5) {
+        tone = colour(fract((item(META0 + r).x) * 0.15));
+    }
+    let fog0 = exp(-P.fog * (z - Z_NEAR) * 0.35);
+    let birth0 = smoothstep(far(), far() - 2.0 * P.spacing, z);
+    let near0 = smoothstep(Z_NEAR + 0.2, Z_NEAR + 1.4, z);
+    if (boxes) {
+        // The face's corners as (u, v) 0..1, then the box's (across -1..1,
+        // out 0..1, deep -1..1) at them.
+        var uv = vec2<f32>(0.0);
+        switch (corner) {
+            case 1u: { uv = vec2<f32>(1.0, 0.0); }
+            case 2u: { uv = vec2<f32>(1.0, 1.0); }
+            case 3u: { uv = vec2<f32>(0.0, 0.0); }
+            case 4u: { uv = vec2<f32>(1.0, 1.0); }
+            case 5u: { uv = vec2<f32>(0.0, 1.0); }
+            default: {}
+        }
+        var b = vec3<f32>(0.0);
+        var lit = 0.0;
+        switch (face) {
+            case 0u: { b = vec3<f32>(uv.x * 2.0 - 1.0, uv.y, -1.0); lit = 0.5; }   // front
+            case 1u: { b = vec3<f32>(uv.x * 2.0 - 1.0, uv.y, 1.0); lit = 0.25; }   // back
+            case 2u: { b = vec3<f32>(uv.x * 2.0 - 1.0, 1.0, uv.y * 2.0 - 1.0); lit = 1.0; }   // top
+            case 3u: { b = vec3<f32>(-1.0, uv.x, uv.y * 2.0 - 1.0); lit = 0.35; }   // one side
+            default: { b = vec3<f32>(1.0, uv.x, uv.y * 2.0 - 1.0); lit = 0.35; }   // the other
+        }
+        let hwb = 0.5 * cell * clamp(P.thickness * 1.2, 0.1, 0.95);
+        let wb = centre + along * b.x * hwb + out_n * b.y * reach;
+        let zb = z + b.z * dz;
+        v.pos = vec4<f32>((wb - cam0) * FOCAL, 0.0, zb);
+        let fade = exp(-P.fog * (zb - Z_NEAR) * 0.35) * birth0 * smoothstep(Z_NEAR + 0.2, Z_NEAR + 1.4, zb);
+        v.colour = vec4<f32>(tone * (0.5 + 1.1 * level) * fade, 0.0);
+        v.data = vec4<f32>(uv, 1.0, lit);
+        return v;
+    }
     // A little wider than the bar, so paint() has room for its glow.
     let pad = 1.6;
     let world = centre + along * c.x * hw * pad + out_n * (c.y * reach * 1.15 - 0.05 * reach);
-    // The view sways once a bar.
-    let sway = P.sway * 0.12 * sin(TAU * bar_phase()) * item(1u).w;
-    let cam = vec2<f32>(sway, 0.15 * sway);
-    let screen = (world - cam) * FOCAL / z;
+    let screen = (world - cam0) * FOCAL / z;
     v.pos = vec4<f32>(screen, 0.0, 1.0);
-    var col = colour(t);
-    if (P.colouring > 1.5) {
-        col = colour(0.15 + 0.8 * level);
-    } else if (P.colouring > 0.5) {
-        col = colour(fract((item(META0 + r).x) * 0.15));
-    }
-    let fog = exp(-P.fog * (z - Z_NEAR) * 0.35);
-    let birth = smoothstep(far(), far() - 2.0 * P.spacing, z);
     // Near rows fade out before they fill the view.
-    let near = smoothstep(Z_NEAR + 0.2, Z_NEAR + 1.4, z);
-    v.colour = vec4<f32>(col * (0.5 + 1.1 * level) * fog * birth * near, 0.0);
+    v.colour = vec4<f32>(tone * (0.5 + 1.1 * level) * fog0 * birth0 * near0, 0.0);
     // For paint: across in bar widths, out in bar lengths.
     v.data = vec4<f32>(c.x * pad, c.y * 1.15 - 0.05, 0.0, 0.0);
     return v;
 }
 
-// A bar with a soft edge and a glow round it, ending at zero.
+// Flat: a bar with a soft edge and a glow round it, ending at zero.
+// Boxes: a face of glass, its edges bright lines a pixel or two wide.
 fn paint(f: MeshFragment) -> vec4<f32> {
+    if (f.data.z > 0.5) {
+        let uv = f.data.xy;
+        let fw = max(fwidth(uv), vec2<f32>(1e-5));
+        let d = min(min(uv.x, 1.0 - uv.x) / fw.x, min(uv.y, 1.0 - uv.y) / fw.y);
+        let edge = 1.0 - smoothstep(0.6, 1.8, d);
+        return vec4<f32>(f.colour.rgb * (edge * 0.9 + 0.08 * f.data.w), 0.0);
+    }
     let q = f.data.xy;
     let dx = max(abs(q.x) - 1.0, 0.0);
     let dy = max(max(-q.y, q.y - 1.0), 0.0);

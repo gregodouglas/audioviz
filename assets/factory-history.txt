@@ -40,6 +40,7 @@ scenes/Loop.json eb5a56734e91635f
 scenes/Mesh grid.json f0edc2ebbc3db446
 scenes/Night.json 5a924f65e5817d4c
 scenes/Night.json fa16ab31e44a317d
+scenes/Particle dance.json 1d9fccde43216bdc
 scenes/Party.json a6fb5b612a552bdd
 scenes/Party.json ca4369b52c4b2028
 scenes/Radial.json 1eee38afdb6c3840
@@ -214,6 +215,8 @@ visuals/meshgrid/visual.json a7a8ab73c3dd9100
 visuals/meshgrid/visual.wgsl 748d37c8bb7a7ab3
 visuals/orb/visual.json 7b533ef486ad41b7
 visuals/orb/visual.wgsl e59399c292525c09
+visuals/particles/visual.json 3cf07f7cf3efb9d7
+visuals/particles/visual.wgsl 48fe9af60b274a73
 visuals/polygon/visual.json d64bb9c281a38d14
 visuals/polygon/visual.json f26215cab841c69e
 visuals/polygon/visual.wgsl afd98df47f322ff1

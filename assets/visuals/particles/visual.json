@@ -1,0 +1,24 @@
+{
+  "id": "particles",
+  "name": "Particle dance",
+  "short": "Particles",
+  "summary": "Thousands of glowing particles in 3D swirling into shifting clouds, wheeling as a galaxy, or bursting out on the beat.",
+  "credit": "After vizz.fm's Particle Dance (https://vizz.fm). No code used; written fresh.",
+  "hint": "Cloud: a swirling flow carries the particles, three drifting points gather them, and each beat blows the clouds apart. Galaxy: a spiral disc that turns with the energy, its stars twinkling with the highs. Burst: each beat throws out a shower of sparks. The view goes slowly round.",
+  "items": 131074,
+  "triangles": 131072,
+  "params": [
+    { "id": "mode", "label": "Mode", "type": "choice", "group": "Particles", "options": ["Cloud", "Galaxy", "Burst"], "default": "cloud" },
+    { "id": "count", "label": "Particles", "type": "integer", "group": "Particles", "min": 1000, "max": 65536, "default": 24000, "log": true },
+    { "id": "speed", "label": "Speed", "group": "Particles", "min": 0.1, "max": 3.0, "default": 1.0, "log": true },
+    { "id": "swirl", "label": "Swirl", "group": "Particles", "min": 0.0, "max": 2.0, "default": 1.0, "help": "Cloud and Burst: how hard the flow turns them." },
+    { "id": "gather", "label": "Gather", "group": "Particles", "min": 0.0, "max": 2.0, "default": 0.8, "help": "Cloud: how tightly the particles cluster round their drifting points." },
+    { "id": "kick", "label": "Beat kick", "group": "Music", "min": 0.0, "max": 2.0, "default": 1.0, "help": "Cloud: how hard a beat blows the clouds apart. Burst: how many sparks a beat throws and how fast. Galaxy: how bright the core flashes." },
+    { "id": "twinkle", "label": "Twinkle", "group": "Music", "min": 0.0, "max": 2.0, "default": 0.8, "help": "How much the highs make the particles sparkle." },
+    { "id": "size", "label": "Size", "group": "Look", "min": 0.5, "max": 8.0, "default": 2.2, "log": true, "unit": "px" },
+    { "id": "brightness", "label": "Brightness", "group": "Look", "min": 0.1, "max": 3.0, "default": 1.0, "log": true },
+    { "id": "view", "label": "View angle", "group": "Look", "min": 0.0, "max": 1.0, "default": 0.25, "help": "From level with the middle to looking down on it." },
+    { "id": "turn", "label": "Turn", "group": "Look", "min": -2.0, "max": 2.0, "default": 0.3, "help": "How fast the view goes round." },
+    { "id": "colouring", "label": "Colour by", "type": "choice", "group": "Look", "options": ["Speed", "Place", "Each its own"], "values": ["speed", "place", "own"], "default": "speed", "help": "Speed: the palette by how fast each moves (the galaxy, turning as one, by place). Place: by distance from the middle. Each its own: a colour per particle." }
+  ]
+}

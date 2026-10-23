@@ -1,0 +1,19 @@
+{
+  "when": ["cartoon"],
+  "parts": ["cartoon.wgsl"],
+  "params": [
+    { "id": "count", "label": "Eyes", "type": "integer", "group": "Eyes", "min": 1, "max": 32, "default": 13 },
+    { "id": "spread", "label": "Spread", "group": "Eyes", "min": 0.3, "max": 1.2, "default": 0.75, "help": "How wide the cluster is." },
+    { "id": "sizes", "label": "Size mix", "group": "Eyes", "min": 0.0, "max": 1.0, "default": 0.5, "help": "From all the same size to big and small mixed." },
+    { "id": "iris", "label": "Iris size", "group": "Eyes", "min": 0.0, "max": 1.0, "default": 0.5 },
+    { "id": "lids", "label": "Lids", "type": "toggle", "group": "Eyes", "default": true },
+    { "id": "veins", "label": "Veins", "group": "Eyes", "min": 0.0, "max": 1.0, "default": 0.3 },
+    { "id": "wander", "label": "Wander", "group": "Gaze", "min": 0.0, "max": 1.0, "default": 0.5, "help": "How far the gaze roams." },
+    { "id": "stare", "label": "Stare", "group": "Gaze", "min": 0.0, "max": 1.0, "default": 0.4, "help": "How often a new look is straight at you." },
+    { "id": "darting", "label": "Darting", "group": "Gaze", "min": 0.0, "max": 1.0, "default": 0.5, "help": "How often a sharp sound makes the gaze jump." },
+    { "id": "blink", "label": "Blinks", "group": "Music", "min": 0.0, "max": 1.0, "default": 0.3, "help": "The share of the eyes that blink on each beat." },
+    { "id": "bounce", "label": "Bounce", "group": "Music", "min": 0.0, "max": 2.0, "default": 1.0, "help": "How much each eye swells with its band." },
+    { "id": "pupil", "label": "Pupils", "group": "Music", "min": 0.0, "max": 2.0, "default": 1.0, "help": "How much the bass widens the pupils." },
+    { "id": "colouring", "label": "Iris colour", "type": "choice", "group": "Look", "options": ["Each its own", "All alike"], "values": ["own", "alike"], "default": "own" }
+  ]
+}

@@ -113,8 +113,16 @@ visuals/eclipse/visual.wgsl d19bd98f6a6ffb3d
 visuals/eqrings/visual.json 628c9fee49edbb41
 visuals/eqrings/visual.wgsl b89623259c6e1253
 visuals/eqrings/visual.wgsl ca28df29feea0854
+visuals/eyes/cartoon/cartoon.wgsl 8f81bebc7f2b7747
+visuals/eyes/cartoon/variant.json 9a93927495bc3639
+visuals/eyes/real/eye.wgsl 84c346aae83920ed
+visuals/eyes/real/iris.wgsl 51a51aca7df1ca48
+visuals/eyes/real/light.wgsl d69d7eddf4d1f84d
+visuals/eyes/real/variant.json c38e873e766f6175
 visuals/eyes/visual.json 7ecd0076d41d4366
+visuals/eyes/visual.json dad3fab1445d88e7
 visuals/eyes/visual.wgsl 188e6546810cc572
+visuals/eyes/visual.wgsl a5fd8946cd7414aa
 visuals/hallway/visual.json 2d5a0b74aa84baa6
 visuals/hallway/visual.json 674e6d4e49b49041
 visuals/hallway/visual.wgsl 7999f9a09e1e0d17

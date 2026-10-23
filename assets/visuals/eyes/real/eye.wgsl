@@ -79,7 +79,7 @@ fn prepare(i: u32) -> vec4<f32> {
         var reach = 0.0;
         for (var k = 0u; k < eye_count(); k++) {
             let e = item(L0 + k);
-            reach = max(reach, length(e.xy) + e.w * 1.15);
+            reach = max(reach, length(e.xy) + e.w * select(1.15, SHELL, has_lids()));
         }
         return vec4<f32>(beats, pupil, open, reach * 1.05 + 0.02);
     }

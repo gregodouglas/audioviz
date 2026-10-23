@@ -41,10 +41,24 @@ fn room(dir: vec3<f32>, rough: f32) -> vec3<f32> {
     if (!layer_on(4u)) {
         return vec3<f32>(0.0);
     }
-    let key = panel(dir, KEY, 0.42, 0.3, 0.045 + rough) * 7.0;
-    let strip = panel(dir, STRIP, 0.06, 0.55, 0.01 + rough) * 2.5;
-    let fill = 0.015 + 0.03 * max(dir.y, 0.0);
-    return light_tint(0.15) * key + light_tint(0.6) * strip + vec3<f32>(fill);
+    let key = panel(dir, KEY, 0.17, 0.13, 0.015 + rough) * 60.0;
+    let frame = panel(dir, KEY, 0.2, 0.16, 0.006 + rough) - panel(dir, KEY, 0.17, 0.13, 0.006 + rough);
+    let strip = panel(dir, STRIP, 0.022, 0.22, 0.006 + rough) * 16.0;
+    // The window: four panes, the bars between them dark.
+    let win_dir = vec3<f32>(0.55, 0.32, 0.77);
+    let pane = panel(dir, win_dir, 0.1, 0.13, 0.006 + rough);
+    let wt = normalize(win_dir);
+    let ws = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), wt));
+    let wu = cross(wt, ws);
+    let wa = vec2<f32>(dot(dir, ws), dot(dir, wu)) / max(dot(dir, wt), 1e-3);
+    let bars = max(1.0 - smoothstep(0.004, 0.008 + rough, abs(wa.x)), 1.0 - smoothstep(0.004, 0.008 + rough, abs(wa.y)));
+    let window = pane * (1.0 - bars) * 14.0;
+    // Walls lit dimly, a darker floor, a dim ceiling.
+    let wall = 0.035 * (1.0 - abs(dir.y)) * smoothstep(-0.2, 0.6, dir.z + 0.3);
+    let floor = 0.008 * smoothstep(0.0, -0.5, dir.y);
+    let ceiling = 0.02 * smoothstep(0.3, 0.9, dir.y);
+    return light_tint(0.15) * (key + frame * 0.15) + light_tint(0.6) * strip + light_tint(0.4) * window * vec3<f32>(0.85, 0.92, 1.05)
+        + vec3<f32>(wall + floor + ceiling + 0.006);
 }
 
 // The light falling on a surface facing n, wrapped round its edge a
@@ -109,7 +123,7 @@ fn white_colour(f: Frame, k: u32, p: vec3<f32>, rd: vec3<f32>, pw: f32) -> vec3<
     let l = vec3<f32>(dot(n, f.x), dot(n, f.y), dot(n, f.g));
     // Ivory, pinker and duskier toward the back, a cool grey-blue where it
     // thins at the limbus.
-    var base = vec3<f32>(0.84, 0.8, 0.75);
+    var base = vec3<f32>(0.76, 0.73, 0.69);
     base = mix(base, vec3<f32>(0.62, 0.42, 0.38), smoothstep(0.45, -0.2, l.z));
     base = mix(base, vec3<f32>(0.55, 0.57, 0.6), smoothstep(0.83, 0.873, l.z) * 0.5);
     if (layer_on(1u) && P.veins > 0.0) {
@@ -126,8 +140,8 @@ fn white_colour(f: Frame, k: u32, p: vec3<f32>, rd: vec3<f32>, pw: f32) -> vec3<
         col += base * vec3<f32>(0.12, 0.025, 0.02) * smoothstep(0.3, -0.2, dot(n, normalize(KEY)));
     }
     // The tear film: a soft mirror.
-    let fr = fresnel(dot(-rd, n), 0.02) * P.wet;
-    col += room(reflect(rd, n), 0.12) * fr;
+    let fr = fresnel(dot(-rd, n), 0.022) * P.wet;
+    col += room(reflect(rd, n), 0.035) * fr * 0.5;
     return col;
 }
 

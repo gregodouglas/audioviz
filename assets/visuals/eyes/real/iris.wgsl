@@ -61,6 +61,21 @@ fn ring_noise(a: f32, u: f32, around: f32, out: f32, salt: f32) -> f32 {
     return vnoise3(vec3<f32>(cos(a) * r, sin(a) * r, u * out) + vec3<f32>(salt, salt * 1.7, 0.0));
 }
 
+// The iris's height at (ang, u), roughly: the broad parts of its relief
+// (the first fibres, the bundles, the collarette's ridge, the crypts'
+// pits), for lighting it from the side the light is on.
+fn iris_relief(k: u32, ang: f32, u: f32) -> f32 {
+    let salt = f32(k) * 7.31 + 1.0;
+    let wav = 0.05 * ring_noise(ang, u, 6.0, 1.5, salt + 3.0);
+    let fib = pow(1.0 - abs(ring_noise(ang + wav, u, 110.0, 2.5, salt)), 4.0);
+    let bundle = smoothstep(0.55, 0.95, 1.0 - abs(ring_noise(ang + 0.12 * u + wav * 2.0, u, 34.0, 0.9, salt + 61.0)));
+    let uc = 0.3 + 0.07 * ring_noise(ang, 0.0, 9.0, 0.0, salt + 5.0) + 0.035 * ring_noise(ang, 0.0, 26.0, 0.0, salt + 8.0);
+    let ridge = exp(-pow((u - uc) / 0.022, 2.0)) * (0.5 + 0.5 * smoothstep(-0.4, 0.4, ring_noise(ang, u, 40.0, 3.0, salt + 66.0)));
+    let cn = ring_noise(ang + wav * 3.0, u, 15.0, 3.2, salt + 13.0);
+    let crypt = smoothstep(0.42, 0.78, cn) * smoothstep(uc, uc + 0.05, u) * (1.0 - smoothstep(0.5, 0.78, u));
+    return 0.35 * fib + 0.5 * bundle + 0.7 * ridge - 0.9 * crypt;
+}
+
 // The iris (or pupil) at `rad` from the middle, angle `ang`; `fa` is a
 // pixel's width as an angle there, `fr` as a radius, for fading detail.
 fn iris_colour(k: u32, rad: f32, ang: f32, fa: f32, fr: f32) -> vec3<f32> {
@@ -77,7 +92,7 @@ fn iris_colour(k: u32, rad: f32, ang: f32, fa: f32, fr: f32) -> vec3<f32> {
     let u = (rad - pr) / (IRIS_R - pr);
     let edge = fr / (IRIS_R - pr);
     // The pupil: near black, its edge soft over a pixel, ringed by the ruff.
-    let in_pupil = 1.0 - smoothstep(-edge, edge, u + 0.012 * ring_noise(ang, 0.0, 70.0, 0.0, salt) + 0.01 * ring_noise(ang, 0.0, 8.0, 0.0, salt + 2.0));
+    let in_pupil = 1.0 - smoothstep(-edge, edge, u + 0.006 * ring_noise(ang, 0.0, 70.0, 0.0, salt) + 0.008 * ring_noise(ang, 0.0, 8.0, 0.0, salt + 2.0));
     var pg = pigment(iris_kind(k));
     if (u32(P.colours) == 1u) {
         // Palette: the irises in the palette's colours, the structure kept.
@@ -91,28 +106,28 @@ fn iris_colour(k: u32, rad: f32, ang: f32, fa: f32, fr: f32) -> vec3<f32> {
     // The fibres: long radially, thin across, wavy, in four sizes, each
     // fading out when finer than a pixel; over them, a few broad bundles
     // (trabeculae) that curve as they run out.
-    let wav = 0.05 * ring_noise(ang, u, 6.0, 1.5, salt + 3.0) + 0.02 * ring_noise(ang, u, 40.0, 6.0, salt + 4.0);
+    let wav = 0.035 * ring_noise(ang, u, 6.0, 1.2, salt + 3.0) + 0.006 * ring_noise(ang, u, 40.0, 3.0, salt + 4.0);
     var fib = 0.0;
     var wsum = 0.0;
-    var around = 110.0;
-    var out = 2.5;
+    var around = 90.0;
+    var out = 0.7;
     var w = 0.55;
     for (var o = 0; o < 4; o++) {
         let n = ring_noise(ang + wav * (1.0 + f32(o) * 0.5), u, around, out, salt + f32(o) * 11.0);
         let keep = 1.0 - smoothstep(0.3, 0.9, fa * around / TAU * 2.0);
-        fib += pow(1.0 - abs(n), 4.0) * w * keep;
+        fib += pow(1.0 - abs(n), 3.0) * w * keep;
         wsum += w * keep;
         around *= 2.1;
-        out *= 1.8;
+        out *= 1.5;
         w *= 0.7;
     }
     fib = fib / max(wsum, 1e-3);
-    fib *= 0.6 + 0.4 * (ring_noise(ang, u, 30.0, 4.0, salt + 51.0) * 0.5 + 0.5);
+    fib *= 0.45 + 0.55 * smoothstep(-0.6, 0.8, ring_noise(ang, u, 30.0, 4.0, salt + 51.0)) * (0.7 + 0.3 * ring_noise(ang, 0.0, 7.0, 0.0, salt + 52.0));
     let bundle_n = ring_noise(ang + 0.12 * u + wav * 2.0, u, 34.0, 0.9, salt + 61.0);
     let bundle = smoothstep(0.55, 0.95, 1.0 - abs(bundle_n)) * smoothstep(0.05, 0.25, u) * (1.0 - smoothstep(0.75, 0.95, u));
     // The collarette: a wavy ridge of brighter fibres a third of the way out.
-    let uc = 0.3 + 0.045 * ring_noise(ang, 0.0, 9.0, 0.0, salt + 5.0) + 0.025 * ring_noise(ang, 0.0, 26.0, 0.0, salt + 8.0);
-    let ridge = exp(-pow((u - uc) / 0.03, 2.0));
+    let uc = 0.3 + 0.07 * ring_noise(ang, 0.0, 9.0, 0.0, salt + 5.0) + 0.035 * ring_noise(ang, 0.0, 26.0, 0.0, salt + 8.0);
+    let ridge = exp(-pow((u - uc) / 0.022, 2.0)) * (0.5 + 0.5 * smoothstep(-0.4, 0.4, ring_noise(ang, u, 40.0, 3.0, salt + 66.0)));
     let inner = 1.0 - smoothstep(uc - 0.05, uc + 0.02, u);
     // Crypts: soft dark pits just outside the collarette, pale at their
     // rims, longer than wide.
@@ -141,7 +156,15 @@ fn iris_colour(k: u32, rad: f32, ang: f32, fa: f32, fr: f32) -> vec3<f32> {
     col = mix(col, vec3<f32>(0.045, 0.022, 0.012), ruff * 0.85);
     // The tissue's relief: fibres and bundles catch the light, pits fall
     // in shadow.
-    col *= 0.7 + 0.45 * fib + 0.25 * bundle - 0.25 * crypt;
+    col *= 0.75 + 0.35 * fib + 0.2 * bundle - 0.2 * crypt;
+    // Lit from the light's side (above left in the iris's plane): a step
+    // toward the light, and how the height changes there.
+    let toward = atan2(KEY.y, KEY.x);
+    let step_len = 0.012;
+    let du = cos(ang - toward) * step_len / (IRIS_R - pr);
+    let dang = -sin(ang - toward) * step_len / max(rad, 0.05);
+    let slope = iris_relief(k, ang, u) - iris_relief(k, ang + dang, u + du);
+    col *= clamp(1.0 + slope * 1.4, 0.65, 1.35);
     let pupil = vec3<f32>(0.004, 0.003, 0.003);
     return mix(col, pupil, in_pupil);
 }

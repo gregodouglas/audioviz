@@ -34,36 +34,28 @@
         ]
       },
       "palette": {
-        "name": "galaxy",
+        "name": "custom",
         "custom": [
           {
             "t": 0.0,
             "rgb": [
-              0.101960786,
-              0.043137256,
-              0.23921569
-            ]
-          },
-          {
-            "t": 0.5,
-            "rgb": [
-              0.4,
               1.0,
-              0.54901963
+              1.0,
+              1.0
             ]
           },
           {
             "t": 1.0,
             "rgb": [
               1.0,
-              1.0,
+              0.0,
               1.0
             ]
           }
         ],
         "amount": 1.0,
         "cycle": 0.0,
-        "cyclic": true,
+        "cyclic": false,
         "react": 1.0
       },
       "modifiers": [

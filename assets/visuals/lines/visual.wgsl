@@ -24,12 +24,10 @@ fn spec_level(t: f32) -> f32 {
     return clamp((spectrum_hz(t * P.highest) - (top - range)) / range * P.gain, 0.0, 1.0);
 }
 
+// Along the palette by level. (The original's white going to magenta is
+// the scene's custom palette.)
 fn trace_colour(level: f32) -> vec3<f32> {
-    if (params().colours > 0.5) {
-        return colour(0.1 + 0.85 * level);
-    }
-    // White going to magenta (the green drains away).
-    return vec3<f32>(1.0, 1.0 - level, 1.0);
+    return colour(0.1 + 0.85 * level);
 }
 
 fn point(i: u32) -> LinePoint {

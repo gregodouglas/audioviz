@@ -63,15 +63,10 @@ fn view(p: vec3<f32>) -> vec3<f32> {
     return vec3<f32>(w.xy * 3.0 / z, z);
 }
 
+// Along the palette by reach. (The original's yellow, red and pink are the
+// scene's custom palette.)
 fn spike_colour(level: f32) -> vec3<f32> {
-    if (params().colours > 0.5) {
-        return colour(0.1 + 0.85 * level);
-    }
-    // Yellow, red, pink, as the original's three bands, blended.
-    let yellow = vec3<f32>(1.0, 0.94, 0.0);
-    let red = vec3<f32>(1.0, 0.0, 0.0);
-    let pink = vec3<f32>(1.0, 0.0, 0.5);
-    return select(mix(red, pink, smoothstep(0.55, 0.75, level)), mix(yellow, red, smoothstep(0.2, 0.4, level)), level < 0.45);
+    return colour(0.1 + 0.85 * level);
 }
 
 fn point(i: u32) -> LinePoint {

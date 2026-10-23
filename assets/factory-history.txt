@@ -75,9 +75,11 @@ visuals/bars/visual.json c8fcd1a7a7f9dbe1
 visuals/bars/visual.wgsl f4ebadd160333d63
 visuals/blackhole/visual.json c56fecbb8618b96a
 visuals/blackhole/visual.wgsl 8c2bda9bb021fa82
+visuals/comet/visual.json 2487034a9c887068
 visuals/comet/visual.json 3bb2fe1efb73be03
 visuals/comet/visual.json af4fe33e5adbc2de
 visuals/comet/visual.wgsl 72cf89c4c0757c6a
+visuals/comet/visual.wgsl b3e1a02ab06ec4e0
 visuals/comet/visual.wgsl d94605cdbfdd7a55
 visuals/crystal/visual.json ce070f972a683422
 visuals/crystal/visual.wgsl 9086feb3bd2de539

@@ -52,7 +52,7 @@ The visuals that ship with the app live in the repo under `assets/visuals/` and 
 | `summary` | no | One line, shown when hovering the visual in the list and behind the "?" beside it. |
 | `credit` | no | Who the idea or code comes from, and the licence. Shown at the foot of the Visual tab. |
 | `hint` | no | A longer explanation at the foot of the Visual tab: what the controls do, which part of the music drives what. |
-| `feedback` | no | `true` keeps your last frame so `prev(uv)` can read it (example 3). Default `false`. |
+| `feedback` | no | `true` keeps your last frame so `prev(uv)` can read it (example 3 says when a trail is better). Default `false`. |
 | `trail` | no | `true` gives `shade` a second picture that persists but is not drawn (`write_trail`, `trail`). See "Keeping a trail" below. |
 | `triangles` | no | How many triangles `fn vertex` draws (up to 1048576); required with `fn vertex`, and only then. See "Drawing triangles" below. |
 | `items` | no | How many values your `prepare` step computes each frame (up to 262144); required when `visual.wgsl` has `fn prepare`, and only then. See "Once a frame: prepare" below. |
@@ -367,53 +367,65 @@ What to take from it:
 - **`V.flow` for motion.** The rings turn faster when the music is loud, without anything jumping.
 - **The loop runs per pixel.** Eight rings is fine (0.44 ms at five). See the budget below before writing a loop of sixty-four.
 
-### 3. Feedback: Comet
+### 3. A picture that lasts: Comet
 
 ![Comet](img/visual-comet.png)
 
-Heads moving on Lissajous paths with the music clock, leaving trails that drift outward, turn and fade. The trails are not stored anywhere: with `"feedback": true`, `prev(uv)` returns last frame's picture, and each frame starts from it, slightly moved and faded.
+Comets moving on looping paths with the music clock: each a white-hot nucleus in a coloured glow, leaving a tail that widens, softens and fades as it ages, and shedding sparks. The tails are not stored as shapes anywhere: with `"trail": true`, `trail(uv)` returns last frame's tails, and each frame starts from them, slightly moved, blurred and faded, adds the heads' newest stretch, and keeps the result with `write_trail`. The heads, their glow and the sparks are drawn fresh on top every frame and never kept.
 
 ```wgsl
 fn shade(uv: vec2<f32>) -> vec3<f32> {
     let P = params();
     let p = centred(uv);
+    let px = pixel();
 
-    // Last frame, read a little nearer the centre (so it drifts outward) and turned.
+    // Last frame's tails, read a little nearer the centre (so they drift
+    // outward) and turned, blurred a little (so they widen as they age), faded.
     let q = rotate(p * (1.0 - P.drift * V.dt), -P.swirl * V.dt);
     let quv = uncentred(q);
-    let inside = all(quv >= vec2<f32>(0.0)) && all(quv <= vec2<f32>(1.0));
-    let keep = exp(-V.dt / P.trail);
-    var col = select(vec3<f32>(0.0), max(prev(quv) * keep - 0.02 * V.dt, vec3<f32>(0.0)), inside);
-
-    // Draw each head as the segment from last frame's place to this one's.
-    let s1 = V.flow * P.speed * 0.25;
-    let s0 = (V.flow - V.dt * (0.5 + 0.5 * V.energy)) * P.speed * 0.25;
-    let radius = P.radius * (1.0 + 0.15 * V.swell);
-    let n = u32(P.heads);
-    for (var i = 0u; i < n; i++) {
-        let fi = f32(i);
-        let d = segment(p, path(s0, fi, P.heads, P.figure, radius), path(s1, fi, P.heads, P.figure, radius));
-        let half = 0.5 * P.size * pixel() * (1.0 + 0.5 * V.beat);
-        let core = clamp((half - d) / pixel() + 0.5, 0.0, 1.0);
-        let c = colour(fi / P.heads + V.flow * 0.02) * (3.0 * core + 0.5 * max(exp(-d / (4.0 * half)) - 0.01, 0.0));
-        col = max(col, c);
+    var tail = vec3<f32>(0.0);
+    if (all(quv >= vec2<f32>(0.0)) && all(quv <= vec2<f32>(1.0))) {
+        let o = 0.5 / V.resolution;
+        let around = (trail(quv + o) + trail(quv - o)) * 0.5;
+        let spread = clamp(P.spread * V.dt * 30.0, 0.0, 1.0);
+        let keep = exp(-V.dt / P.trail);
+        tail = max(mix(trail(quv), around, spread) * keep - 0.02 * V.dt, vec3<f32>(0.0));
     }
-    return col;
+
+    // Each head: the segment from last frame's place to this one's adds a
+    // narrow stretch to its tail, and is drawn over it as a glow and a nucleus.
+    let flare = item(FLARE).y;
+    let n = head_count();
+    var heads = vec3<f32>(0.0);
+    for (var h = 0u; h < n; h++) {
+        let at = item(1u + h);                      // (where it is, where it was)
+        let d = segment(p, at.zw, at.xy);
+        let nucleus = 0.5 * P.size * px;
+        let coma = nucleus * (3.0 + 3.0 * flare);
+        let tone = head_colour(h);
+        tail = max(tail, tone * exp(-(d * d) / (nucleus * nucleus * 1.5)) * 0.8);
+        let core = clamp((nucleus - d) / px + 0.5, 0.0, 1.0);
+        let glow = max(exp(-(d * d) / (coma * coma)) - 0.01, 0.0) * (0.6 + 0.8 * flare);
+        heads = heads + tone * glow + mix(tone, vec3<f32>(1.0), 0.75) * core * 2.0;
+    }
+    write_trail(tail);
+    return tail + heads;
 }
 ```
 
-(`segment` is the distance to a line segment and `path` a Lissajous point; both are in the folder.)
+(`segment` is the distance to a line segment; the heads' places, the flare and the sparks are prepare items, and the sparks are triangles: all in the folder.)
 
 What to take from it:
 
-- **Move the old frame by reading from elsewhere.** To push the trail outward, read from slightly *inside* (`p * (1 - drift * dt)`); to turn it clockwise, read anticlockwise. Read outside the frame and you get the edge pixels smeared in, hence the `inside` test.
-- **Fade by time, not by frame.** `exp(-V.dt / P.trail)` fades by the same amount per second at 60 and at 240 fps. A fixed `0.95` per frame would make trails four times shorter on a fast monitor.
-- **Make the fade reach zero.** The frame is stored in half floats: a value that is only ever multiplied by 0.99 gets stuck a little above zero, and the whole screen stays faintly lit forever. Subtract a little as well (`- 0.02 * V.dt`).
+- **Move the old picture by reading from elsewhere.** To push the tails outward, read from slightly *inside* (`p * (1 - drift * dt)`); to turn them clockwise, read anticlockwise. Read outside the frame and you get the edge pixels smeared in, hence the test that `quv` is inside it.
+- **Blur it to make it age.** Mixing in a little of the neighbours each frame spreads the tail more the longer it has been there, so it is tight at the head and wide and soft behind, as a comet's is. A read half a pixel off on the diagonal averages four pixels at once.
+- **Fade by time, not by frame.** `exp(-V.dt / P.trail)` fades by the same amount per second at 60 and at 240 fps. A fixed `0.95` per frame would make tails four times shorter on a fast monitor.
+- **Make the fade reach zero.** The picture is kept in half floats: a value that is only ever multiplied by 0.99 gets stuck a little above zero, and the whole screen stays faintly lit forever. Subtract a little as well (`- 0.02 * V.dt`).
 - **Bound it.** Combine with `max`, not `+`: a head resting in one place would otherwise add up without limit.
-- **Close the gaps.** A fast head jumps several pixels a frame and would leave a dotted trail; drawing the segment from where it was to where it is gives a solid line. `V.flow` advanced by `V.dt * (0.5 + 0.5 * V.energy)`, so last frame's clock is known exactly.
-- **Choices are indices.** `P.figure` is 0, 1 or 2 for Circle, Eight and Knot.
+- **Close the gaps with last frame's place.** A fast head jumps several pixels a frame and would leave a dotted tail; drawing the segment from where it was to where it is gives a solid one. Keep both places in a prepare item rather than working last frame's out again: anything worked out twice slightly differently shows as kinks.
+- **Keep only what should linger.** `"feedback": true` is the simpler way to a lasting picture: `prev(uv)` returns *everything* you drew last frame. The first Comet used it, and anything moving in it smeared: its sparks left streaks, which made the tails look like barbed wire. A `trail` keeps only what you write to it.
 
-`prev` is your visual's own output before the layer's effects. For echoes of the *finished* layer (after Kaleidoscope, say), use the Feedback effect instead; it works on any visual.
+`prev` and `trail` are your visual's own pictures, before the layer's effects. For echoes of the *finished* layer (after Kaleidoscope, say), use the Feedback effect instead; it works on any visual.
 
 ## Once a frame: prepare
 
@@ -516,7 +528,7 @@ write_trail(kept);
 return steady + kept;
 ```
 
-The **Sigil** works this way: its rings, orbs and star are drawn fresh each frame, while its rays, the pen on the trace, the drips and the drop flare go into the trail and fade by the Afterimage control. A pixel that does not call `write_trail` leaves black in the trail. It costs a second full-size texture and a second target in the full-screen pass.
+**Comet** (example 3) and the **Sigil** work this way. The Sigil's rings, orbs and star are drawn fresh each frame, while its rays, the pen on the trace, the drips and the drop flare go into the trail and fade by the Afterimage control. A pixel that does not call `write_trail` leaves black in the trail. It costs a second full-size texture and a second target in the full-screen pass.
 
 ## Creatures
 
@@ -547,7 +559,7 @@ What a frame costs (release build, RTX 2070 Super, 2560x1440):
 |---|---|
 | The engine's floor for one layer: levelling and blend, composite, the Picture | ~0.6 |
 | Polygon | 0.12 |
-| Comet (three heads, feedback) | 0.24 |
+| Comet (three heads, trail, sparks) | 0.65 |
 | Pulse (five rings) | 0.44 |
 | Spectrum wheel (64 wedges, state and colours in `prepare`) | 0.16 (compiled in, it was 0.18) |
 | Harmonograph (a 6000-point line, no `shade`) | 0.05 |

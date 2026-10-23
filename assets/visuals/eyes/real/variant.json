@@ -1,7 +1,7 @@
 {
   "when": ["real"],
-  "parts": ["eye.wgsl", "iris.wgsl", "light.wgsl"],
-  "layers": ["White", "Veins", "Iris", "Cornea", "Reflections"],
+  "parts": ["eye.wgsl", "iris.wgsl", "light.wgsl", "lids.wgsl"],
+  "layers": ["White", "Veins", "Iris", "Cornea", "Reflections", "Lids", "Lashes"],
   "params": [
     { "id": "view", "label": "View", "type": "choice", "group": "Eyes", "options": ["Dark", "Loose", "Macro"], "values": ["dark", "loose", "macro"], "default": "macro", "help": "Dark: eyes peering out of the dark. Loose: whole eyeballs in a cluster. Macro: one eye close up." },
     { "id": "count", "label": "Eyes", "type": "integer", "group": "Eyes", "min": 1, "max": 32, "default": 7 },
@@ -14,6 +14,8 @@
     { "id": "blink", "label": "Blinks", "group": "Music", "min": 0.0, "max": 1.0, "default": 0.3, "help": "The share of the eyes that blink on each beat." },
     { "id": "pupil", "label": "Pupils", "group": "Music", "min": 0.0, "max": 2.0, "default": 1.0, "help": "How much the bass widens the pupils (a little late, as real pupils are)." },
     { "id": "veins", "label": "Veins", "group": "Look", "min": 0.0, "max": 1.0, "default": 0.35 },
+    { "id": "lashes", "label": "Lashes", "group": "Look", "min": 0.0, "max": 1.5, "default": 1.0, "help": "How long the lashes are (0: none)." },
+    { "id": "skin", "label": "Skin", "group": "Look", "min": 0.0, "max": 1.0, "default": 0.3, "help": "The skin round the eyes, from fair to deep brown." },
     { "id": "wet", "label": "Wet", "group": "Look", "min": 0.0, "max": 2.0, "default": 1.0, "help": "How much the tear film shines." }
   ]
 }

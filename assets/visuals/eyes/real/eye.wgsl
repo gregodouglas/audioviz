@@ -103,6 +103,21 @@ fn eye_at(k: u32, n: u32) -> vec4<f32> {
     if (macro_view()) {
         return vec4<f32>(0.0, 0.0, 0.0, 0.62);
     }
+    if (u32(P.view) == 0u) {
+        // Pairs, each a face in the dark: 63 mm between the pupils is 5.25
+        // eyeball radii.
+        let pairs = (n + 1u) / 2u;
+        let pk = k / 2u;
+        let a = f32(pk) * 2.39996 + 0.9;
+        let rr = P.spread * 0.8 * sqrt((f32(pk) + 0.5) / f32(pairs)) * select(1.0, 0.0, pairs == 1u);
+        let r = P.spread * 0.3 / sqrt(f32(pairs)) * (0.9 + 0.2 * rand(pk, 91.0));
+        let drift = 0.015 * vec2<f32>(sin(V.time * 0.21 + f32(pk)), sin(V.time * 0.17 + f32(pk) * 2.0));
+        let centre = vec2<f32>(cos(a) * 1.3, sin(a) * 0.8) * rr + drift;
+        let side = select(-1.0, 1.0, k % 2u == 1u);
+        let single = k + 1u == n && n % 2u == 1u;
+        let x = centre.x + select(side * 2.62 * r, 0.0, single);
+        return vec4<f32>(x, centre.y, 0.0, r);
+    }
     let a = f32(k) * 2.39996 + 0.3;
     let rr = P.spread * sqrt((f32(k) + 0.5) / f32(n));
     let sway = 0.02 * vec2<f32>(sin(V.time * 0.31), sin(V.time * 0.23 + 1.0));
@@ -188,6 +203,22 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
     }
     let ro = CAMERA;
     let rd = normalize(vec3<f32>(p / FOCAL, -1.0));
+    if (has_lids()) {
+        var tb = 1e9;
+        var kl = MAX_EYES;
+        for (var k = 0u; k < eye_count(); k++) {
+            let e = item(L0 + k);
+            let t = sphere_hit(ro, rd, e.xyz, e.w * SHELL);
+            if (t > 0.0 && t < tb) {
+                tb = t;
+                kl = k;
+            }
+        }
+        if (kl == MAX_EYES) {
+            return vec3<f32>(0.0);
+        }
+        return lidded_colour(kl, ro, rd, tb);
+    }
     var best = 1e9;
     var kb = MAX_EYES;
     var hb: Hit;

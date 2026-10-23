@@ -39,7 +39,8 @@ fn iris_kind(k: u32) -> u32 {
     if (pick > 0u) {
         return pick - 1u;
     }
-    let r = rand(k, 41.0);
+    // A pair (Dark) shares one colour, as people's two eyes do.
+    let r = rand(select(k, k / 2u, u32(params().view) == 0u), 41.0);
     if (r < 0.4) { return 0u; }
     if (r < 0.58) { return 1u; }
     if (r < 0.72) { return 2u; }

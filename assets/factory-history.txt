@@ -35,6 +35,7 @@ scenes/Dot grid.json 894008f3ec1c11e7
 scenes/EQ rings.json 9da261406cfe6667
 scenes/Eclipse.json 5d27bd8aff9e5f85
 scenes/Eclipse.json b88e1fe1ea1400b6
+scenes/Eyes in the dark.json 303874120a4b2ef8
 scenes/Giants.json 7af8d9a15f4e77d1
 scenes/Giants.json dccbd49a91cec7a0
 scenes/Hallway.json 839b1695bfeec61b
@@ -51,6 +52,7 @@ scenes/Lantern.json f79e7f1d810fd98f
 scenes/Lava.json 37116e8224607b29
 scenes/Loop.json 454f15bf0f1c7f10
 scenes/Loop.json eb5a56734e91635f
+scenes/Macro eye.json f12d130783176dbd
 scenes/Mesh grid.json f0edc2ebbc3db446
 scenes/Night.json 5a924f65e5817d4c
 scenes/Night.json fa16ab31e44a317d
@@ -124,6 +126,7 @@ visuals/eyes/real/iris.wgsl 51a51aca7df1ca48
 visuals/eyes/real/iris.wgsl d4f2c433541c8425
 visuals/eyes/real/lids.wgsl 3c48ae23a7751b1d
 visuals/eyes/real/lids.wgsl 782574edb6103364
+visuals/eyes/real/lids.wgsl 8de5028645faedcf
 visuals/eyes/real/lids.wgsl a10f9ad53a27ee0b
 visuals/eyes/real/light.wgsl 43f80970946b9adf
 visuals/eyes/real/light.wgsl 9d020cf452dc1c6e
@@ -131,6 +134,7 @@ visuals/eyes/real/light.wgsl d69d7eddf4d1f84d
 visuals/eyes/real/variant.json c38e873e766f6175
 visuals/eyes/real/variant.json e5007be8a6f173fb
 visuals/eyes/visual.json 7ecd0076d41d4366
+visuals/eyes/visual.json ce947b98befac6cb
 visuals/eyes/visual.json dad3fab1445d88e7
 visuals/eyes/visual.wgsl 188e6546810cc572
 visuals/eyes/visual.wgsl a5fd8946cd7414aa

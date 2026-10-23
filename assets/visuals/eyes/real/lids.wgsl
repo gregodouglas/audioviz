@@ -100,8 +100,7 @@ fn outer_radius(dir: vec3<f32>, L: Lids) -> f32 {
     let within = 1.0 - smoothstep(FISSURE_W * 0.85, FISSURE_W * 1.2, abs(dir.x));
     var r = LID_OUT;
     r += 0.12 * smoothstep(crease_y + 0.02, crease_y + 0.4, dir.y);
-    r -= 0.06 * exp(-pow((dir.y - crease_y) / 0.045, 2.0)) * within;
-    r += 0.03 * exp(-pow((dir.y - crease_y - 0.07) / 0.05, 2.0)) * within;
+    r -= 0.025 * exp(-pow((dir.y - crease_y) / 0.05, 2.0)) * within;
     r += 0.035 * exp(-pow((dir.y - mg.y + 0.09) / 0.05, 2.0)) * step(dir.y, 0.0) * within;
     r += 0.06 * smoothstep(mg.y - 0.25, mg.y - 0.7, dir.y);
     return r;
@@ -177,6 +176,28 @@ fn lid_occlusion(q: vec3<f32>, n: vec3<f32>, L: Lids) -> f32 {
 
 // ---------------------------------------------------------------- the skin
 
+// Skin pores: each cell of a jittered grid holds one; returns the distance
+// to the nearest pore's centre (in cells) and that pore's hash.
+fn pores_at(p: vec2<f32>, salt: f32) -> vec2<f32> {
+    let i = floor(p);
+    let f = fract(p);
+    var best = 9.0;
+    var id = 0.0;
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            let g = vec2<f32>(f32(x), f32(y));
+            let h = hash3i(vec3<i32>(i32(i.x) + x, i32(i.y) + y, i32(salt)));
+            let h2 = hash3i(vec3<i32>(i32(i.x) + x, i32(i.y) + y, i32(salt) + 17));
+            let d = length(g + vec2<f32>(h, h2) * 0.8 + 0.1 - f);
+            if (d < best) {
+                best = d;
+                id = h;
+            }
+        }
+    }
+    return vec2<f32>(best, id);
+}
+
 // The skin at q (local), facing n: subsurface-soft light, pores and fine
 // lines in its normal, an oily sheen, redder near the margins, the margin
 // itself pink and wet; all fading into the dark away from the eye.
@@ -200,18 +221,28 @@ fn skin_colour(k: u32, q: vec3<f32>, n0: vec3<f32>, rd: vec3<f32>, L: Lids, pw: 
     let fine = 1.0 - smoothstep(0.003, 0.01, pw);
     // Pores, fine lines (across the lids, fanning at the outer corner: crow's
     // feet) and a little unevenness, in the normal.
-    let pores = vnoise3(q * 160.0 + salt) * fine;
+    // Pores: small pits on a cellular pattern, each tipping the normal
+    // toward its centre; finer than a pixel they fade.
+    let pore_cell = 0.035;
+    let pc = pores_at(q.xy / pore_cell, salt);
+    let pore_keep = 1.0 - smoothstep(0.2, 0.5, pw / pore_cell);
+    let psize = 0.06 + 0.12 * fract(pc.y * 7.3);
+    let pit = (1.0 - smoothstep(psize * 0.5, psize, pc.x)) * pore_keep * step(0.3, pc.y) * smoothstep(-0.3, 0.6, vnoise3(q * 6.0 + salt + 30.0));
+    // The skin's micro-relief: fine lines crossing at about 80 degrees.
+    let ra = vec2<f32>(q.x * 0.77 + q.y * 0.64, -q.x * 0.64 + q.y * 0.77);
+    let rb = vec2<f32>(q.x * 0.77 - q.y * 0.64, q.x * 0.64 + q.y * 0.77);
+    let rel = (vnoise3(vec3<f32>(ra.x * 14.0, ra.y * 130.0, salt)) + vnoise3(vec3<f32>(rb.x * 14.0, rb.y * 130.0, salt + 2.0))) * fine;
     let lines = vnoise3(vec3<f32>(dir.x * 7.0, dir.y * 60.0, salt)) * fine;
     let outer = smoothstep(0.55, 0.95, -dir.x * L.m);
     let crow = vnoise3(vec3<f32>(atan2(dir.y, -dir.x * L.m) * 30.0, length(dir.xy) * 4.0, salt + 3.0)) * outer * fine;
-    let pore_pit = smoothstep(0.35, 0.8, vnoise3(q * 210.0 + salt + 1.0)) * fine;
-    var n = normalize(n0 + vec3<f32>(pores * 0.16 + crow * 0.06, lines * 0.1 + pores * 0.16 + crow * 0.1, 0.0));
+    let pore_pit = pit;
+    var n = normalize(n0 + vec3<f32>(rel * 0.05 + crow * 0.06, lines * 0.08 + rel * 0.05 + crow * 0.1, 0.0) + vec3<f32>(0.0, 0.0, -pit * 0.12));
     let am = select(1.0, opening(dir, L), length(q) < 1.25 && abs(dir.x) < FISSURE_W * 1.05);
     // The margin: the rounded edge within a little of the opening.
     let rim = smoothstep(-0.0, 0.07, am) * (1.0 - smoothstep(0.07, 0.13, am));
     let wet_edge = 1.0 - smoothstep(0.0, 0.02, am);
     var base = skin_tone() * (0.9 + 0.1 * vnoise3(q * 14.0 + salt));
-    base *= 1.0 - 0.22 * pore_pit;
+    base *= 1.0 - 0.18 * pore_pit;
     let blotch = smoothstep(0.1, 0.7, vnoise3(q * 5.0 + salt + 9.0));
     base = mix(base, base * vec3<f32>(1.12, 0.86, 0.84), blotch * 0.5);
     let pigment = exp(-max(am, 0.0) * 3.0) * smoothstep(0.3, 0.9, -dir.y * 2.0 + 0.6);
@@ -230,6 +261,17 @@ fn skin_colour(k: u32, q: vec3<f32>, n0: vec3<f32>, rd: vec3<f32>, L: Lids, pw: 
     base *= 1.0 - 0.35 * grey;
     let glands = smoothstep(0.75, 0.95, vnoise3(vec3<f32>(dir.x * 220.0, am * 40.0, salt))) * exp(-pow((am - 0.025) / 0.01, 2.0)) * fine;
     base *= 1.0 - 0.5 * glands;
+    // The upper lid's crease: following the lid's arch a little above it,
+    // a fine dark line, the shadow of the fold below it, the fold's rounded
+    // edge catching the light above.
+    let cs = clamp(abs(dir.x) / FISSURE_W, 0.0, 1.2);
+    let crease_at = 0.6 + 0.08 * L.look - 0.3 * cs * cs + 0.03 * dir.x * L.m;
+    let cd = dir.y - crease_at;
+    let along_lid = smoothstep(0.98, 0.6, cs);
+    let crease_line = exp(-pow(cd / 0.006, 2.0)) * along_lid;
+    let fold_shadow = smoothstep(-0.07, 0.0, cd) * (1.0 - smoothstep(0.0, 0.004, cd)) * along_lid;
+    let fold_edge = exp(-pow((cd - 0.025) / 0.02, 2.0)) * along_lid;
+    base *= (1.0 - 0.35 * crease_line) * (1.0 - 0.15 * fold_shadow) * (1.0 + 0.06 * fold_edge);
     // Light: wrapped (light scattering under skin), red where it scatters
     // round into shadow, occlusion in the folds, the lids' own shadows.
     let sh = lid_shadow(q + n0 * 0.01, L, 8);
@@ -239,8 +281,12 @@ fn skin_colour(k: u32, q: vec3<f32>, n0: vec3<f32>, rd: vec3<f32>, L: Lids, pw: 
     var col = base * (light_tint(0.15) * key * 1.3 + light_tint(0.6) * strip * 0.25 + vec3<f32>(0.03)) * ao;
     col += base * vec3<f32>(0.22, 0.04, 0.03) * smoothstep(0.35, -0.1, dot(n, normalize(KEY))) * ao;
     // An oily sheen, sharper and stronger on the wet margin.
-    let gloss = mix(0.4, 0.03, wet_edge);
-    col += room(reflect(rd, n), gloss) * fresnel(dot(-rd, n), mix(0.028, 0.03, wet_edge)) * mix(0.12, 0.6 * P.wet, wet_edge) * mix(0.5 + 0.5 * sh, 1.0, wet_edge);
+    let fr = fresnel(dot(-rd, n), 0.028);
+    let oil = smoothstep(0.0, 0.7, vnoise3(q * 2.5 + salt + 20.0)) * (1.0 - pit);
+    col += room(reflect(rd, n), 0.5) * fr * 0.05 * (0.4 + 0.6 * sh);
+    col += room(reflect(rd, n), 0.16) * fr * 0.05 * oil * sh;
+    // The wet margin: a sharp, bright mirror.
+    col += room(reflect(rd, n), 0.03) * fresnel(dot(-rd, n), 0.03) * 0.25 * P.wet * wet_edge;
     // Into the dark away from the eye (more so in Dark), its edge uneven.
     let hair = brow_cover(q.xy, L.m, k, pw) * select(1.0, 0.0, u32(P.view) == 0u);
     col = mix(col, vec3<f32>(0.02, 0.012, 0.008) * (0.6 + 0.4 * sh), hair * 0.92);
@@ -450,7 +496,8 @@ fn lidded_colour(k: u32, ro: vec3<f32>, rd: vec3<f32>, t_enter: f32) -> vec3<f32
         // Tears gathered along the lower lid: a bright thread.
         let mg = margins(dir.x, L.m, L.open, L.look);
         let tear = exp(-pow((dir.y - mg.y) / 0.007, 2.0)) * (1.0 - smoothstep(0.7, 0.9, abs(dir.x) / FISSURE_W));
-        col += room(reflect(rd, normalize(vec3<f32>(0.0, 0.7, 0.7))), 0.02) * tear * 0.05 * params().wet;
+        let tn = normalize(vec3<f32>(-0.25 - 0.3 * dir.x, 0.32 + 0.1 * vnoise3(q * 30.0), 0.9));
+        col += room(reflect(rd, tn), 0.01) * tear * 0.012 * params().wet * smoothstep(-0.2, 0.5, vnoise3(q * 12.0 + 4.0));
     }
     // The lashes over it all.
     let ts = sphere_hit(lo, rd, vec3<f32>(0.0), LID_OUT);

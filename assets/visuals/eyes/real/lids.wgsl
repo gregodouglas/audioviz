@@ -16,7 +16,7 @@
 // lower lid, the caruncle fills the inner corner, lashes grow from the
 // margins and shade the eye, and the skin fades into the dark.
 
-const SHELL: f32 = 1.6;
+const SHELL: f32 = 2.6;
 const FISSURE_W: f32 = 0.8;
 const LID_IN: f32 = 1.015;
 const LID_OUT: f32 = 1.115;
@@ -47,8 +47,9 @@ fn lids_open(k: u32) -> f32 {
 // both meet a little below the middle.
 fn margins(x: f32, m: f32, open: f32, look_y: f32) -> vec2<f32> {
     let s = clamp(abs(x) / FISSURE_W, 0.0, 1.0);
-    let shape_u = pow(1.0 - pow(s, 2.2), 0.8) * (1.0 + 0.12 * x * m);
-    let shape_l = pow(1.0 - pow(s, 2.0), 1.0) * (1.0 - 0.08 * x * m);
+    let s2 = s * s;
+    let shape_u = (1.0 - s2) * (1.0 + 0.25 * s2 * (1.0 - s2)) * (1.0 + 0.12 * x * m);
+    let shape_l = (1.0 - s2) * (1.0 - 0.08 * x * m);
     let up_open = 0.4 * shape_u + 0.3 * look_y * shape_u;
     let lo_open = -0.4 * shape_l + 0.12 * look_y * shape_l;
     let shut = -0.12 * shape_l;
@@ -84,7 +85,7 @@ fn opening(dir: vec3<f32>, L: Lids) -> f32 {
     // of height zero there would cut a groove out to the temple).
     let cx = abs(dir.x) - FISSURE_W;
     if (cx > 0.0) {
-        return length(vec2<f32>(cx, dir.y));
+        return length(vec2<f32>(cx, dir.y)) * 4.0;
     }
     let mg = margins(dir.x, L.m, L.open, L.look);
     return max(dir.y - mg.x, mg.y - dir.y);
@@ -98,18 +99,44 @@ fn outer_radius(dir: vec3<f32>, L: Lids) -> f32 {
     // The crease and the roll fade out past the corners.
     let within = 1.0 - smoothstep(FISSURE_W * 0.85, FISSURE_W * 1.2, abs(dir.x));
     var r = LID_OUT;
-    r += 0.3 * smoothstep(crease_y + 0.02, crease_y + 0.4, dir.y);
-    r -= 0.035 * exp(-pow((dir.y - crease_y) / 0.05, 2.0)) * within;
+    r += 0.12 * smoothstep(crease_y + 0.02, crease_y + 0.4, dir.y);
+    r -= 0.06 * exp(-pow((dir.y - crease_y) / 0.045, 2.0)) * within;
+    r += 0.03 * exp(-pow((dir.y - crease_y - 0.07) / 0.05, 2.0)) * within;
     r += 0.035 * exp(-pow((dir.y - mg.y + 0.09) / 0.05, 2.0)) * step(dir.y, 0.0) * within;
-    r += 0.16 * smoothstep(mg.y - 0.25, mg.y - 0.7, dir.y);
+    r += 0.06 * smoothstep(mg.y - 0.25, mg.y - 0.7, dir.y);
     return r;
+}
+
+fn smin(a: f32, b: f32, k: f32) -> f32 {
+    let h = max(k - abs(a - b), 0.0) / k;
+    return min(a, b) - h * h * k * 0.25;
+}
+
+// The face round the eye, as a height toward the viewer: the brow forward
+// above, the nose's bridge rising on the inner side, the temple falling
+// away on the outer side, the cheek a little forward below.
+fn face_z(x: f32, y: f32, m: f32) -> f32 {
+    var z = 0.95;
+    z += 0.32 * smoothstep(0.45, 1.15, y);
+    z += 0.5 * smoothstep(0.95, 1.7, x * m);
+    z -= 0.45 * smoothstep(0.9, 2.0, -x * m);
+    z += 0.1 * smoothstep(-0.45, -1.4, y);
+    z -= 0.15 * smoothstep(1.3, 2.2, length(vec2<f32>(x, y)));
+    // The socket the eye sits in.
+    z -= 0.5 * exp(-(pow(x / 1.0, 2.0) + pow(y / 0.75, 2.0)) * 1.5);
+    return z;
 }
 
 fn lid_sdf(q: vec3<f32>, L: Lids) -> f32 {
     let len = length(q);
     let dir = q / max(len, 1e-4);
     let shell = max(len - outer_radius(dir, L), LID_IN - len);
-    return smax(shell, -opening(dir, L) * len * 0.8, 0.06);
+    // The face, joined smoothly to the lids; then the opening through both.
+    let face = (q.z - face_z(q.x, q.y, L.m)) * 0.7;
+    // The opening only near the eye: far out, face points can line up
+    // with its directions.
+    let cut = smax(opening(dir, L), (len - 1.3) * 2.0, 0.12);
+    return smax(smin(shell, face, 0.14), -cut * len * 0.8, 0.06);
 }
 
 fn lid_normal(q: vec3<f32>, L: Lids) -> vec3<f32> {
@@ -122,17 +149,17 @@ fn lid_normal(q: vec3<f32>, L: Lids) -> vec3<f32> {
 }
 
 // Soft shadow toward the key light, from the lids alone.
-fn lid_shadow(q: vec3<f32>, L: Lids) -> f32 {
+fn lid_shadow(q: vec3<f32>, L: Lids, steps: i32) -> f32 {
     let dir = normalize(KEY);
     var res = 1.0;
     var t = 0.02;
-    for (var i = 0; i < 22; i++) {
+    for (var i = 0; i < steps; i++) {
         let h = lid_sdf(q + dir * t, L);
         res = min(res, 9.0 * h / t);
         if (res < 0.01 || t > 1.2) {
             break;
         }
-        t += clamp(h, 0.012, 0.12);
+        t += clamp(h, 0.02, 0.15);
     }
     return clamp(res, 0.0, 1.0);
 }
@@ -140,8 +167,8 @@ fn lid_shadow(q: vec3<f32>, L: Lids) -> f32 {
 fn lid_occlusion(q: vec3<f32>, n: vec3<f32>, L: Lids) -> f32 {
     var occ = 0.0;
     var w = 1.0;
-    for (var i = 1; i <= 3; i++) {
-        let h = 0.03 * f32(i);
+    for (var i = 1; i <= 2; i++) {
+        let h = 0.045 * f32(i);
         occ += (h - lid_sdf(q + n * h, L)) * w;
         w *= 0.6;
     }
@@ -153,8 +180,21 @@ fn lid_occlusion(q: vec3<f32>, n: vec3<f32>, L: Lids) -> f32 {
 // The skin at q (local), facing n: subsurface-soft light, pores and fine
 // lines in its normal, an oily sheen, redder near the margins, the margin
 // itself pink and wet; all fading into the dark away from the eye.
+fn skin_light(q: vec3<f32>, L: Lids) -> f32 {
+    let P = params();
+    let away = length(vec2<f32>(q.x / 1.1, q.y / 0.8)) + 0.07 * vnoise3(vec3<f32>(q.xy * 3.0, L.salt));
+    let reach = select(0.75, 0.55, u32(P.view) == 0u);
+    let fall = max(away - reach, 0.0);
+    let toward = 0.75 + 0.25 * clamp(dot(normalize(q).xy, vec2<f32>(-0.6, 0.5)) * 2.0, -1.0, 1.0);
+    return exp(-fall * fall * select(3.5, 25.0, u32(P.view) == 0u)) * toward;
+}
+
 fn skin_colour(k: u32, q: vec3<f32>, n0: vec3<f32>, rd: vec3<f32>, L: Lids, pw: f32) -> vec3<f32> {
     let P = params();
+    let light = skin_light(q, L);
+    if (light < 0.004) {
+        return vec3<f32>(0.0);
+    }
     let dir = normalize(q);
     let salt = L.salt;
     let fine = 1.0 - smoothstep(0.003, 0.01, pw);
@@ -166,7 +206,7 @@ fn skin_colour(k: u32, q: vec3<f32>, n0: vec3<f32>, rd: vec3<f32>, L: Lids, pw: 
     let crow = vnoise3(vec3<f32>(atan2(dir.y, -dir.x * L.m) * 30.0, length(dir.xy) * 4.0, salt + 3.0)) * outer * fine;
     let pore_pit = smoothstep(0.35, 0.8, vnoise3(q * 210.0 + salt + 1.0)) * fine;
     var n = normalize(n0 + vec3<f32>(pores * 0.16 + crow * 0.06, lines * 0.1 + pores * 0.16 + crow * 0.1, 0.0));
-    let am = opening(dir, L);
+    let am = select(1.0, opening(dir, L), length(q) < 1.25 && abs(dir.x) < FISSURE_W * 1.05);
     // The margin: the rounded edge within a little of the opening.
     let rim = smoothstep(-0.0, 0.07, am) * (1.0 - smoothstep(0.07, 0.13, am));
     let wet_edge = 1.0 - smoothstep(0.0, 0.02, am);
@@ -192,7 +232,7 @@ fn skin_colour(k: u32, q: vec3<f32>, n0: vec3<f32>, rd: vec3<f32>, L: Lids, pw: 
     base *= 1.0 - 0.5 * glands;
     // Light: wrapped (light scattering under skin), red where it scatters
     // round into shadow, occlusion in the folds, the lids' own shadows.
-    let sh = lid_shadow(q + n0 * 0.01, L);
+    let sh = lid_shadow(q + n0 * 0.01, L, 8);
     let ao = lid_occlusion(q, n0, L);
     let key = max((dot(n, normalize(KEY)) + 0.25) / 1.25, 0.0) * sh;
     let strip = max(dot(n, normalize(STRIP)), 0.0);
@@ -202,10 +242,56 @@ fn skin_colour(k: u32, q: vec3<f32>, n0: vec3<f32>, rd: vec3<f32>, L: Lids, pw: 
     let gloss = mix(0.4, 0.03, wet_edge);
     col += room(reflect(rd, n), gloss) * fresnel(dot(-rd, n), mix(0.028, 0.03, wet_edge)) * mix(0.12, 0.6 * P.wet, wet_edge) * mix(0.5 + 0.5 * sh, 1.0, wet_edge);
     // Into the dark away from the eye (more so in Dark), its edge uneven.
-    let away = length(vec2<f32>(dir.x / 1.05, dir.y / 0.72)) + 0.07 * vnoise3(vec3<f32>(dir.xy * 3.0, salt));
-    let reach = select(0.62, 0.5, u32(P.view) == 0u);
-    let fall = max(away - reach, 0.0);
-    return col * exp(-fall * fall * 40.0) * (1.0 - 0.0 * rim);
+    let hair = brow_cover(q.xy, L.m, k, pw) * select(1.0, 0.0, u32(P.view) == 0u);
+    col = mix(col, vec3<f32>(0.02, 0.012, 0.008) * (0.6 + 0.4 * sh), hair * 0.92);
+    return col * light;
+}
+
+// The eyebrow at q (local; m the inner corner's side): coverage by hairs.
+// The brow arches over the eye, thick at its inner end and tapering
+// outward; each cell of a small grid grows a hair or two, growing up and
+// out at the inner end, outward along the arch, a little down at the tail.
+fn brow_cover(q: vec2<f32>, m: f32, k: u32, fw: f32) -> f32 {
+    let along = -q.x * m;
+    let s = clamp((along + 1.0) / 2.2, 0.0, 1.0);
+    let centre = 1.0 + 0.16 * sin(s * 3.14159) - 0.05 * s;
+    let half = mix(0.13, 0.04, s);
+    let band = smoothstep(half + 0.09, half - 0.03, abs(q.y - centre)) * smoothstep(-1.15, -0.9, along) * (1.0 - smoothstep(0.95, 1.3, along));
+    if (band <= 0.0) {
+        return 0.0;
+    }
+    let cell = 0.02;
+    let base = floor(q / cell);
+    var cover = 0.0;
+    for (var j = -1; j <= 1; j++) {
+        for (var i = -1; i <= 1; i++) {
+            for (var h = 0u; h < 2u; h++) {
+            let c = base + vec2<f32>(f32(i), f32(j));
+            let id = u32(i32(c.x) * 73 + i32(c.y) * 9151 + 100000) + k * 7919u + h * 131u;
+            let root = (c + vec2<f32>(rand(id, 1.1), rand(id, 2.2))) * cell;
+            let ra = -root.x * m;
+            let rs = clamp((ra + 1.0) / 2.2, 0.0, 1.0);
+            // Up and out at the inner end, along the arch, down at the tail.
+            let flow = (rand(u32(i32(c.x / 4.0) * 31 + i32(c.y / 3.0) * 977 + 5000), 6.1) - 0.5) * 0.4;
+            let ang = mix(1.1, -0.3, rs) + flow + (rand(id, 3.3) - 0.5) * 0.3;
+            let dir = vec2<f32>(cos(ang) * -m, sin(ang));
+            let len = 0.09 + 0.06 * rand(id, 4.4);
+            // Fewer hairs toward the brow's edges and ends.
+            let rc = 1.28 - 0.28 + 0.16 * sin(rs * 3.14159) - 0.05 * rs;
+            let rh = mix(0.13, 0.04, rs);
+            let dens = smoothstep(rh + 0.07, rh - 0.04, abs(root.y - rc)) * smoothstep(-1.15, -0.9, ra) * (1.0 - smoothstep(0.95, 1.3, ra));
+            if (rand(id, 7.7) > dens) {
+                continue;
+            }
+            let a = q - root;
+            let t = clamp(dot(a, dir) / len, 0.0, 1.0);
+            let dist = length(a - dir * t * len);
+            let w = 0.004 * (1.0 - 0.7 * t) + fw * 0.6;
+            cover = max(cover, (1.0 - smoothstep(w * 0.4, w, dist)) * min(0.004 / w * 3.0, 1.0));
+            }
+        }
+    }
+    return cover * min(band * 2.0, 1.0);
 }
 
 // ---------------------------------------------------------------- lashes
@@ -217,6 +303,13 @@ fn skin_colour(k: u32, q: vec3<f32>, n0: vec3<f32>, rd: vec3<f32>, L: Lids, pw: 
 fn lash_cover(k: u32, d: vec2<f32>, m: f32, open: f32, fw: f32) -> f32 {
     let P = params();
     if (P.lashes <= 0.0 || !layer_on(6u)) {
+        return 0.0;
+    }
+    let band = margins(clamp(d.x, -FISSURE_W, FISSURE_W), m, open, 0.0);
+    let reach = 0.33 * P.lashes + 0.02;
+    let in_upper = d.y > band.x - 0.04 && d.y < band.x + reach;
+    let in_lower = d.y < band.y + 0.05 && d.y > band.y - 0.08 * P.lashes;
+    if ((!in_upper && !in_lower) || abs(d.x) > FISSURE_W * 1.15) {
         return 0.0;
     }
     let spacing = 0.0095;
@@ -231,7 +324,7 @@ fn lash_cover(k: u32, d: vec2<f32>, m: f32, open: f32, fw: f32) -> f32 {
             continue;
         }
         // Clumps: neighbours lean together.
-        let clump = vnoise3(vec3<f32>(xr * 45.0, f32(k), 2.0));
+        let clump = sin(xr * 140.0 + f32(k) * 3.0) * 0.6 + sin(xr * 61.0 + 1.3) * 0.4;
         let outer = clamp(-xr * m / FISSURE_W, 0.0, 1.0);
         let long = select(1.0, 1.5, rand(id, 6.6) > 0.85);
         let len = P.lashes * (0.05 + 0.055 * (1.0 - s * s) + 0.035 * outer) * (0.6 + 0.8 * rand(id, 5.1)) * long;
@@ -299,18 +392,25 @@ fn lidded_colour(k: u32, ro: vec3<f32>, rd: vec3<f32>, t_enter: f32) -> vec3<f32
     L.look = f.g.y;
     L.salt = f32(k) * 3.1;
     let lo = (ro - f.c) / f.r;
+    // Where the light never reaches the face, nothing to march.
+    let plane = lo + rd * ((1.0 - lo.z) / min(rd.z, -1e-3));
+    if (skin_light(plane, L) < 0.002 && length(plane.xy) > 1.3) {
+        return vec3<f32>(0.0);
+    }
     let eh = eye_hit(f, ro, rd);
     let t_eye = select(1e9, eh.t / f.r, eh.t > 0.0);
-    var t = t_enter / f.r;
+    // Start where the ray reaches the nearest the face comes (its brow and
+    // the nose's side are at most 1.8 toward the viewer).
+    var t = max(t_enter / f.r, (1.8 - lo.z) / min(rd.z, -1e-3));
     var hit = false;
-    for (var i = 0; i < 110; i++) {
+    for (var i = 0; i < 96; i++) {
         let q = lo + rd * t;
         let d = lid_sdf(q, L);
-        if (d < 0.0004 * t) {
+        if (d < 0.0008 * t) {
             hit = true;
             break;
         }
-        t += d * 0.6;
+        t += d * 0.85;
         if (t > t_eye || t > t_enter / f.r + 2.0 * SHELL) {
             break;
         }
@@ -328,7 +428,7 @@ fn lidded_colour(k: u32, ro: vec3<f32>, rd: vec3<f32>, t_enter: f32) -> vec3<f32
         let dir = normalize(q);
         // The lids' shadow and occlusion on the eye, and the lashes'
         // shadow just under the upper lid.
-        let sh = lid_shadow(q * 1.01, L);
+        let sh = lid_shadow(q * 1.01, L, 14);
         let mg_e = margins(dir.x, L.m, L.open, L.look);
         let from_top = mg_e.x - dir.y;
         let from_bottom = dir.y - mg_e.y;
@@ -357,7 +457,7 @@ fn lidded_colour(k: u32, ro: vec3<f32>, rd: vec3<f32>, t_enter: f32) -> vec3<f32
     if (ts > 0.0) {
         let dir = normalize(lo + rd * ts);
         let lash = lash_cover(k, dir.xy, L.m, L.open, pixel() * ts / FOCAL);
-        let fade = exp(-pow(max(length(vec2<f32>(dir.x / 1.05, dir.y / 0.72)) - 0.62, 0.0), 2.0) * 40.0);
+        let fade = exp(-pow(max(length(vec2<f32>(dir.x / 1.05, dir.y / 0.72)) - 0.72, 0.0), 2.0) * 14.0);
         col = mix(col, vec3<f32>(0.006, 0.004, 0.003), min(lash * fade * 1.5, 1.0));
     }
     return col;

@@ -95,18 +95,18 @@ fn vessels(l: vec3<f32>, pw: f32, k: u32) -> f32 {
     let phi = atan2(l.y, l.x);
     let z = l.z;
     var v = 0.0;
-    let w0 = max(0.012, pw * 0.7);
+    let w0 = max(0.016, pw * 0.8);
     for (var m = 0u; m < 10u; m++) {
         let seed = f32(k) * 17.0 + f32(m) * 3.7;
         let at = (f32(m) + rand(m, seed)) / 10.0 * TAU;
-        let wob = 0.22 * vnoise3(vec3<f32>(z * 3.0, seed, 1.0)) + 0.06 * vnoise3(vec3<f32>(z * 11.0, seed, 4.0));
-        let reach = 0.62 + 0.2 * rand(m, seed + 1.0);
+        let wob = 0.16 * sin(z * 4.7 + seed * 1.3) + 0.08 * sin(z * 9.1 + seed * 2.9) + 0.04 * sin(z * 19.0 + seed);
+        let reach = 0.74 + 0.12 * rand(m, seed + 1.0);
         let thick = w0 * (1.0 + 1.2 * rand(m, seed + 2.0));
         v = max(v, vessel(phi, z, at, wob, thick, -0.4, reach));
         // A branch splits off partway and wanders its own way.
         let split = 0.05 + 0.35 * rand(m, seed + 3.0);
         let side = select(-1.0, 1.0, rand(m, seed + 4.0) > 0.5);
-        let bwob = wob + side * 0.5 * max(z - split, 0.0) + 0.08 * vnoise3(vec3<f32>(z * 9.0, seed, 7.0));
+        let bwob = wob + side * 0.5 * max(z - split, 0.0) + 0.05 * sin(z * 13.0 + seed * 3.7);
         v = max(v, vessel(phi, z, at, bwob, thick * 0.6, split, reach - 0.08) * 0.8);
     }
     // Capillaries: faint, fine, wandering, everywhere but nearest the iris.
@@ -129,7 +129,7 @@ fn white_colour(f: Frame, k: u32, p: vec3<f32>, rd: vec3<f32>, pw: f32) -> vec3<
     if (layer_on(1u) && P.veins > 0.0) {
         let dense = smoothstep(0.85, 0.15, l.z) * P.veins;
         let v = vessels(l, pw / f.r, k) * P.veins * 1.4;
-        base = mix(base, vec3<f32>(0.42, 0.035, 0.03), clamp(v, 0.0, 1.0));
+        base = mix(base, vec3<f32>(0.5, 0.05, 0.04), clamp(v * 1.2, 0.0, 1.0));
         // And a general flush of fine capillaries.
         base = mix(base, vec3<f32>(0.7, 0.32, 0.28), dense * 0.25);
     }
@@ -172,8 +172,10 @@ fn cornea_colour(f: Frame, k: u32, p: vec3<f32>, rd: vec3<f32>, pw: f32) -> vec3
     // white.
     let edge = length(p - f.c - f.g * dot(p - f.c, f.g)) / f.r;
     let limb = smoothstep(LIMBUS_R - 0.022, LIMBUS_R + 0.004, edge);
-    let white = white_colour(f, k, p, rd, pw) ;
-    var col = mix(through * (1.0 - fr), white, limb * 0.85);
+    var col = through * (1.0 - fr);
+    if (limb > 0.0) {
+        col = mix(col, white_colour(f, k, p, rd, pw), limb * 0.85);
+    }
     if (layer_on(3u)) {
         col += room(reflect(rd, n), 0.0) * fr * (0.6 + 0.4 * P.wet) * (1.0 - limb * 0.85);
     }

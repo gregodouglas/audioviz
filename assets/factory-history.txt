@@ -118,11 +118,14 @@ visuals/eyes/cartoon/variant.json 9a93927495bc3639
 visuals/eyes/real/eye.wgsl 2433adaf65144d31
 visuals/eyes/real/eye.wgsl 84c346aae83920ed
 visuals/eyes/real/eye.wgsl c92ba16b2fb12494
+visuals/eyes/real/iris.wgsl 047d55acd364a814
 visuals/eyes/real/iris.wgsl 3ad0916d6350d2b8
 visuals/eyes/real/iris.wgsl 51a51aca7df1ca48
 visuals/eyes/real/iris.wgsl d4f2c433541c8425
 visuals/eyes/real/lids.wgsl 3c48ae23a7751b1d
 visuals/eyes/real/lids.wgsl 782574edb6103364
+visuals/eyes/real/lids.wgsl a10f9ad53a27ee0b
+visuals/eyes/real/light.wgsl 43f80970946b9adf
 visuals/eyes/real/light.wgsl 9d020cf452dc1c6e
 visuals/eyes/real/light.wgsl d69d7eddf4d1f84d
 visuals/eyes/real/variant.json c38e873e766f6175

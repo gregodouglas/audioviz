@@ -21,8 +21,8 @@ fn pigment(kind: u32) -> Pigment {
     switch (kind) {
         // Hazel: green-brown, an amber ring round the pupil.
         case 1u: { return Pigment(vec3<f32>(0.16, 0.14, 0.05), vec3<f32>(0.34, 0.15, 0.03), vec3<f32>(0.42, 0.36, 0.16), 0.6); }
-        // Green: green-grey, a little amber round the pupil.
-        case 2u: { return Pigment(vec3<f32>(0.10, 0.18, 0.09), vec3<f32>(0.26, 0.19, 0.05), vec3<f32>(0.36, 0.50, 0.30), 0.7); }
+        // Green: olive and yellow-green, brown round the pupil.
+        case 2u: { return Pigment(vec3<f32>(0.09, 0.13, 0.055), vec3<f32>(0.24, 0.13, 0.04), vec3<f32>(0.36, 0.42, 0.2), 0.6); }
         // Blue: little pigment; the stroma scatters blue, its fibres pale.
         case 3u: { return Pigment(vec3<f32>(0.10, 0.20, 0.36), vec3<f32>(0.20, 0.24, 0.30), vec3<f32>(0.55, 0.66, 0.80), 0.9); }
         // Grey: blue's paler, duller cousin.
@@ -150,6 +150,20 @@ fn iris_colour(k: u32, rad: f32, ang: f32, fa: f32, fr: f32) -> vec3<f32> {
     col = mix(col, pg.fibre, rim * 0.25 * pg.show);
     col *= 1.0 - fur * 0.3;
     col = mix(col, vec3<f32>(0.09, 0.04, 0.015), freckle * 0.8);
+    // The anterior border layer: patches lighter in pale eyes, darker
+    // (more pigment) in brown ones.
+    let kind = iris_kind(k);
+    let pale = kind == 3u || kind == 4u;
+    let abl = smoothstep(0.1, 0.7, ring_noise(ang, u, 8.0, 2.5, salt + 70.0)) * smoothstep(uc, uc + 0.1, u) * (1.0 - smoothstep(0.8, 0.92, u));
+    col = select(col * (1.0 - 0.3 * abl), mix(col, pg.fibre * 0.85, abl * 0.3), pale);
+    // Wolfflin nodules: a ring of faint pale dots toward the rim.
+    if (pale) {
+        let dots = smoothstep(0.62, 0.8, ring_noise(ang, u, 55.0, 14.0, salt + 80.0)) * exp(-pow((u - 0.78) / 0.06, 2.0)) * (1.0 - smoothstep(0.3, 0.8, fa * 55.0));
+        col = mix(col, pg.fibre * 1.2, dots * 0.5);
+    }
+    // Pigment flecks, a few tiny dark-brown spots anywhere.
+    let fl = smoothstep(0.78, 0.86, ring_noise(ang, u, 40.0, 10.0, salt + 90.0)) * smoothstep(0.08, 0.2, u) * (1.0 - smoothstep(0.85, 0.95, u));
+    col = mix(col, vec3<f32>(0.1, 0.045, 0.015), fl * 0.6);
     // Darker to the limbal ring, and in the ruff by the pupil.
     col *= 1.0 - 0.85 * smoothstep(0.82, 1.0, u);
     let ruff = 1.0 - smoothstep(0.0, 0.035, u);

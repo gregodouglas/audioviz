@@ -20,8 +20,9 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
     let P = params();
     let p = centred(uv);
     let n = u32(P.rings);
-    // The beat pulse jumps to 1 on the beat and decays: a kick outward.
-    let kick = 1.0 + 0.08 * P.kick * V.beat;
+    // The beat kicks the rings outward: kick() rises over 40 ms and decays
+    // (V.beat would jump in one frame), as much as the layer's Motion says.
+    let swing = 1.0 + 0.08 * P.kick * kick() * motion();
     // Onsets in any band flash every ring a little.
     let flash = 1.0 + 2.0 * P.flash * V.onset;
     var col = vec3<f32>(0.0);
@@ -30,7 +31,7 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
         // Ring i reads the spectrum at its own place, bass innermost.
         let t = (f32(i) + 0.5) / f32(n);
         let level = clamp(select(band_at(t), level_at(t), P.spectrum > 0.5) * P.gain, 0.0, 3.0);
-        let r = P.radius * (f32(i) + 1.0) / f32(n) * (1.0 + 0.12 * level) * kick;
+        let r = P.radius * (f32(i) + 1.0) / f32(n) * (1.0 + 0.12 * level) * swing;
         // Alternate rings turn against each other with the music clock.
         let dir = select(-1.0, 1.0, i % 2u == 0u);
         let q = rotate(p, dir * V.flow * P.twist + f32(i) * 0.3);

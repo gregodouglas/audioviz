@@ -54,6 +54,7 @@ The visuals that ship with the app live in the repo under `assets/visuals/` and 
 | `hint` | no | A longer explanation at the foot of the Visual tab: what the controls do, which part of the music drives what. |
 | `feedback` | no | `true` keeps your last frame so `prev(uv)` can read it (example 3 says when a trail is better). Default `false`. |
 | `trail` | no | `true` gives `shade` a second picture that persists but is not drawn (`write_trail`, `trail`). See "Keeping a trail" below. |
+| `motion` | no | How much the visual suits moving with the music, for a layer that does not choose: `"still"`, `"gentle"`, `"groove"` (the default) or `"wild"`. Your code reads the layer's choice as `motion()` (ADR-0007; see "Reacting to the music"). |
 | `triangles` | no | How many triangles `fn vertex` draws (up to 1048576); required with `fn vertex`, and only then. See "Drawing triangles" below. |
 | `items` | no | How many values your `prepare` step computes each frame (up to 262144); required when `visual.wgsl` has `fn prepare`, and only then. See "Once a frame: prepare" below. |
 | `line` | no | How many points your line has (2 to 65536); required when `visual.wgsl` has `fn point`, and only then. See "Drawing a line" below. |
@@ -132,7 +133,7 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `V.time` | seconds | Since the app started. For motion that should not care about the music. |
 | `V.dt` | seconds | This frame's length (0.004 at 240 fps, 0.017 at 60). Use it for anything that accumulates, so a visual looks the same at every frame rate. |
 | `V.resolution` | pixels | The layer's size. |
-| `V.flow` | seconds | **A music clock**: advances 0.5 s per second in silence up to about 1.7 s per second when loud (by `V.dt * (0.5 + 0.5 * V.energy)` each frame). Use it in place of `V.time` for motion that should speed up with the music. |
+| `V.flow` | seconds | **A music clock**: advances 0.5 s per second in silence up to about 1.7 s per second when loud (by `V.dt` times the pace, eased over half a second, each frame). Use it in place of `V.time` for motion that should speed up with the music. |
 
 **How loud, and where**
 
@@ -141,6 +142,11 @@ All of these are in the `V` struct or are functions. The values respect the laye
 | `V.energy` | 0..2.5, ~1 | The overall level against its own recent average: 1 is "as loud as lately", above is a build or a drop. |
 | `V.bass`, `V.mid`, `V.treble` | ~0..3, ~1 | The same for 30-200 Hz, 200-2000 Hz and 2-16 kHz. |
 | `V.swell` | 0..~2 | Bass above its average plus low onsets, fast attack and slow release: a ready-made "breathing" amount for sizes and pushes. |
+| `motion()` | 0..1.7 | The layer's **Motion** (Still 0, Gentle 0.35, Groove 1, Wild 1.7): multiply every motion reaction by it (ADR-0007). |
+| `kick()`, `bar_kick()` | 0..1 | The beat as a kick for motion: rises over 40 ms, dies away over about a third of a second, as strong as the beat is sure; `bar_kick()` on the bar's first beat only. Use these, not `V.beat`, for anything that moves. |
+| `since_beat()`, `kick_shape(since, decay)` | seconds, 0..1 | Seconds since the last beat; the kick's shape for an event you keep yourself. |
+| `pace()` | ~0.5..1.7 | The music's pace eased over half a second, scaled by Motion (1 at Still): for speeds that follow the energy, in place of `V.energy`. |
+| `bass_soft()`, `onset_soft()` | ~1, 0..1 | The bass against its average and the onsets, eased: for motion, in place of `V.bass` and `V.onset`. |
 | `loudness()` | 0..1 | How loud, not against anything: momentary loudness from -40 to -5 LUFS. A quiet song stays low. |
 | `broad(k)` | 0..1 | Six broad bands on one scale: `SUB` (30-60 Hz), `BASS` (60-250), `LOW_MID` (250-500), `MID` (500-2k), `PRESENCE` (2-6k), `AIR` (6-16k). `broad(BASS)` is how much bass there is. |
 | `broad_rel(k)` | 0..3, ~1 | A broad band against its own average: 1 typical. |
@@ -270,9 +276,10 @@ On the way to the screen come, by estimate rather than measurement, about 10 ms 
 
 Three rules make it look musical rather than mechanical (ADR-0004):
 
-1. **Entrain, do not trigger.** Let the music pull your visual's own rhythm into step (a clock that runs faster with `V.energy`, a sway on `bar_phase()`), rather than starting animations on events. When something does start on an event, it takes over from what is playing, it does not cut it.
-2. **Every level eases.** Rise over 60 to 120 ms, fall over 0.3 to 0.5 s. A value from the analysis that is already smooth (`V.swell`, `build()`, `level()`) can be used as is; anything you derive from a hit or a step (a beat count, a section label) should be eased in a prepare item with `ease(last, want, rise, fall)`. The factory visuals give each section its own look this way: `ease(item(1u).x, section_seed(1.0) * amount, 3.0, 3.0)` (Spiral's angle step, the Harmonograph's and Comet's colours).
+1. **Entrain, do not trigger.** Let the music pull your visual's own rhythm into step (a clock that runs at `pace()`, a sway on `bar_phase()`), rather than starting animations on events. When something does start on an event, it takes over from what is playing, it does not cut it.
+2. **Every level eases.** Rise over 60 to 120 ms, fall over 0.3 to 0.5 s. A value from the analysis that is already smooth (`V.swell`, `build()`, `level()`) can be used as is; anything you derive from a hit or a step (a beat count, a section label) should be eased in a prepare item with `ease(last, want, rise, fall)`. The factory visuals give each section its own look this way: `ease(item(1u).x, section_seed(1.0) * amount, 3.0, 3.0)` (the Spiral's, the Harmonograph's and Comet's colours).
 3. **Without music it still lives.** Everything above falls to rest in silence. Keep some motion on `V.time` or `V.flow` so the picture never freezes.
+4. **Light always, motion as the layer says (ADR-0007).** Brightness, flashes and colour may answer every beat. Anything that moves (a sway, a kick, a warp, a surge of speed) is multiplied by `motion()`, the layer's Motion setting, so at Still the visual keeps its own pace; and it moves only with values that cannot jump: `kick()`, `pace()`, `bass_soft()`, `onset_soft()`. Never let the music nudge a value that something multiplies up (an angle step times a point's index): a nudge too small to see becomes a shear across the picture. Answer there with light, or change only at a bar line and glide.
 
 To see an event once (a drop, a change, a new section), keep last frame's `drop_count()`, `change_count()` or `section()` in a prepare item and compare. The lab's made-up groove (`--groove 120`) has every signal, a build and a drop every sixteen bars and a section change every eight; `--run 6` measures the motion for jolts.
 
@@ -336,13 +343,13 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
     let P = params();
     let p = centred(uv);
     let n = u32(P.rings);
-    let kick = 1.0 + 0.08 * P.kick * V.beat;
+    let swing = 1.0 + 0.08 * P.kick * kick() * motion();
     let flash = 1.0 + 2.0 * P.flash * V.onset;
     var col = vec3<f32>(0.0);
     for (var i = 0u; i < n; i++) {
         let t = (f32(i) + 0.5) / f32(n);
         let level = clamp(select(band_at(t), level_at(t), P.spectrum > 0.5) * P.gain, 0.0, 3.0);
-        let r = P.radius * (f32(i) + 1.0) / f32(n) * (1.0 + 0.12 * level) * kick;
+        let r = P.radius * (f32(i) + 1.0) / f32(n) * (1.0 + 0.12 * level) * swing;
         let dir = select(-1.0, 1.0, i % 2u == 0u);
         let q = rotate(p, dir * V.flow * P.twist + f32(i) * 0.3);
         let d = abs(polygon(q, r, P.sides));
@@ -362,7 +369,7 @@ What to take from it:
 
 - **One position, three uses.** `t` picks the ring's band (`band_at(t)`), its colour (`colour(t)`), and its place. Tying space, frequency and colour together is what makes a picture read as the music.
 - **Let the user choose the spectrum.** The Spectrum control (a choice is 0, 1 ... in the shader) picks `band_at` (every band moves) or `level_at` (the mix in balance); Wheel, Waves and Eclipse have the same control.
-- **Pulses, not values, for events.** `V.beat` and `V.onset` jump and decay by themselves; multiply by them and the decay comes free. Keep the multiplier modest (`0.08 * kick`): the beat is the strongest signal there is.
+- **Pulses, not values, for events.** `V.onset` jumps and decays by itself; multiply by it and the decay comes free: right for light (the flash). What *moves* takes `kick()`, which rises over 40 ms instead of jumping in a frame, times `motion()`, the layer's Motion. Keep the multiplier modest (`0.08 * kick`): the beat is the strongest signal there is.
 - **Squared level.** `level * level` keeps quiet bands faint and lets loud ones burn; a linear level looks flat. Add a floor (`0.15 +`) so the structure never vanishes completely.
 - **`V.flow` for motion.** The rings turn faster when the music is loud, without anything jumping.
 - **The loop runs per pixel.** Eight rings is fine (0.44 ms at five). See the budget below before writing a loop of sixty-four.

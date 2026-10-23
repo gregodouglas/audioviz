@@ -28,7 +28,7 @@ fn prepare(i: u32) -> vec4<f32> {
     let dropped = drop_count() > item(1u).y && drop_sure() > 0.3;
     let struck = (V.beat > last.z + 0.4 || dropped) && P.rings > 0.0;
     if (i == 0u) {
-        let flow = last.x + V.dt * P.speed * (0.5 + 0.5 * V.energy);
+        let flow = last.x + V.dt * P.speed * pace();
         // The bass swells the hills, slewed so it rolls rather than jumps.
         let want = 1.0 + P.react * 0.6 * clamp(V.bass - 1.0, -0.6, 1.5);
         let prev = select(last.y, 1.0, last.y <= 0.0);

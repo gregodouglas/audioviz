@@ -28,10 +28,10 @@ fn prepare(i: u32) -> vec4<f32> {
     let c0 = item(0u);
     let c1 = item(1u);
     let c2 = item(2u);
-    let pace = 0.6 + 0.4 * clamp(V.energy, 0.0, 2.0);
+    let speed_now = pace();
     if (i == 0u) {
-        let spin = (c0.x + dt * P.spin * 0.4 * pace) % TAU;
-        let boil = (c0.y + dt * 0.2 * pace) % 1000.0;
+        let spin = (c0.x + dt * P.spin * 0.4 * speed_now) % TAU;
+        let boil = (c0.y + dt * 0.2 * speed_now) % 1000.0;
         let tex = (c0.z + dt * P.flow * 0.25 * (0.6 + 0.6 * clamp(V.mid, 0.0, 2.0))) % 1000.0;
         return vec4<f32>(spin, boil, tex, 0.0);
     }
@@ -93,14 +93,14 @@ fn radius_at(d: vec3<f32>) -> f32 {
     let c0 = item(0u);
     let c1 = item(1u);
     let kick = item(2u).x;
-    let base = P.size * (1.0 + max(c1.x, -0.1) + 0.06 * P.kick * kick);
+    let base = P.size * (1.0 + motion() * (max(c1.x, -0.1) + 0.06 * P.kick * kick));
     let q = d * P.detail + vec3<f32>(0.0, c0.y, 0.7 * c0.y);
     let lump = fbm3(q, 3u) - 0.5;
-    let amount = P.distort * (0.12 + 0.18 * P.react * c1.y + 0.1 * P.kick * kick);
+    let amount = P.distort * (0.12 + motion() * (0.18 * P.react * c1.y + 0.1 * P.kick * kick));
     var r = base * (1.0 + amount * lump);
     if (P.spikes > 0.0) {
         let ridge = 1.0 - abs(vnoise3(d * 7.0 + vec3<f32>(0.5 * c0.y)) * 2.0 - 1.0);
-        r += base * P.spikes * (0.05 + 0.35 * c1.z) * pow(ridge, 6.0);
+        r += base * P.spikes * (0.05 + 0.35 * c1.z * motion()) * pow(ridge, 6.0);
     }
     return r;
 }

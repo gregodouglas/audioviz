@@ -20,7 +20,7 @@ fn prepare(i: u32) -> vec4<f32> {
         m = max(m, spectrum_log((f32(k) + 0.5) / 24.0));
     }
     let swell = ease(s.y, clamp(broad_rel(BASS) - 0.8, 0.0, 1.5) + 0.6 * broad_attack(BASS), 0.04, 0.3);
-    let turn = s.x + dt * P.spin * 0.3 * (0.6 + 0.4 * V.energy);
+    let turn = s.x + dt * P.spin * 0.3 * pace();
     return vec4<f32>(turn - TAU * 64.0 * floor(turn / (TAU * 64.0)), swell, 0.0, ease(s.w, max(m, 0.2), 0.05, 3.0));
 }
 
@@ -41,7 +41,7 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
     let st = item(0u);
     let n = ring_count();
     let m = clamp(u32(P.dashes), 12u, 128u);
-    let inner = P.inner * (1.0 + 0.1 * P.pulse * st.y);
+    let inner = P.inner * (1.0 + 0.1 * P.pulse * st.y * motion());
     let outer = max(P.outer, inner + 0.1);
     let w = (outer - inner) / f32(n);
     var out = vec3<f32>(0.0);

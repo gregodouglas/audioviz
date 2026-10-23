@@ -57,14 +57,14 @@ fn path(s: f32, h: u32, radius: f32) -> vec2<f32> {
 
 fn radius() -> f32 {
     let P = params();
-    return P.radius * (1.0 + 0.15 * V.swell + 0.25 * P.opens * build());
+    return P.radius * (1.0 + motion() * (0.15 * V.swell + 0.25 * P.opens * build()));
 }
 
 fn prepare(i: u32) -> vec4<f32> {
     let P = params();
     let dt = clamp(V.dt, 0.0, 0.1);
     let c0 = item(0u);
-    let s = c0.y + dt * P.speed * 0.25 * (0.5 + 0.5 * V.energy);
+    let s = c0.y + dt * P.speed * 0.25 * pace();
     let struck = V.beat > c0.w + 0.4;
     if (i == 0u) {
         let section = ease(c0.x, section_seed(3.0) * 0.5 * P.sections, 2.5, 2.5);

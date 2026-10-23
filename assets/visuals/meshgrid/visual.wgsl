@@ -72,9 +72,9 @@ fn clock() -> Clock {
     let P = params();
     let dt = clamp(V.dt, 0.0, 0.1);
     let c0 = item(0u);
-    let pace = 0.6 + 0.4 * clamp(V.energy, 0.0, 2.0);
+    let speed_now = pace();
     var k: Clock;
-    k.d = c0.x + P.speed * pace * dt;
+    k.d = c0.x + P.speed * speed_now * dt;
     k.last = c0.y;
     k.births = c0.z;
     k.born = MAX_ROWS;
@@ -87,7 +87,7 @@ fn clock() -> Clock {
         k.d = k.d - 1000.0;
         k.last = k.last - 1000.0;
     }
-    k.turn = (c0.w + P.turn * 0.15 * pace * dt) % TAU;
+    k.turn = (c0.w + P.turn * 0.15 * speed_now * dt) % TAU;
     return k;
 }
 
@@ -291,8 +291,8 @@ fn vertex(i: u32) -> MeshVertex {
     let row_id = c.z - 1.0 + clamp(c.x - c.y, 0.0, 1.0) - place;
     let hills = (noise(vec2<f32>(s * 3.0 + 11.0, row_id * 0.12)) - 0.4) * P.terrain * 0.6;
     // The ring is smaller than the plane.
-    let tall = P.height * item(1u).z * select(0.6, 1.0, P.shape < 0.5);
-    p.y = (pow(level, 1.8) + hills + 0.25 * ripple_lift(p)) * tall;
+    let tall = P.height * (1.0 + (item(1u).z - 1.0) * motion()) * select(0.6, 1.0, P.shape < 0.5);
+    p.y = (pow(level, 1.8) + hills + 0.25 * ripple_lift(p) * motion()) * tall;
     if (copy == 0u) {
         p.y = -p.y;
     }

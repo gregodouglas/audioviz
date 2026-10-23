@@ -55,7 +55,9 @@ fn potential(p: vec2<f32>, t: f32) -> f32 {
 fn field(p: vec2<f32>) -> vec2<f32> {
     let P = params();
     // Curl of a scalar potential: divergence-free, so lines never pile up.
-    let s = P.scale * (1.0 + 0.3 * clamp(V.bass - 1.0, -0.5, 1.0));
+    // The bass breathes the field's scale (eased: raw, it warped every
+    // particle's path each frame), as much as the layer's Motion says.
+    let s = P.scale * (1.0 + 0.3 * motion() * clamp(bass_soft() - 1.0, -0.5, 1.0));
     let t = V.time * 0.08;
     let e = 0.01;
     let dx = potential((p + vec2<f32>(e, 0.0)) * s, t) - potential((p - vec2<f32>(e, 0.0)) * s, t);
@@ -134,7 +136,7 @@ fn prepare(i: u32) -> vec4<f32> {
         p = respawn(k, V.time, true);
     } else {
         let dt = min(V.dt, 0.05);
-        let speed = P.speed * (0.6 + 0.4 * min(V.bass, 2.0)) * (1.0 + 1.5 * V.onset) * (1.0 + P.rush * build());
+        let speed = P.speed * (1.0 + motion() * (0.4 * (min(bass_soft(), 2.0) - 1.0) + 1.2 * onset_soft() + P.rush * build()));
         p.prev = p.pos;
         p.pos += field(p.pos) * speed * dt;
         p.age += dt;

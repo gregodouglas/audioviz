@@ -20,12 +20,12 @@ fn prepare(i: u32) -> vec4<f32> {
     let energy = energy0 + (V.energy - energy0) * (1.0 - exp(-dt / 0.4));
     var kick = last.y;
     if (V.onset > last.z + 0.25) {
-        kick += 0.9 * P.tumble;
+        kick += 0.9 * P.tumble * motion();
     }
     // A new section of the song tumbles the window further.
     let sec = item(3u);
     if (sec.w > 0.5 && section() != sec.x) {
-        kick += 2.5 * P.sections;
+        kick += 2.5 * P.sections * motion();
     }
     kick *= exp(-dt / 0.3);
     if (i == 0u) {
@@ -69,7 +69,7 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
     let aspect = V.resolution.x / V.resolution.y;
     let s = (uv * 2.0 - 1.0) * vec2<f32>(aspect, -1.0);
     let breathe = 0.05 * P.sway * sin(TAU * bar_phase()) * item(3u).y;
-    let zoom = clamp(P.zoom * (1.0 + 0.06 * clamp(V.bass - 1.0, -1.0, 1.5) + breathe), 0.1, 1.5);
+    let zoom = clamp(P.zoom * (1.0 + motion() * (0.06 * clamp(bass_soft() - 1.0, -1.0, 1.5) + breathe)), 0.1, 1.5);
     let now = picture(window(s, item(1u), V.picture_aspect, zoom));
     let before = picture_prev(window(s, item(2u), V.picture_prev_aspect, zoom));
     var col = mix(before, now, V.picture_fade);

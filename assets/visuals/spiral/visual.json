@@ -4,8 +4,9 @@
   "short": "Spiral",
   "summary": "One line through points stepped by a slowly drifting angle; morphs between arms, rosettes and stars.",
   "credit": "After the spirals in Sonia Boller's audible-visuals (https://github.com/soniaboller/audible-visuals, Apache License 2.0). The idea only; no code ported.",
-  "hint": "One line through points stepped round by an angle; as the step drifts, the figure passes through arms, rosettes and stars. The waveform pushes the points in and out; beats and drops kick it, it sways once a bar, and each section of the song glides to a figure of its own.",
+  "hint": "One line through points stepped round by an angle; as the step drifts, the figure passes through arms, rosettes and stars. Each beat sends a pulse of light out along the line, and each section of the song gives it colours of its own. As much as the layer's Motion says, the waveform pushes the points in and out, harder on the beat, and it sways once a bar.",
   "items": 2,
+  "motion": "gentle",
   "line": 4096,
   "line_count": "points",
   "params": [
@@ -20,8 +21,8 @@
     { "id": "gain", "label": "Gain", "group": "Line", "min": 0.1, "max": 4.0, "default": 1.0, "log": true },
     { "id": "width", "label": "Width", "group": "Line", "min": 0.5, "max": 4.0, "default": 1.0, "unit": "px" },
     { "id": "intensity", "label": "Intensity", "group": "Line", "min": 0.05, "max": 2.0, "default": 0.5, "log": true },
-    { "id": "react", "label": "Reacts", "group": "Line", "min": 0.0, "max": 3.0, "default": 0.5, "help": "Beats and drops kick the displacement; energy speeds the drift." },
-    { "id": "sections", "label": "Sections", "group": "Music", "min": 0.0, "max": 1.0, "default": 0.5, "help": "How far each section of the song moves the angle step (up to 12 degrees): a section that comes back finds its figure again." },
-    { "id": "sway", "label": "Bar sway", "group": "Music", "min": 0.0, "max": 2.0, "default": 0.5, "help": "How far the figure turns to and fro once a bar, as much as the beat is sure." }
+    { "id": "react", "label": "Reacts", "group": "Line", "min": 0.0, "max": 3.0, "default": 0.5, "help": "How bright the pulse of light each beat sends along the line is, and (with Motion) how hard beats and drops push the points." },
+    { "id": "sections", "label": "Sections", "group": "Music", "min": 0.0, "max": 1.0, "default": 0.5, "help": "How far each section of the song moves the colours along the palette: a section that comes back gets its colours back." },
+    { "id": "sway", "label": "Bar sway", "group": "Music", "min": 0.0, "max": 2.0, "default": 0.5, "help": "How far the figure turns to and fro once a bar, as much as the beat is sure and the layer's Motion says." }
   ]
 }

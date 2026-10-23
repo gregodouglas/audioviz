@@ -223,7 +223,7 @@ fn jelly_step(j: u32) -> Jelly {
     let env = item(1u);
     let ev = item(2u);
     let mk = music();
-    let mode = P.music;
+    let mode = music_mode();
     let hit = V.hits.w > 0.5 && ev.x < 0.5;
     let low_hit = V.hits.x > 0.5 && ev.y < 0.5;
     let drop = mode > 0.5 && new_drop(ev);

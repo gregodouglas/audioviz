@@ -42,7 +42,7 @@ fn prepare(i: u32) -> vec4<f32> {
             m = max(m, tilted(bar_range(k, 32u)));
         }
         let swell = ease(s.y, clamp(broad_rel(BASS) - 0.8, 0.0, 1.5) + 0.6 * broad_attack(BASS), 0.04, 0.3);
-        let turn = s.z + dt * P.spin * (0.6 + 0.4 * V.energy);
+        let turn = s.z + dt * P.spin * pace();
         return vec4<f32>(ease(s.x, max(m, 0.2), 0.05, 3.0), swell, turn - TAU * floor(turn / TAU), 0.0);
     }
     if (i >= n) {
@@ -57,7 +57,7 @@ fn prepare(i: u32) -> vec4<f32> {
 // The ring's radius this frame.
 fn ring_radius() -> f32 {
     let P = params();
-    return P.radius * (1.0 + 0.12 * P.pulse * item(STATE).y);
+    return P.radius * (1.0 + 0.12 * P.pulse * item(STATE).y * motion());
 }
 
 // Bar k's direction (clockwise from the top) on the side `side` (+1 or -1).

@@ -42,6 +42,8 @@ usage: audioviz-lab <visual> [options]
                       how far the light swings, and
                       writes <name>_run.csv and a strip of eight frames,
                       <name>_run.png
+  --motion <how much> how much it moves with the music: still, gentle, groove
+                      or wild (default: what the visual suits, ADR-0007)
   --palette <name>    the layer's palette: a preset (phosphor, techno, neon,
                       rave, 80s pop, galaxy, fire, ice, sunset, mono) or none
   --groove <bpm>      play a made-up groove instead of silence: a kick on
@@ -99,6 +101,7 @@ struct Args {
     groove: Option<f32>,
     run: f32,
     palette: Option<String>,
+    motion: Option<audioviz::settings::Motion>,
 }
 
 fn shot(name: &str) -> anyhow::Result<[f32; 3]> {
@@ -139,7 +142,7 @@ fn pass_name(p: SpacePass) -> &'static str {
 
 fn parse_args() -> anyhow::Result<Option<Args>> {
     let mut args = std::env::args().skip(1);
-    let mut a = Args { visual: String::new(), window: false, scene: None, layer: None, sets: Vec::new(), at: 4.0, shots: Vec::new(), pan: [0.0, 0.0], passes: vec![SpacePass::All], layers: vec!["all".into()], size: (1600, 1000), out: PathBuf::from("tmp/lab"), name: None, dx12: false, seed: 1, exposure: Some(1.0), bloom: 0.0, groove: None, run: 0.0, palette: None };
+    let mut a = Args { visual: String::new(), window: false, scene: None, layer: None, sets: Vec::new(), at: 4.0, shots: Vec::new(), pan: [0.0, 0.0], passes: vec![SpacePass::All], layers: vec!["all".into()], size: (1600, 1000), out: PathBuf::from("tmp/lab"), name: None, dx12: false, seed: 1, exposure: Some(1.0), bloom: 0.0, groove: None, run: 0.0, palette: None, motion: None };
     let mut shots = "front,side,below".to_string();
     while let Some(arg) = args.next() {
         let mut value = |what: &str| args.next().with_context(|| format!("{arg} needs {what}"));
@@ -182,6 +185,10 @@ fn parse_args() -> anyhow::Result<Option<Args>> {
             "--groove" => a.groove = Some(value("beats a minute")?.parse()?),
             "--run" => a.run = value("seconds")?.parse()?,
             "--palette" => a.palette = Some(value("a palette's name")?),
+            "--motion" => {
+                let m = value("still, gentle, groove or wild")?;
+                a.motion = Some(audioviz::settings::Motion::from_id(&m.to_lowercase()).ok_or_else(|| anyhow::anyhow!("motion {m} is not still, gentle, groove or wild"))?);
+            }
             other if !other.starts_with('-') && a.visual.is_empty() => a.visual = other.to_string(),
             other => bail!("unknown option {other} (see --help)"),
         }
@@ -318,6 +325,9 @@ fn settings(a: &Args) -> anyhow::Result<Settings> {
         layer.opacity = 1.0;
         s.post = scene.post;
         s.tint = scene.tint;
+    }
+    if a.motion.is_some() {
+        layer.motion = a.motion;
     }
     if let Some(name) = &a.palette {
         if name != "none" && audioviz::color::preset(name).is_none() {

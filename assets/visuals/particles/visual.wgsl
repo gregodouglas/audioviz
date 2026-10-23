@@ -162,7 +162,7 @@ fn step_particle(p: u32) -> Particle {
     s.vel = s.vel * exp(-dt * 2.0) + (swirl_at(s.pos, t) * P.swirl * 1.2 + pull) * dt;
     if (b.struck) {
         let away = normalize(s.pos - home + 0.01 * in_ball(p, b.beats));
-        s.vel = s.vel + away * P.kick * (0.25 + 0.45 * c1.x) * (0.5 + rand(p, b.beats + 2.0));
+        s.vel = s.vel + away * P.kick * motion() * (0.25 + 0.45 * c1.x) * (0.5 + rand(p, b.beats + 2.0));
     }
     s.pos = s.pos + s.vel * dt;
     return s;
@@ -173,15 +173,15 @@ fn prepare(i: u32) -> vec4<f32> {
     let dt = clamp(V.dt, 0.0, 0.1);
     let c0 = item(0u);
     let c1 = item(1u);
-    let pace = 0.6 + 0.4 * clamp(V.energy, 0.0, 2.0);
+    let speed_now = pace();
     if (i == 0u) {
         let b = beat_now();
-        return vec4<f32>((c0.x + dt * P.speed * 0.3 * pace) % 10000.0, V.beat, b.beats % 65536.0, 1.0);
+        return vec4<f32>((c0.x + dt * P.speed * 0.3 * speed_now) % 10000.0, V.beat, b.beats % 65536.0, 1.0);
     }
     if (i == 1u) {
         let bass = ease(c1.x, clamp(broad_rel(BASS) - 0.5, 0.0, 2.0), 0.05, 0.3);
         let highs = ease(c1.y, clamp(0.5 * (broad_rel(PRESENCE) + broad_rel(AIR)) - 0.5, 0.0, 2.0), 0.03, 0.2);
-        let turn = (c1.z + dt * P.turn * 0.12 * pace) % TAU;
+        let turn = (c1.z + dt * P.turn * 0.12 * speed_now) % TAU;
         var flash = c1.w * exp(-dt / 0.3);
         if (beat_now().struck) {
             flash = 1.0;

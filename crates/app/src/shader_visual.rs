@@ -179,6 +179,10 @@ struct Manifest {
     /// Smooth the triangles' edges (4x multisampling of the triangle pass).
     #[serde(default)]
     antialias: bool,
+    /// How much it suits moving with the music, for a layer that does not
+    /// say: "still", "gentle", "groove" (the default) or "wild".
+    #[serde(default)]
+    motion: String,
     /// Can join a shared space (ADR-0002): it reads the space's camera, and
     /// the engine applies its opacity inside its draws.
     #[serde(default)]
@@ -271,6 +275,8 @@ pub struct ShaderDef {
     pub glow: bool,
     /// Its design layers' names (bit i of `layer_on`).
     pub layers: Vec<String>,
+    /// How much it moves with the music unless a layer says ("motion").
+    pub motion: crate::settings::Motion,
     pub wgsl: String,
     /// The folder it came from, watched for changes (none for embedded copies).
     pub dir: Option<PathBuf>,
@@ -506,6 +512,9 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
         let names: Vec<&str> = LIBRARIES.iter().map(|(name, _, _)| *name).collect();
         return Err(format!("visual.json: uses \"{u}\" is not a library (there are: {})", names.join(", ")));
     }
+    let Some(motion) = crate::settings::Motion::from_id(&m.motion) else {
+        return Err(format!("visual.json: motion \"{}\" is not \"still\", \"gentle\", \"groove\" or \"wild\"", m.motion));
+    };
     if !matches!(m.levelling.as_str(), "" | "lit" | "bright") {
         return Err(format!("visual.json: levelling \"{}\" is not \"lit\" or \"bright\"", m.levelling));
     }
@@ -550,7 +559,7 @@ fn parse(json: &str, wgsl: &str, dir: Option<PathBuf>) -> Result<ShaderDef, Stri
     if m.covers && (m.triangles == 0 || !m.space) {
         return Err("visual.json: \"covers\" needs triangles and \"space\": true (they cover in a shared space)".into());
     }
-    Ok(ShaderDef { variant_by: String::new(), variants: Vec::new(), variant: String::new(), covers: m.covers, id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, uses: m.uses, level_bright: m.levelling == "bright", antialias: m.antialias && m.triangles > 0, space: m.space, camera: defines(wgsl, "camera"), glow: calls(wgsl, "write_glow"), layers: m.layers, wgsl: wgsl.to_string(), dir })
+    Ok(ShaderDef { variant_by: String::new(), variants: Vec::new(), variant: String::new(), covers: m.covers, id: m.id, name: m.name, short, summary: m.summary, credit: m.credit, hint: m.hint, params: m.params, feedback: m.feedback, items: m.items, line: m.line, line_count: m.line_count, shade: defines(wgsl, "shade"), beam: m.line_style == "beam", triangles: m.triangles, pictures: m.pictures.clone(), paint: defines(wgsl, "paint"), band_waveform: m.band_waveform, trail: m.trail, uses: m.uses, level_bright: m.levelling == "bright", antialias: m.antialias && m.triangles > 0, space: m.space, camera: defines(wgsl, "camera"), glow: calls(wgsl, "write_glow"), layers: m.layers, motion, wgsl: wgsl.to_string(), dir })
 }
 
 // ------------------------------------------------------------ values
@@ -828,6 +837,15 @@ fn read_folder_except(root: &Path, watch: bool, skip: &[PathBuf]) -> Vec<ShaderD
 
 /// Whether `id` is one of the visuals that ship with the app.
 /// Whether visual `id` can join a shared space ("space": true).
+/// How much the visual suits moving with the music, for a layer that does
+/// not choose (Groove for one not installed).
+pub fn default_motion(id: &str) -> crate::settings::Motion {
+    match crate::visuals::get(id).map(|v| &v.source) {
+        Some(crate::visuals::Source::Loaded(d)) => d.motion,
+        _ => crate::settings::Motion::Groove,
+    }
+}
+
 pub fn can_join_space(id: &str) -> bool {
     matches!(crate::visuals::get(id).map(|v| &v.source), Some(crate::visuals::Source::Loaded(d)) if d.space)
 }
@@ -1021,6 +1039,12 @@ struct Uniform {
     section: [f32; 4],
     /// (loudness 0..1, drops so far, transitions so far, 0).
     extra: [f32; 4],
+    /// Movement (ADR-0007): (the layer's motion amount, the music's pace
+    /// eased, the bass eased, onsets eased).
+    motion: [f32; 4],
+    /// (the beat's kick, rising over 40 ms; the same on the bar's first beat
+    /// only; seconds since the beat, 0).
+    kick: [f32; 4],
 }
 
 // ------------------------------------------------------------ building off the render thread
@@ -1399,6 +1423,16 @@ pub struct ShaderVisual {
     bands: [f32; 32],
     flow: f32,
     swell: f32,
+    /// The music's pace, the bass and onsets, eased (`pace()`,
+    /// `bass_soft()`, `onset_soft()`); the last beat seen, seconds since it,
+    /// its strength, and whether it began a bar (`kick()`, `bar_kick()`).
+    pace: f32,
+    bass_soft: f32,
+    onset_soft: f32,
+    last_beat: u32,
+    since_beat: f32,
+    beat_strength: f32,
+    beat_first: f32,
     ring: VecDeque<[f32; 2]>,
     /// Random per instance (`V.instance`), so two layers of one visual differ.
     instance: f32,
@@ -1704,6 +1738,13 @@ impl ShaderVisual {
             bands: [0.0; 32],
             flow: 0.0,
             swell: 0.0,
+            pace: 1.0,
+            bass_soft: 1.0,
+            onset_soft: 0.0,
+            last_beat: 0,
+            since_beat: 10.0,
+            beat_strength: 0.0,
+            beat_first: 0.0,
             ring: VecDeque::with_capacity(WAVE * 2),
             instance: instance_seed(def),
             device: device.clone(),
@@ -2196,7 +2237,26 @@ impl ShaderVisual {
         let f = ctx.features;
         let dt = ctx.dt;
         let energy = ((f.bass_att + f.mid_att + f.treb_att) / 3.0).clamp(0.0, 2.5);
-        self.flow += dt * (0.5 + 0.5 * energy);
+        // The music clock runs at the pace eased over half a second: raw
+        // energy jitters, and every visual that moves on the clock stuttered.
+        let ease = |v: &mut f32, want: f32, rise: f32, fall: f32| *v += (want - *v) * (1.0 - (-dt / if want > *v { rise } else { fall }).exp());
+        ease(&mut self.pace, 0.5 + 0.5 * energy, 0.5, 0.5);
+        self.flow += dt * self.pace;
+        ease(&mut self.bass_soft, f.bass_att.clamp(0.0, 3.0), 0.06, 0.3);
+        ease(&mut self.onset_soft, f.onset_pulse[3].min(1.0), 0.04, 0.25);
+        // The beat's kick: a beat is a new count; it rises over 40 ms, so
+        // nothing jumps in one frame, and dies away over a third of a second.
+        if f.beat_count != self.last_beat {
+            self.last_beat = f.beat_count;
+            self.since_beat = 0.0;
+            self.beat_strength = f.beat_confidence;
+            self.beat_first = if f.beat_in_bar == 0 { f.bar_confidence } else { 0.0 };
+        } else {
+            self.since_beat = (self.since_beat + dt).min(10.0);
+        }
+        let rise = (self.since_beat / 0.04).clamp(0.0, 1.0);
+        let kick = rise * rise * (3.0 - 2.0 * rise) * (-self.since_beat / 0.3).exp() * self.beat_strength;
+        let motion = layer.motion.unwrap_or(self.def.motion).amount();
         let want = (f.bass_att - 1.0).max(0.0) * 0.8 + f.onset_pulse[0].min(1.0) * 0.6;
         self.swell += (want - self.swell) * (1.0 - (-dt / if want > self.swell { 0.04 } else { 0.35 }).exp());
         let (attack, release) = (1.0 - (-dt / 0.03).exp(), 1.0 - (-dt / 0.2).exp());
@@ -2300,6 +2360,8 @@ impl ShaderVisual {
             moments: [f.drop_pulse, f.drop_confidence, f.transition_pulse, f.phrase_phase],
             section: [f.section_label as f32, f.seen_before, f.bars_to_change, f.change_confidence],
             extra: [((f.lufs_m + 40.0) / 35.0).clamp(0.0, 1.0), f.drop_count as f32, f.transition_count as f32, 0.0],
+            motion: [motion, self.pace, self.bass_soft, self.onset_soft],
+            kick: [kick, kick * self.beat_first, self.since_beat, 0.0],
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
         // The album art, once per track.
@@ -2613,7 +2675,9 @@ mod tests {
         assert_eq!(std::mem::offset_of!(Uniform, moments), 544 + 512 + 144 + 352 + 64);
         assert_eq!(std::mem::offset_of!(Uniform, section), 544 + 512 + 144 + 352 + 80);
         assert_eq!(std::mem::offset_of!(Uniform, extra), 544 + 512 + 144 + 352 + 96);
-        assert_eq!(std::mem::size_of::<Uniform>(), 544 + 512 + 144 + 352 + 112);
+        assert_eq!(std::mem::offset_of!(Uniform, motion), 544 + 512 + 144 + 352 + 112);
+        assert_eq!(std::mem::offset_of!(Uniform, kick), 544 + 512 + 144 + 352 + 128);
+        assert_eq!(std::mem::size_of::<Uniform>(), 544 + 512 + 144 + 352 + 144);
     }
 
     #[test]

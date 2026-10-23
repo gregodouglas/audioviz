@@ -399,7 +399,7 @@ fn advance() -> G {
     let push = max(0.5 * flare, 1.5 * drop_pulse());
     let k_ex = select(0.6, 0.1, push > g.explode);
     g.explode += (push - g.explode) * (1.0 - exp(-dt / k_ex));
-    g.spread = max(P.spread * (1.0 + 0.6 * P.explode * g.explode * P.react), 0.05);
+    g.spread = max(P.spread * (1.0 + 0.6 * P.explode * g.explode * P.react * motion()), 0.05);
     let r0 = arr_radius(0u);
     g.orbit_r = r0 + (item(ARR0).y - r0) * g.spread;
 
@@ -859,7 +859,7 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
         let col = col_at(f32(kk) / 12.0 + 0.5);
         let w = max(0.0055 * lw, px * 1.1);
         let ring = tube(abs(dc - a0.z), w, col);
-        let dot_r = a0.z * (0.22 + 0.25 * ch * react + 0.2 * beat * react);
+        let dot_r = a0.z * (0.22 + 0.25 * ch * react + 0.2 * kick() * react * motion());
         let dotl = tube(max(dc - dot_r, 0.0), w * 1.3, col) * 1.2;
         acc += (ring + dotl) * bright * lit(0.62 + 0.02 * f32(kk % 3u), 100.0 + f32(kk));
     }

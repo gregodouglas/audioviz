@@ -1,11 +1,12 @@
 // Spectrum wheel: a disc of spectrum wedges, each wedge's brightness its
 // band's level raised to a power, colours running round the palette; outside
 // the disc the wedges carry on as fading rays. It turns slowly, may jump on a
-// beat, and its band mapping can walk one wedge per beat.
+// beat (a snap at Groove and Wild, a glide at Gentle and Still: the layer's
+// Motion), and its band mapping can walk one wedge per beat.
 // After the Wheel in Felix Turner's Uberviz (Lantern); written fresh.
 //
 // prepare() keeps what the compiled-in Wheel kept on the CPU:
-//   item 0      (spin 0..1, band step, last beat pulse, 0)
+//   item 0      (spin 0..1 it heads for, band step, last beat pulse, spin shown)
 //   item 1 + w  wedge w: (colour times brightness, smoothed level)
 // so shade() only finds its wedge and reads it.
 
@@ -38,7 +39,13 @@ fn prepare(i: u32) -> vec4<f32> {
                 step = f32((u32(step) + 1u) % n);
             }
         }
-        return vec4<f32>(fract(spin - V.dt * P.speed * 0.05), step, V.beat, 0.0);
+        let aim = fract(spin - V.dt * P.speed * 0.05);
+        // The spin shown follows the way round that is shorter: at once at
+        // Groove and up, over a fraction of a second below.
+        let glide = 0.45 * (1.0 - min(motion(), 1.0));
+        let d = fract(aim - last.w + 0.5) - 0.5;
+        let shown = select(fract(last.w + d * (1.0 - exp(-V.dt / max(glide, 1e-3)))), aim, glide < 0.01);
+        return vec4<f32>(aim, step, V.beat, shown);
     }
     let w = i - 1u;
     if (w >= n) {
@@ -71,7 +78,7 @@ fn shade(uv: vec2<f32>) -> vec3<f32> {
     let r = length(p);
     let nu = wedges();
     let n = f32(nu);
-    let ang = atan2(p.y, p.x) / TAU + 0.5 + item(0u).x;
+    let ang = atan2(p.y, p.x) / TAU + 0.5 + item(0u).w;
     let w = fract(ang) * n;
     let i = u32(floor(w)) % nu;
     let f = fract(w);

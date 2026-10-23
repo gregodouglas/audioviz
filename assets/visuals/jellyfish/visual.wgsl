@@ -133,10 +133,18 @@ fn jelly_count() -> u32 {
     return clamp(u32(params().count), 1u, MAX_J);
 }
 
-// How strongly the music sways them: Natural, Reactive, Performance.
+// How strongly the music sways them: the layer's Motion (ADR-0007). Still
+// barely (they keep a little sway, as Natural did), Gentle a third, Groove
+// as designed, Wild fully.
 fn music() -> f32 {
-    let m = params().music;
-    return select(select(1.8, 1.0, m < 1.5), 0.15, m < 0.5);
+    return max(motion(), 0.15);
+}
+
+// What the music may start: 0 nothing (Still: they swim on their own), 1
+// strokes on the bar's first beat (Gentle, Groove), 2 also on bass hits and
+// drops (Wild).
+fn music_mode() -> f32 {
+    return select(select(2.0, 1.0, motion() < 1.35), 0.0, motion() < 0.2);
 }
 
 // 1 when the species' own colours apply to bodies (Natural, Palette light).

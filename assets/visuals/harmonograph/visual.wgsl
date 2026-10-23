@@ -9,7 +9,10 @@
 // section of the song has its own place on the palette. point(i) gives the
 // line; there is no shade(), so the line is the whole picture.
 
-// Item 0: (ratio, phase, 0, 0), last frame's inside prepare(). Item 1: (the
+// Item 0: (ratio, phase, the ratio it heads for, last bar phase), last
+// frame's inside prepare(). The figure is the ratio times a long run of the
+// angle, so a change of ratio sweeps all of it: a new interval is taken
+// only at a bar line, and glided to, slower at lower Motion. Item 1: (the
 // build, the section's palette offset, how sure the beat is), eased.
 fn prepare(i: u32) -> vec4<f32> {
     let P = params();
@@ -29,10 +32,13 @@ fn prepare(i: u32) -> vec4<f32> {
     let semis = f32((b + 12u - a) % 12u);
     let want = exp2(semis / 12.0);
     let last = item(0u);
+    let new_bar = bar_phase() < last.w - 0.5;
+    let aim = select(last.z, want, new_bar || last.z <= 0.0);
+    let glide = P.glide / max(motion(), 0.25);
     // First frame (nothing stored yet): start on the interval.
-    let ratio = select(mix(last.x, want, 1.0 - exp(-V.dt / P.glide)), want, last.x <= 0.0);
-    let phase = fract(last.y + V.dt * (0.5 + 0.5 * V.energy) * P.speed * 0.2);
-    return vec4<f32>(ratio, phase, 0.0, 0.0);
+    let ratio = select(mix(last.x, aim, 1.0 - exp(-V.dt / glide)), want, last.x <= 0.0);
+    let phase = fract(last.y + V.dt * pace() * P.speed * 0.2);
+    return vec4<f32>(ratio, phase, aim, bar_phase());
 }
 
 fn point(i: u32) -> LinePoint {
@@ -51,10 +57,10 @@ fn point(i: u32) -> LinePoint {
         0.8 * sin(t + ph) + 0.2 * sin(f2 * t + 2.0 * ph),
         0.8 * sin(ratio * t + 1.5707963) + 0.2 * sin(r2 * t - ph),
     );
-    let size = P.size * (1.0 + 0.15 * V.swell);
-    p = rotate(p * damp * size, P.sway * 0.1 * sin(TAU * bar_phase()) * shape.z);
+    let size = P.size * (1.0 + 0.15 * V.swell * motion());
+    p = rotate(p * damp * size, P.sway * 0.1 * sin(TAU * bar_phase()) * shape.z * motion());
     // The waveform shakes the line along its normal-ish direction.
-    p += vec2<f32>(wave(u).x, wave(u).y) * P.wave * 0.04;
+    p += vec2<f32>(wave(u).x, wave(u).y) * P.wave * 0.04 * min(motion(), 1.0);
     var q: LinePoint;
     q.pos = p;
     q.width = P.width * (0.5 + 0.7 * damp);

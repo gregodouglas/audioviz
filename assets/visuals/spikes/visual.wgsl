@@ -22,7 +22,7 @@ fn prepare(i: u32) -> vec4<f32> {
     for (var k = 0u; k < 24u; k++) {
         m = max(m, spectrum_log((f32(k) + 0.5) / 24.0));
     }
-    let turn = s.x + dt * P.spin * (0.5 + 0.5 * V.energy);
+    let turn = s.x + dt * P.spin * pace();
     return vec4<f32>(turn - TAU * floor(turn / TAU), ease(s.y, max(m, 0.2), 0.05, 3.0), 0.0, 0.0);
 }
 

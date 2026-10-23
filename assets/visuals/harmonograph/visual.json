@@ -6,6 +6,7 @@
   "credit": "After the Victorian harmonograph (two pendulums drawing one damped figure). Written fresh for audioviz.",
   "hint": "Across and up swing at the ratio of the music's two strongest pitch classes (a fifth draws 3:2), gliding when the chord changes; the figure precesses with the music and the waveform shakes the line.",
   "items": 2,
+  "motion": "gentle",
   "line": 6000,
   "params": [
     { "id": "turns", "label": "Turns", "type": "integer", "group": "Figure", "min": 4, "max": 120, "default": 40 },

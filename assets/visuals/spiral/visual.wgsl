@@ -2,33 +2,34 @@
 // slowly, so the figure morphs between spiral arms, rosettes and star meshes
 // as the step passes near simple fractions of a turn. Points sit on an
 // even-density spiral (radius by the square root of the index) or on a rose
-// curve joined in step order (a Maurer rose). The waveform pushes each point
-// in and out; beats and drops kick it, energy speeds the drift, it sways
-// once a bar, and each section of the song glides the step to its own
-// figure. Colours run along the line through the palette.
+// curve joined in step order (a Maurer rose). The figure is the step times
+// each point's index, so the music never touches the step (a nudge of a
+// thousandth of a degree turns the outer points by degrees): the drift is
+// steady. The music lights it instead: each beat sends a pulse of light out
+// along the line, and each section of the song moves the colours along the
+// palette. Its motion (the waveform pushing the points in and out, the beat
+// adding to that, the sway once a bar) follows the layer's Motion.
+// Colours run along the line through the palette.
 //
 // After the spiral family in audible-visuals by Sonia Boller, Apache-2.0.
 // The idea only; no code ported (see docs/INSPIRATION.md).
 
-// Item 0, kept from frame to frame: (drift in degrees, turn in radians,
-// beat kick 0..1, last beat pulse). Item 1: (the section's step offset in
-// degrees, eased; how sure the beat is, eased).
+// Item 0, kept from frame to frame: (drift in degrees, turn in radians, the
+// beat's and drops' push, eased, 0). Item 1: (the section's colour offset, eased; how sure the beat is,
+// eased).
 fn prepare(i: u32) -> vec4<f32> {
     let P = params();
     if (i == 1u) {
         let s = item(1u);
-        let want = (section_seed(1.0) * 2.0 - 1.0) * 12.0 * P.sections;
+        let want = section_seed(1.0) * 0.5 * P.sections;
         return vec4<f32>(ease(s.x, want, 3.0, 3.0), ease(s.y, V.confidence, 0.5, 1.0), 0.0, 0.0);
     }
     let last = item(0u);
-    let drift = last.x + V.dt * P.drift * max(1.0 + P.react * (V.energy - 1.0), 0.1);
-    let turn = last.y + V.dt * P.spin * (0.5 + 0.5 * V.energy);
-    var kick = last.z * exp(-V.dt / 0.25);
-    if (V.beat > last.w + 0.4) {
-        kick = 1.0;
-    }
-    kick = max(kick, 1.5 * drop_pulse());
-    return vec4<f32>(drift - 360.0 * floor(drift / 360.0), turn - TAU * floor(turn / TAU), kick, V.beat);
+    let drift = last.x + V.dt * P.drift;
+    let turn = last.y + V.dt * P.spin * pace();
+    // A drop's pulse jumps; eased in over 40 ms like the beat's kick.
+    let push = ease(last.z, max(kick(), drop_pulse()), 0.04, 0.25);
+    return vec4<f32>(drift - 360.0 * floor(drift / 360.0), turn - TAU * floor(turn / TAU), push, 0.0);
 }
 
 // The palette over the tint, as the compiled-in Spiral mixed it.
@@ -53,7 +54,7 @@ fn point(i: u32) -> LinePoint {
     let t = f32(i) / f32(n - 1u);
     // The step angle is applied per index; wrap it first so a large index
     // keeps its precision.
-    let step = radians(P.step + state.x + item(1u).x);
+    let step = radians(P.step + state.x);
     let th = fract(f32(i) * (step / TAU)) * TAU;
     let shape = u32(P.shape + 0.5);
     var r = sqrt(t);
@@ -64,9 +65,9 @@ fn point(i: u32) -> LinePoint {
         r = 0.6;
     }
     let w = wave_mono(1.0 - t) * P.gain;
-    let push = w * P.amp * (1.0 + P.react * state.z);
+    let push = w * P.amp * min(motion(), 1.0) * (1.0 + 0.6 * P.react * motion() * state.z);
     r = r * P.radius + push;
-    let a = th + state.y + P.sway * 0.12 * sin(TAU * bar_phase()) * item(1u).y;
+    let a = th + state.y + P.sway * 0.12 * sin(TAU * bar_phase()) * item(1u).y * motion();
     q.pos = vec2<f32>(cos(a), -sin(a)) * r;
     if (shape == 2u || shape == 3u) {
         // Wavy and Flower: a scatter whose frequency along the line is so
@@ -84,6 +85,9 @@ fn point(i: u32) -> LinePoint {
         q.pos = vec2<f32>(sin(c), 0.45 * cos(c)) * P.radius + vec2<f32>(0.0, 2.0 * push * seam);
     }
     q.width = P.width;
-    q.colour = line_colour(t) * P.intensity;
+    // Each beat a pulse of light runs out along the line from its start.
+    let front = since_beat() * 0.9;
+    let pulse = P.react * item(1u).y * exp(-pow((t - front) / 0.06, 2.0)) * exp(-since_beat() / 0.6);
+    q.colour = line_colour(t + item(1u).x) * P.intensity * (1.0 + pulse);
     return q;
 }

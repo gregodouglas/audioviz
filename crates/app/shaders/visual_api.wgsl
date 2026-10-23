@@ -67,6 +67,10 @@ struct VisualIn {
     moments: vec4<f32>, // drop pulse, how sure of the drop, change pulse, phrase phase
     section: vec4<f32>, // section label, seen before, bars to the expected change, how sure
     extra: vec4<f32>,   // loudness, drops so far, changes so far, 0
+    // Movement (ADR-0007): read them with motion(), pace(), bass_soft(),
+    // onset_soft(), kick(), bar_kick(), since_beat().
+    motion_v: vec4<f32>, // the layer's motion amount, pace, bass and onsets eased
+    kick_v: vec4<f32>,   // the beat's kick, the bar's first beat's, seconds since the beat, 0
 };
 
 @group(0) @binding(0) var<uniform> V: VisualIn;
@@ -321,6 +325,62 @@ fn bar_sure() -> f32 {
 }
 
 // The beat pulse on the bar's first beat only, times bar_sure().
+// ------------------------------------------------------------ movement (ADR-0007)
+//
+// The music moves a visual two ways: light, colour and width (always fine,
+// and never scaled), and motion: sways, kicks, warps, surges of speed, turns.
+// Multiply every motion reaction by motion(), the layer's Motion setting
+// (Still 0, Gentle 0.35, Groove 1, Wild 1.7): at Still the visual moves at
+// its own pace and only its light answers the music. And move only with
+// values that cannot jump: kick() rather than V.beat, pace() rather than
+// V.energy, bass_soft() rather than V.bass, onset_soft() rather than
+// V.onset. Never let the music nudge a value something else multiplies up
+// (an angle step times a point's index): answer there with light instead.
+
+// How much this layer moves with the music: multiply motion reactions by it.
+fn motion() -> f32 {
+    return V.motion_v.x;
+}
+
+// The music's pace for speeds that follow the energy: eased over half a
+// second (0.5 quiet to about 1.7 loud, the rate V.flow runs at), as much as
+// the layer's Motion says: 1 at Still, so the visual keeps its own speed.
+fn pace() -> f32 {
+    return max(1.0 + (V.motion_v.y - 1.0) * motion(), 0.2);
+}
+
+// The bass against its average (about 1), eased (60 ms up, 300 ms down).
+fn bass_soft() -> f32 {
+    return V.motion_v.z;
+}
+
+// Onsets, eased (40 ms up, 250 ms down), 0..1.
+fn onset_soft() -> f32 {
+    return V.motion_v.w;
+}
+
+// The beat as a kick for motion: rises over 40 ms (so nothing jumps in a
+// frame), dies away over about a third of a second, as strong as the beat
+// is sure. bar_kick() is the same on the bar's first beat only.
+fn kick() -> f32 {
+    return V.kick_v.x;
+}
+
+fn bar_kick() -> f32 {
+    return V.kick_v.y;
+}
+
+// Seconds since the last beat (up to 10).
+fn since_beat() -> f32 {
+    return V.kick_v.z;
+}
+
+// The kick's shape, for an event a visual keeps itself (seconds since it,
+// how long it takes to die away): 0 at the event, 1 after 40 ms, then down.
+fn kick_shape(since: f32, decay: f32) -> f32 {
+    return smoothstep(0.0, 0.04, since) * exp(-max(since, 0.0) / max(decay, 0.01));
+}
+
 fn first_beat() -> f32 {
     return select(0.0, V.beat * V.bar.z, V.bar.y < 0.5);
 }

@@ -13,7 +13,7 @@ use crate::scene::Scene;
 use crate::preset_store::PresetDef;
 use crate::scene_store::SceneDef;
 use crate::color;
-use crate::settings::{AudioBand, AudioSourceKind, Blend, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, Space, TintMode, Glow, Vignette, Colorify};
+use crate::settings::{AudioBand, AudioSourceKind, Blend, Motion, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, Space, TintMode, Glow, Vignette, Colorify};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
 use crate::widgets::{self, chip, chip_width, dropdown, dropdown_help, dropdown_marked, ghost_button, group, group_help, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
@@ -1327,6 +1327,16 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState
             Blend::Multiply => "Multiply: masks the layers below; its dark parts darken them.",
         });
     }
+    // Motion: how much it moves with the music; the visual's own suggestion
+    // is marked, and choosing it again leaves the layer following the visual.
+    let suits = crate::shader_visual::default_motion(&l.visual);
+    let names: Vec<String> = Motion::ALL.iter().map(|m| if *m == suits { format!("{} (suits it)", m.name()) } else { m.name().to_string() }).collect();
+    let refs: Vec<&str> = names.iter().map(|n| n.as_str()).collect();
+    let now = l.motion.unwrap_or(suits);
+    if let Some(i) = dropdown_help(ui, "Motion", &refs, Motion::ALL.iter().position(|m| *m == now), |i| Some(Motion::ALL[i].summary())) {
+        l.motion = (Motion::ALL[i] != suits).then_some(Motion::ALL[i]);
+    }
+    hint(ui, "How much it moves with the beat and the groove. Its light and colour answer the music whatever this says.");
     slider_def(ui, "Brightness", &mut l.brightness, Some(0.0), -3.0..=3.0, |v| if v.abs() < 0.05 { "as levelled".into() } else { format!("{v:+.1} stops") }, false).on_hover_text("Light after levelling: +1 doubles it, -1 halves it. Opacity is the layer's share of the mix; this moves it brighter or darker than the levelling put it.");
     ui.add_space(8.0);
     let kind = l.visual.clone();

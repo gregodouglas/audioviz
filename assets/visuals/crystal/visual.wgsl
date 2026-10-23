@@ -102,7 +102,9 @@ fn shard_count() -> u32 {
 fn current_pose(s: u32) -> Pose {
     let b = SHARD0 + s * 5u;
     let e = item(b + 4u);
-    let k = ease_in_expo(e.z);
+    // The re-pose snaps at the end (ease in, exponentially) at Groove and up;
+    // at lower Motion it eases in and out.
+    let k = mix(smoothstep(0.0, 1.0, e.z), ease_in_expo(e.z), clamp(motion(), 0.0, 1.0));
     var p: Pose;
     p.rot = q_slerp(item(b), item(b + 1u), k);
     p.scale = mix(item(b + 2u).xyz, item(b + 3u).xyz, k);
@@ -197,7 +199,7 @@ fn group() -> Group {
     let P = params();
     var g: Group;
     g.rot = q_mul(item(2u), q_euler(item(1u).xyz));
-    g.scale = P.size * (0.55 + 0.45 * item(0u).x * min(P.react, 1.5) + 0.25 * V.onset * P.react + 1.2 * drop_bloom() * min(P.react, 1.5)) * 0.4;
+    g.scale = P.size * (0.55 + 0.45 * item(0u).x * min(P.react, 1.5) + 0.25 * onset_soft() * P.react * motion() + 1.2 * drop_bloom() * min(P.react, 1.5)) * 0.4;
     // Scatter: out to the far places and back over the bar (the analysis's
     // bar, so it closes on the first beat).
     g.fling = P.scatter * abs(sin(bar_phase() * 3.14159265));

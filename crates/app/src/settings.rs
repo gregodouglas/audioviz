@@ -1303,6 +1303,64 @@ impl AudioBand {
     }
 }
 
+/// How much a layer's visual moves with the music: its sways, kicks, warps
+/// and surges of speed. Its light, colour and line width answer the music
+/// whatever this says. The visual says which suits it (`"motion"` in its
+/// visual.json); a layer may choose another.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Motion {
+    /// It moves at its own pace; the music only lights and colours it.
+    Still,
+    /// Small, slow answers to the music.
+    Gentle,
+    /// As the visual was made to move.
+    #[default]
+    Groove,
+    /// Bigger and harder.
+    Wild,
+}
+
+impl Motion {
+    pub const ALL: [Motion; 4] = [Motion::Still, Motion::Gentle, Motion::Groove, Motion::Wild];
+    pub fn name(self) -> &'static str {
+        match self {
+            Motion::Still => "Still",
+            Motion::Gentle => "Gentle",
+            Motion::Groove => "Groove",
+            Motion::Wild => "Wild",
+        }
+    }
+    /// One line for a tooltip.
+    pub fn summary(self) -> &'static str {
+        match self {
+            Motion::Still => "Moves at its own pace; the music only lights and colours it.",
+            Motion::Gentle => "Small, slow answers to the beat and the groove.",
+            Motion::Groove => "Moves with the music as the visual was made to.",
+            Motion::Wild => "Bigger, harder moves on the beat.",
+        }
+    }
+    /// What the visual's movement reactions are multiplied by (`motion()`).
+    pub fn amount(self) -> f32 {
+        match self {
+            Motion::Still => 0.0,
+            Motion::Gentle => 0.35,
+            Motion::Groove => 1.0,
+            Motion::Wild => 1.7,
+        }
+    }
+    /// From a visual.json value ("" is Groove).
+    pub fn from_id(s: &str) -> Option<Motion> {
+        match s {
+            "" | "groove" => Some(Motion::Groove),
+            "still" => Some(Motion::Still),
+            "gentle" => Some(Motion::Gentle),
+            "wild" => Some(Motion::Wild),
+            _ => None,
+        }
+    }
+}
+
 /// One instance of a visual in the scene. All three parameter sets are kept
 /// so switching the visual back and forth loses nothing.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1319,6 +1377,9 @@ pub struct Layer {
     pub brightness: f32,
     /// How this layer meets the ones below it (layer 1 is on top).
     pub blend: Blend,
+    /// How much it moves with the music; none = what its visual suits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub motion: Option<Motion>,
     pub band: AudioBand,
     pub tint: LayerTint,
     /// Colour palette the visual and the palette modifier draw from.
@@ -1344,7 +1405,7 @@ fn is_zero(v: &f32) -> bool {
 
 impl Default for Layer {
     fn default() -> Self {
-        Self { visual: "scope".into(), enabled: false, opacity: 1.0, brightness: 0.0, blend: Blend::Add, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), director: EffectsDirector::default(), fold: LegacyFold::default(), params: serde_json::Map::new() }
+        Self { visual: "scope".into(), enabled: false, opacity: 1.0, brightness: 0.0, blend: Blend::Add, motion: None, band: AudioBand::default(), tint: LayerTint::default(), palette: PaletteSel::default(), modifiers: Vec::new(), director: EffectsDirector::default(), fold: LegacyFold::default(), params: serde_json::Map::new() }
     }
 }
 

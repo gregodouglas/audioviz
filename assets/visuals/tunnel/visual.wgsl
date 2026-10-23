@@ -42,11 +42,10 @@ fn clock() -> Clock {
     let c0 = item(0u);
     let c1 = item(1u);
     var k: Clock;
-    k.kick = c1.y * exp(-dt / 0.35);
-    if (V.beat > c1.x + 0.4) {
-        k.kick = 1.0;
-    }
-    let speed = P.speed * 0.6 * (0.5 + 0.5 * V.energy) * (1.0 + 1.5 * P.kick * k.kick);
+    // The beat surges it forward, rising over 40 ms (kick()), as much as
+    // the layer's Motion says.
+    k.kick = kick() * motion();
+    let speed = P.speed * 0.6 * pace() * (1.0 + 1.2 * P.kick * k.kick);
     k.d = c0.x + speed * dt;
     k.last = c0.y;
     k.births = c0.z;

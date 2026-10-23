@@ -106,13 +106,11 @@ fn prepare(i: u32) -> vec4<f32> {
     let ck = clock();
     if (i == 0u) {
         let last = item(0u);
-        let turn = last.z + V.dt * P.spin * (0.5 + 0.5 * V.energy);
-        var kick = last.w * exp(-V.dt / 0.25);
-        if (V.beat > item(1u).x + 0.4) {
-            kick = 1.0;
-        }
-        kick = max(kick, 1.5 * drop_pulse());
-        return vec4<f32>(ck.x, ck.z, turn - TAU * floor(turn / TAU), kick);
+        let turn = last.z + V.dt * P.spin * pace();
+        // Beats and drops swell the rings, eased in over 40 ms (a drop's
+        // pulse jumps), as much as the layer's Motion says.
+        let swell = ease(last.w, max(kick(), 1.5 * drop_pulse()) * motion(), 0.04, 0.25);
+        return vec4<f32>(ck.x, ck.z, turn - TAU * floor(turn / TAU), swell);
     }
     if (i == 1u) {
         let s = item(1u);
@@ -172,7 +170,7 @@ fn point(i: u32) -> LinePoint {
     let t = f32(age) / f32(max(rings - 1u, 1u));
     let r = mix(P.inner, max(P.outer, P.inner + 0.01), t);
     let c = j % COLS;
-    let sway = P.sway * 0.12 * sin(TAU * bar_phase()) * item(1u).z;
+    let sway = P.sway * 0.12 * sin(TAU * bar_phase()) * item(1u).z * motion();
     let turn = state.z + radians(P.twist) * f32(age) + sway;
     let a = TAU * f32(c) / f32(COLS) + turn;
     let rr = max(r + ring_value(slot, c) * P.amp * (1.0 + P.react * state.w), 0.0);

@@ -439,6 +439,14 @@ pub fn small_caps(ui: &mut Ui, text: &str) {
     ui.label(egui::RichText::new(text.to_uppercase()).size(10.5).color(TEXT_2).strong());
 }
 
+/// `small_caps` with a "?" after it that shows `help` on hover: the place
+/// for an explanation that would otherwise be a paragraph under the controls.
+pub fn small_caps_help(ui: &mut Ui, text: &str, help: &str) {
+    ui.add_space(6.0);
+    let r = ui.label(egui::RichText::new(text.to_uppercase()).size(10.5).color(TEXT_2).strong());
+    help_at(ui, pos2(r.rect.max.x + 10.0, r.rect.center().y), help);
+}
+
 pub fn hint(ui: &mut Ui, text: &str) {
     ui.label(egui::RichText::new(text).size(11.5).color(TEXT_3));
 }

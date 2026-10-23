@@ -15,7 +15,7 @@ use crate::scene_store::SceneDef;
 use crate::color;
 use crate::settings::{AudioBand, AudioSourceKind, Blend, Motion, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, Space, TintMode, Glow, Vignette, Colorify};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
-use crate::widgets::{self, blend_icon, chip, chip_width, dropdown, dropdown_help, dropdown_marked, ghost_button, group, group_help, hint, icon_choice, inspector_header, motion_icon, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
+use crate::widgets::{self, blend_icon, chip, chip_width, dropdown, dropdown_help, dropdown_marked, ghost_button, group, group_help, hint, icon_choice, inspector_header, motion_icon, section_header, segmented, slider_def, slider_row, small_caps, small_caps_help, toggle_row};
 
 const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
@@ -263,16 +263,16 @@ fn scenes_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
     if section_header(ui, "Scenes", None, Some("Hide UI (H)")) {
         a.hide_ui = true;
     }
-    hint(ui, "A scene is up to three layers plus the Picture settings. Space goes to the next one.");
-    ui.add_space(6.0);
     now_showing(ui, settings, state, stats, a);
     ui.add_space(10.0);
-    small_caps(ui, "Director (A)");
+    small_caps_help(ui, "Director (A)", "Auto changes scene on a track change, a drop, a long quiet passage, or after six minutes, choosing among the ticked scenes below. Space goes to the next scene by hand.");
     if let Some(i) = segmented(ui, &["Manual", "Auto"], settings.auto_scenes as usize) {
         settings.auto_scenes = i == 1;
     }
     let last = if stats.fading { format!("{} · fading", stats.last_cue) } else { stats.last_cue.to_string() };
-    hint(ui, &format!("Auto changes scene on a track change, a drop, a long quiet passage, or after six minutes, choosing among the ticked scenes below. Last change: {last}."));
+    if settings.auto_scenes {
+        hint(ui, &format!("Last change: {last}."));
+    }
     ui.add_space(8.0);
     // Yours first, then the shipped ones.
     let mut order: Vec<&SceneDef> = stats.scenes.iter().filter(|s| !s.factory).collect();
@@ -1452,17 +1452,13 @@ fn picture_section(ui: &mut egui::Ui, settings: &mut Settings) {
     fx_slider(ui, at, &mut p.links, "bloom", "Bloom", &mut p.bloom, Some(d.bloom), 0.0..=3.0, |v| format!("{v:.2}"), false);
     fx_slider(ui, at, &mut p.links, "grain", "Grain", &mut p.grain, Some(d.grain), 0.0..=1.0, |v| format!("{v:.2}"), false);
     ui.add_space(8.0);
-    small_caps(ui, "Look");
+    small_caps_help(ui, "Look", "Film: bright colours roll off toward white, like a camera. Neon: hue and saturation survive brightness; only the hottest cores whiten, like a tube.");
     if let Some(i) = segmented(ui, &["Film", "Neon"], (p.look == Look::Neon) as usize) {
         p.look = if i == 1 { Look::Neon } else { Look::Film };
     }
     fx_slider(ui, at, &mut p.links, "saturation", "Saturation", &mut p.saturation, Some(d.saturation), 0.0..=2.0, |v| format!("{v:.2}"), false);
-    hint(ui, match p.look {
-        Look::Film => "Film: bright colours roll off toward white, like a camera.",
-        Look::Neon => "Neon: hue and saturation survive brightness; only the hottest cores whiten, like a tube.",
-    });
     ui.add_space(8.0);
-    small_caps(ui, "Scene tint");
+    small_caps_help(ui, "Scene tint", "The base colour every layer starts from, unless a layer picks the album art or its own colour (Layers › Colour).");
     ui.horizontal(|ui| {
         ui.color_edit_button_rgb(&mut settings.tint);
         for (name, tint) in [("Green", [0.40, 1.0, 0.55]), ("White", [0.85, 0.9, 1.0]), ("Amber", [1.0, 0.65, 0.2]), ("Ice", [0.55, 0.8, 1.0]), ("Violet", [0.55, 0.35, 1.0])] {
@@ -1472,13 +1468,11 @@ fn picture_section(ui: &mut egui::Ui, settings: &mut Settings) {
         }
     });
     toggle_row(ui, "Tint from album art", &mut settings.tint_from_art);
-    hint(ui, "The base colour every layer starts from, unless a layer picks the album art or its own colour (Layers › Colour).");
 }
 
 fn sync_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, a: &mut Actions) {
     section_header(ui, "Sync", None, None);
-    slider_row(ui, "Audio delay", &mut settings.audio_delay_ms, 0.0..=1000.0, |v| format!("{v:.0} ms"), false);
-    hint(ui, "Loopback hears the music before you do. Raise this until the beam lands on the beat, or calibrate by tapping. Bluetooth is 100–250 ms, a cast TV 100–300 ms more.");
+    slider_row(ui, "Audio delay", &mut settings.audio_delay_ms, 0.0..=1000.0, |v| format!("{v:.0} ms"), false).on_hover_text("Loopback hears the music before you do. Raise this until the picture lands on the beat, or calibrate by tapping. Bluetooth is 100–250 ms, a cast TV 100–300 ms more.");
     ui.add_space(6.0);
     match &stats.calibration {
         None => {
@@ -1501,15 +1495,14 @@ fn sync_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelSta
     }
 
     ui.add_space(12.0);
-    small_caps(ui, "Director view");
-    hint(ui, "What the engine hears, for making visuals: a live spectrogram, the bands' levels and attacks, onsets against their thresholds, the beat grid. F freezes it, a drag scrolls back over the last five minutes, the wheel zooms. The spectrogram is linear (the highs in detail) or log (L, or click the scale's name); the wheel over its frequency labels zooms the range, a drag there moves it, a double click resets it. Drag the view's top edge to make it taller, and the line under the spectrogram to give it more room. S saves the last two minutes of sound as a session (a WAV and the track names beside it, in the sessions folder of your audioviz folder): send one when the music and what the engine made of it disagree.");
+    small_caps_help(ui, "Director view", "What the engine hears, for making visuals: a live spectrogram, the bands' levels and attacks, onsets against their thresholds, the beat grid. F freezes it, a drag scrolls back over the last five minutes, the wheel zooms. The spectrogram is linear (the highs in detail) or log (L, or click the scale's name); the wheel over its frequency labels zooms the range, a drag there moves it, a double click resets it. Drag the view's top edge to make it taller, and the line under the spectrogram to give it more room. S saves the last two minutes of sound as a session (a WAV and the track names beside it, in the sessions folder of your audioviz folder): send one when the music and what the engine made of it disagree.");
     ui.add_space(4.0);
     if ghost_button(ui, "Open or close the director view (D)", false).clicked() {
         a.audio_view_toggle = true;
     }
 
     ui.add_space(12.0);
-    small_caps(ui, "Source");
+    small_caps_help(ui, "Source", "Listen to: the process name of the player. Falls back to the whole system output when it is not running.");
     let names: Vec<&str> = AudioSourceKind::ALL.iter().map(|s| s.name()).collect();
     if let Some(i) = segmented(ui, &names, AudioSourceKind::ALL.iter().position(|s| *s == settings.source).unwrap_or(0)) {
         a.set_source = Some(AudioSourceKind::ALL[i]);
@@ -1546,7 +1539,6 @@ fn sync_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelSta
             }
         }
     });
-    hint(ui, "Process name of the player. Falls back to the whole system output when it is not running.");
     if matches!(stats.capture, CaptureMode::Endpoint { .. }) && settings.target_process.to_lowercase().contains("spotify") && ghost_button(ui, "Open Spotify", false).clicked() {
         a.launch_spotify = true;
     }
@@ -1599,13 +1591,12 @@ fn display_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, a:
     toggle_row(ui, "Start fullscreen on it", &mut settings.start_fullscreen);
 
     ui.add_space(8.0);
-    small_caps(ui, "Cast to a TV · experimental");
+    small_caps_help(ui, "Cast to a TV · experimental", "Mirrors this PC to a Roku or any Miracast TV through Windows (Win+K). Play Spotify on this PC, not with Spotify Connect: the sound travels with the picture, and a soundbar on the TV gets it too.");
     match &stats.cast {
         None => {
             if ghost_button(ui, "Cast to a TV…", false).clicked() {
                 a.cast = true;
             }
-            hint(ui, "Mirrors this PC to a Roku or any Miracast TV through Windows (Win+K). Play Spotify on this PC, not with Spotify Connect: the sound travels with the picture, and a soundbar on the TV gets it too.");
         }
         Some(CastView::Waiting { secs }) => {
             ui.label(egui::RichText::new("Pick the TV in the Windows panel…").color(theme::WARN));
@@ -1643,7 +1634,7 @@ fn display_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, a:
     }
 
     ui.add_space(8.0);
-    small_caps(ui, "Motion");
+    small_caps(ui, "Frames");
     slider_row(ui, "Frame cap", &mut settings.fps_cap, 0..=240, |v| if v == 0.0 { "VSync".into() } else { format!("{v:.0} fps") }, false);
     toggle_row(ui, "Low power when hidden / on battery", &mut settings.low_power);
     if let Some(true) = stats.on_battery {
@@ -1651,8 +1642,7 @@ fn display_section(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, a:
     }
     toggle_row(ui, "Reduce flashing", &mut settings.reduce_flashing);
     if settings.reduce_flashing {
-        slider_row(ui, "Allowed brightness rise", &mut settings.flash_rise, 0.5..=8.0, |v| format!("{v:.1}×/s"), false);
-        hint(ui, "Caps how fast the picture may brighten between frames. For photosensitive viewers; on by default.");
+        slider_row(ui, "Brighten limit", &mut settings.flash_rise, 0.5..=8.0, |v| format!("{v:.1}×/s"), false).on_hover_text("How fast the picture may brighten between frames. For photosensitive viewers; on by default.");
     }
 
     ui.add_space(8.0);

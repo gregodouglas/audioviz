@@ -15,7 +15,7 @@ use crate::scene_store::SceneDef;
 use crate::color;
 use crate::settings::{AudioBand, AudioSourceKind, Blend, Motion, ChromaSplit, DirectorMode, Edge, EdgeColour, Feedback, Fold, FoldMode, Fractal, FractalMode, Grade, Halftone, HalftoneShape, Lines, Mirror, MirrorSide, Warp, LayerTab, Look, Luminescence, MAX_LAYERS, MAX_MODS, Mask, MaskShape, Modifier, PaletteSel, Polar, PostSettings, Ripple, Section, Settings, Space, TintMode, Glow, Vignette, Colorify};
 use crate::theme::{self, ACCENT, BAR_H, ERROR, HAIRLINE, PANEL_W, RAIL_W, TEXT, TEXT_2, TEXT_3, WARN as WARN_C};
-use crate::widgets::{self, chip, chip_width, dropdown, dropdown_help, dropdown_marked, ghost_button, group, group_help, hint, inspector_header, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
+use crate::widgets::{self, blend_icon, chip, chip_width, dropdown, dropdown_help, dropdown_marked, ghost_button, group, group_help, hint, icon_choice, inspector_header, motion_icon, section_header, segmented, slider_def, slider_row, small_caps, toggle_row};
 
 const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
@@ -167,6 +167,8 @@ pub struct PanelState {
     pub renaming: Option<(String, String)>,
     pub confirm_delete: Option<String>,
     pub preset_name: String,
+    /// The preset name field is open (Save current as… was picked).
+    pub preset_saving: bool,
     pub visual_name: String,
     /// Which modifier of the edited layer shows its controls, and whether
     /// its page is open in place of the layer tabs.
@@ -553,26 +555,16 @@ fn palette_strip(ui: &mut egui::Ui, stops: &[color::Stop], cyclic: bool, height:
 fn palette_section(ui: &mut egui::Ui, settings: &mut Settings, editing: usize) {
     let l = settings.layer_mut(editing);
     let ps = &mut l.palette;
-    let mut items: Vec<&str> = vec!["none"];
-    items.extend(color::PRESETS.iter().map(|p| p.name));
-    items.push("custom");
-    let shown: Vec<String> = items.iter().map(|n| widgets::title(n)).collect();
-    let shown_ref: Vec<&str> = shown.iter().map(|s| s.as_str()).collect();
-    let sel = items.iter().position(|n| *n == ps.name);
-    if let Some(i) = dropdown(ui, "Palette", &shown_ref, sel) {
-        ps.name = items[i].into();
-    }
     if !ps.active() {
-        hint(ui, "Visuals colour themselves (tint, pitch hues, blackbody). Pick a palette to colour the ribbons, the black hole's disk and the sigil from it, or add the palette modifier to recolour any layer.");
+        hint(ui, "No palette: pick one above.");
         return;
     }
-    ui.add_space(4.0);
     let stops = ps.stops();
     palette_strip(ui, &stops, ps.cyclic, 14.0);
     ui.add_space(6.0);
     let d = PaletteSel::default();
     slider_def(ui, "Amount", &mut ps.amount, Some(d.amount), 0.0..=1.0, |v| format!("{v:.2}"), false);
-    slider_def(ui, "Cycle", &mut ps.cycle, Some(d.cycle), -1.0..=1.0, |v| format!("{v:.2} /s"), false);
+    slider_def(ui, "Cycle", &mut ps.cycle, Some(d.cycle), -1.0..=1.0, |v| format!("{v:.2} /s"), false).on_hover_text("Moves the colours along the palette, faster with the energy, a step on each beat.");
     slider_def(ui, "Reacts", &mut ps.react, Some(d.react), 0.0..=3.0, |v| format!("{v:.2}"), false);
     toggle_row(ui, "Wrap around (seamless cycling)", &mut ps.cyclic);
     if ps.name == "custom" {
@@ -605,7 +597,6 @@ fn palette_section(ui: &mut egui::Ui, settings: &mut Settings, editing: usize) {
             });
         });
     }
-    hint(ui, "Cycling moves the colours along the palette with the energy and steps on beats. The ribbons spread a chord across it; the black hole's disk runs cool to hot along it; the sigil colours each element by its place.");
 }
 
 fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, editing: usize, a: &mut Actions) {
@@ -616,7 +607,7 @@ fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelStat
     let l = settings.layer_mut(editing);
     let n = l.modifiers.len();
     if n == 0 {
-        hint(ui, "Modifiers are passes over this layer's picture, run in order: mirrors, fractal recursion, luminescent afterglow, echo, polar wrap, ripples, edges, colour fringes, a mask, a palette recolour, glow, a vignette, one ink.");
+        hint(ui, "Effects are passes over this layer's picture, run in order.");
         ui.add_space(4.0);
     }
     let dragging = egui::DragAndDrop::has_payload_of_type::<ModDrag>(ui.ctx());
@@ -685,7 +676,6 @@ fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelStat
         hint(ui, "Eight modifiers is the most a layer runs.");
     }
     if n > 0 {
-        hint(ui, "Order matters: each pass sees the one above it. Click a name to open its controls; Esc comes back.");
         ui.add_space(8.0);
         let d = &mut l.director;
         let dd = crate::settings::EffectsDirector::default();
@@ -699,7 +689,6 @@ fn effects_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelStat
                 slider_def(ui, "Sits out", &mut d.rest, Some(dd.rest), 0.0..=1.0, |v| format!("{:.0}%", v * 100.0), false);
                 slider_def(ui, "Fade", &mut d.fade_s, Some(dd.fade_s), 0.05..=4.0, |v| format!("{v:.2} s"), true);
             }
-            hint(ui, "Auto: on the cadence, the director picks which effects are live and fades the rest out, seeded by the track so a song replays the same way. Mark an effect Always on in its page to keep it out of the pool. Cue lists come with the studio timeline.");
         });
     }
 }
@@ -1064,7 +1053,6 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
     if section_header(ui, "Layers", None, Some("Hide UI (H)")) {
         a.hide_ui = true;
     }
-    hint(ui, "1 is on top. Each layer meets the ones below by its blend (Visual tab): add is order-free, over covers, screen lightens, multiply masks.");
     ui.add_space(4.0);
     let editing = settings.editing.min(MAX_LAYERS - 1);
     if state.mod_layer != editing {
@@ -1093,6 +1081,8 @@ fn layers_section(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelS
         }
     } else {
         inspector_header(ui, hue, &[&crumb], Some(crate::visuals::summary(&kind)), None);
+        layer_block(ui, settings, stats, editing);
+        ui.add_space(6.0);
         let sel = LayerTab::ALL.iter().position(|t| *t == settings.layer_tab).unwrap_or(0);
         let tabs: Vec<&str> = LayerTab::ALL.iter().map(|t| t.name()).collect();
         if let Some(i) = segmented(ui, &tabs, sel) {
@@ -1243,102 +1233,44 @@ fn stack(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, a: 
 }
 
 fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState, stats: &Stats, layers: &mut [Box<dyn Scene>], editing: usize, a: &mut Actions) {
-    let shared = settings.space == Space::Shared;
     let l = settings.layer_mut(editing);
-    // Folders added while running show up without a restart.
-    crate::visuals::refresh();
-    let all = crate::visuals::all();
-    let names: Vec<&str> = all.iter().map(|d| d.name).collect();
-    // Every visual is a folder; the mark picks out the ones that did not ship.
-    let yours = |i: usize| !crate::shader_visual::is_factory(all[i].id);
-    let help = |i: usize| Some(if yours(i) { format!("{} One of your own visuals, from your visuals folder.", all[i].summary) } else { all[i].summary.to_string() });
-    if let Some(i) = dropdown_marked(ui, "Visual", &names, all.iter().position(|d| d.id == l.visual), help, |i| yours(i).then_some("Yours")) {
-        l.visual = all[i].id.to_string();
-        // The kaleidoscope is its picture plus the fold: add the mirrors with it.
-        if all[i].id == "kaleido" && !l.has_fold() {
-            l.modifiers.insert(0, Modifier::Fold(Default::default()));
-        }
-    }
-    if let Some(t) = stats.gpu.part(crate::gpu_timer::Part::Visual(editing as u8)) {
-        hint(ui, &format!("This visual: {} of GPU per frame; the whole layer {}.", ms(t), ms(stats.gpu.layer(editing))));
-    }
     // Visual presets: built in and saved, for this visual only.
     {
         let kind = l.visual.clone();
         let mine: Vec<&PresetDef> = stats.presets.iter().filter(|p| p.visual == kind).collect();
         let mut items: Vec<String> = mine.iter().map(|p| if p.edited { format!("{} (edited)", p.name) } else if p.factory { p.name.clone() } else { format!("{} (mine)", p.name) }).collect();
         items.push("Defaults".into());
+        items.push("Save current as…".into());
         let refs: Vec<&str> = items.iter().map(String::as_str).collect();
-        if let Some(i) = dropdown(ui, "Preset", &refs, None) {
-            a.apply_preset = Some((editing, if i < mine.len() { mine[i].name.clone() } else { String::new() }));
-        }
-        ui.horizontal(|ui| {
-            ui.set_max_width(ui.available_width());
-            ui.add_space(108.0);
-            let w = (ui.available_width() - 64.0).max(60.0);
-            ui.add(egui::TextEdit::singleline(&mut state.preset_name).desired_width(w).hint_text("Save as"));
-            if ghost_button(ui, "Save", false).clicked() && !state.preset_name.trim().is_empty() {
-                a.save_preset = Some((editing, state.preset_name.trim().to_string()));
+        let tip = |i: usize| Some(if i == refs.len() - 1 { "Save this visual's controls as a preset of your own" } else if i == refs.len() - 2 { "Every control back to the visual's own" } else { "This visual's controls only: palette, band, blend and effects stay" });
+        if let Some(i) = dropdown_help(ui, "Preset", &refs, None, tip) {
+            if i == refs.len() - 1 {
+                state.preset_saving = true;
+            } else {
+                a.apply_preset = Some((editing, if i < mine.len() { mine[i].name.clone() } else { String::new() }));
             }
-        });
+        }
+        if state.preset_saving {
+            ui.horizontal(|ui| {
+                ui.set_max_width(ui.available_width());
+                ui.add_space(108.0);
+                let w = (ui.available_width() - 104.0).max(60.0);
+                let r = ui.add(egui::TextEdit::singleline(&mut state.preset_name).desired_width(w).hint_text("Name"));
+                let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if (ghost_button(ui, "Save", true).clicked() || enter) && !state.preset_name.trim().is_empty() {
+                    a.save_preset = Some((editing, state.preset_name.trim().to_string()));
+                    state.preset_saving = false;
+                }
+                if ghost_button(ui, "×", false).on_hover_text("Cancel").clicked() {
+                    state.preset_saving = false;
+                }
+            });
+        }
         if mine.iter().any(|p| p.edited) && ghost_button(ui, "Restore factory presets", false).on_hover_text("Write the shipped versions back over the ones you changed").clicked() {
             a.restore_presets = Some(kind);
         }
-        hint(ui, "A preset is this visual's own controls, nothing else: the palette, band, blend and effects stay as they are. Presets are files in your audioviz folder, the shipped ones too: save over one to change it, Restore brings the shipped version back.");
     }
-    // Audio band: full mix, a preset, or a custom range.
-    let mut items: Vec<&str> = vec!["Full mix"];
-    items.extend(AudioBand::PRESETS.iter().map(|(n, _, _)| *n));
-    items.push("Custom range");
-    let custom = items.len() - 1;
-    let sel = if !l.band.enabled { 0 } else { AudioBand::PRESETS.iter().position(|(_, lo, hi)| (l.band.lo_hz - lo).abs() < 1.0 && (l.band.hi_hz - hi).abs() < 1.0).map(|p| p + 1).unwrap_or(custom) };
-    let first = 1;
-    if let Some(i) = dropdown_help(ui, "Reacts to", &items, Some(sel), |i| if i >= first && i < first + AudioBand::PRESETS.len() { let (_, lo, hi) = AudioBand::PRESETS[i - first]; Some(format!("{lo:.0} to {hi:.0} Hz")) } else { None }) {
-        if i == 0 {
-            l.band.enabled = false;
-        } else if i == custom {
-            l.band.enabled = true;
-        } else {
-            let (_, lo, hi) = AudioBand::PRESETS[i - 1];
-            l.band = AudioBand { enabled: true, lo_hz: lo, hi_hz: hi };
-        }
-    }
-    if l.band.enabled && sel == custom {
-        slider_row(ui, "Low cut", &mut l.band.lo_hz, 20.0..=16000.0, |v| format!("{v:.0} Hz"), true);
-        slider_row(ui, "High cut", &mut l.band.hi_hz, 20.0..=16000.0, |v| format!("{v:.0} Hz"), true);
-        if l.band.hi_hz < l.band.lo_hz * 1.2 {
-            l.band.hi_hz = l.band.lo_hz * 1.2;
-        }
-    }
-    if l.band.enabled {
-        hint(ui, "The scope draws only this band of the waveform; other visuals take their energy, onsets and spectrum from it.");
-    }
-    if shared && crate::shader_visual::can_join_space(&l.visual) {
-        hint(ui, "In the shared space: its light joins the others' and the space is levelled as one picture, so blend does not apply. Brightness balances it against them.");
-    } else {
-        let blends: Vec<&str> = Blend::ALL.iter().map(|b| b.name()).collect();
-        if let Some(i) = dropdown_help(ui, "Blend", &blends, Blend::ALL.iter().position(|b| *b == l.blend), |i| Some(Blend::ALL[i].summary())) {
-            l.blend = Blend::ALL[i];
-        }
-        hint(ui, match l.blend {
-            Blend::Add => "Add: light sums with the layers below; order does not matter.",
-            Blend::Over => "Over: this layer's bright parts cover the layers below it (1 is on top).",
-            Blend::Screen => "Screen: lightens the layers below without blowing out.",
-            Blend::Multiply => "Multiply: masks the layers below; its dark parts darken them.",
-        });
-    }
-    // Motion: how much it moves with the music; the visual's own suggestion
-    // is marked, and choosing it again leaves the layer following the visual.
-    let suits = crate::shader_visual::default_motion(&l.visual);
-    let names: Vec<String> = Motion::ALL.iter().map(|m| if *m == suits { format!("{} (suits it)", m.name()) } else { m.name().to_string() }).collect();
-    let refs: Vec<&str> = names.iter().map(|n| n.as_str()).collect();
-    let now = l.motion.unwrap_or(suits);
-    if let Some(i) = dropdown_help(ui, "Motion", &refs, Motion::ALL.iter().position(|m| *m == now), |i| Some(Motion::ALL[i].summary())) {
-        l.motion = (Motion::ALL[i] != suits).then_some(Motion::ALL[i]);
-    }
-    hint(ui, "How much it moves with the beat and the groove. Its light and colour answer the music whatever this says.");
-    slider_def(ui, "Brightness", &mut l.brightness, Some(0.0), -3.0..=3.0, |v| if v.abs() < 0.05 { "as levelled".into() } else { format!("{v:+.1} stops") }, false).on_hover_text("Light after levelling: +1 doubles it, -1 halves it. Opacity is the layer's share of the mix; this moves it brighter or darker than the levelling put it.");
-    ui.add_space(8.0);
+    ui.add_space(4.0);
     let kind = l.visual.clone();
     if crate::visuals::get(&kind).is_none() {
         hint(ui, &format!("The visual \"{kind}\" is not installed; this layer draws the scope until it comes back. Its settings are kept."));
@@ -1394,6 +1326,94 @@ fn visual_tab(ui: &mut egui::Ui, settings: &mut Settings, state: &mut PanelState
     });
 }
 
+/// The controls every layer has, in the same place whatever its visual and
+/// whichever tab is open: which visual, how it blends and moves, what it
+/// reacts to, its palette and its brightness.
+fn layer_block(ui: &mut egui::Ui, settings: &mut Settings, stats: &Stats, editing: usize) {
+    let shared = settings.space == Space::Shared;
+    let cost = stats.gpu.part(crate::gpu_timer::Part::Visual(editing as u8)).map(|t| format!(" {} of GPU a frame; the whole layer {}.", ms(t), ms(stats.gpu.layer(editing)))).unwrap_or_default();
+    let l = settings.layer_mut(editing);
+    // Folders added while running show up without a restart.
+    crate::visuals::refresh();
+    let all = crate::visuals::all();
+    let names: Vec<&str> = all.iter().map(|d| d.name).collect();
+    let now = all.iter().position(|d| d.id == l.visual);
+    // Every visual is a folder; the mark picks out the ones that did not ship.
+    let yours = |i: usize| !crate::shader_visual::is_factory(all[i].id);
+    let help = |i: usize| {
+        let mine = if yours(i) { " One of your own visuals, from your visuals folder." } else { "" };
+        Some(format!("{}{mine}{}", all[i].summary, if Some(i) == now { cost.as_str() } else { "" }))
+    };
+    if let Some(i) = dropdown_marked(ui, "Visual", &names, now, help, |i| yours(i).then_some("Yours")) {
+        l.visual = all[i].id.to_string();
+        // The kaleidoscope is its picture plus the fold: add the mirrors with it.
+        if all[i].id == "kaleido" && !l.has_fold() {
+            l.modifiers.insert(0, Modifier::Fold(Default::default()));
+        }
+    }
+    // Blend: four icons, a tooltip each. In a shared space it does not apply.
+    let in_space = shared && crate::shader_visual::can_join_space(&l.visual);
+    let tips: Vec<String> = Blend::ALL.iter().map(|b| format!("{}: {}", b.name(), b.summary())).collect();
+    let tips: Vec<&str> = tips.iter().map(String::as_str).collect();
+    let why = in_space.then_some("In the shared space the layers' light joins as one picture, so blend does not apply; Brightness balances it against the others.");
+    if let Some(i) = icon_choice(ui, "Blend", &tips, Blend::ALL.iter().position(|b| *b == l.blend).unwrap_or(0), None, why, blend_icon) {
+        l.blend = Blend::ALL[i];
+    }
+    // Motion: four icons, the dot under the one the visual suits; choosing
+    // that one again leaves the layer following the visual.
+    let suits = crate::shader_visual::default_motion(&l.visual);
+    let tips: Vec<String> = Motion::ALL.iter().map(|m| format!("{}{}: {} Light and colour answer the music whatever this says.", m.name(), if *m == suits { " (suits it)" } else { "" }, m.summary())).collect();
+    let tips: Vec<&str> = tips.iter().map(String::as_str).collect();
+    let moving = l.motion.unwrap_or(suits);
+    if let Some(i) = icon_choice(ui, "Motion", &tips, Motion::ALL.iter().position(|m| *m == moving).unwrap_or(2), Motion::ALL.iter().position(|m| *m == suits), None, motion_icon) {
+        l.motion = (Motion::ALL[i] != suits).then_some(Motion::ALL[i]);
+    }
+    // Audio band: full mix, a preset, or a custom range.
+    let mut items: Vec<&str> = vec!["Full mix"];
+    items.extend(AudioBand::PRESETS.iter().map(|(n, _, _)| *n));
+    items.push("Custom range");
+    let custom = items.len() - 1;
+    let sel = if !l.band.enabled { 0 } else { AudioBand::PRESETS.iter().position(|(_, lo, hi)| (l.band.lo_hz - lo).abs() < 1.0 && (l.band.hi_hz - hi).abs() < 1.0).map(|p| p + 1).unwrap_or(custom) };
+    let first = 1;
+    if let Some(i) = dropdown_help(ui, "Reacts to", &items, Some(sel), |i| if i >= first && i < first + AudioBand::PRESETS.len() { let (_, lo, hi) = AudioBand::PRESETS[i - first]; Some(format!("{lo:.0} to {hi:.0} Hz")) } else { None }) {
+        if i == 0 {
+            l.band.enabled = false;
+        } else if i == custom {
+            l.band.enabled = true;
+        } else {
+            let (_, lo, hi) = AudioBand::PRESETS[i - 1];
+            l.band = AudioBand { enabled: true, lo_hz: lo, hi_hz: hi };
+        }
+    }
+    if l.band.enabled && sel == custom {
+        slider_row(ui, "Low cut", &mut l.band.lo_hz, 20.0..=16000.0, |v| format!("{v:.0} Hz"), true);
+        slider_row(ui, "High cut", &mut l.band.hi_hz, 20.0..=16000.0, |v| format!("{v:.0} Hz"), true);
+        if l.band.hi_hz < l.band.lo_hz * 1.2 {
+            l.band.hi_hz = l.band.lo_hz * 1.2;
+        }
+    }
+    // The palette: its name and a thin strip of it; the rest is on the Colour tab.
+    let ps = &mut l.palette;
+    let mut items: Vec<&str> = vec!["none"];
+    items.extend(color::PRESETS.iter().map(|p| p.name));
+    items.push("custom");
+    let shown: Vec<String> = items.iter().map(|n| widgets::title(n)).collect();
+    let shown_ref: Vec<&str> = shown.iter().map(|s| s.as_str()).collect();
+    let sel = items.iter().position(|n| *n == ps.name);
+    if let Some(i) = dropdown_help(ui, "Palette", &shown_ref, sel, |i| (i == 0).then_some("No palette: the visual colours itself.")) {
+        ps.name = items[i].into();
+    }
+    if ps.active() {
+        let stops = ps.stops();
+        ui.horizontal(|ui| {
+            ui.add_space(108.0);
+            palette_strip(ui, &stops, ps.cyclic, 4.0);
+        });
+        ui.add_space(2.0);
+    }
+    slider_def(ui, "Brightness", &mut l.brightness, Some(0.0), -3.0..=3.0, |v| if v.abs() < 0.05 { "as levelled".into() } else { format!("{v:+.1} stops") }, false).on_hover_text("Light after levelling: +1 doubles it, -1 halves it. Opacity, in the layer's row, is its share of the mix.");
+}
+
 /// The guide to making visuals (docs/building-visuals.md).
 const GUIDE_URL: &str = "https://github.com/gregodouglas/audioviz/blob/main/docs/building-visuals.md";
 
@@ -1414,11 +1434,6 @@ fn colour_tab(ui: &mut egui::Ui, settings: &mut Settings, editing: usize) {
             }
         });
     }
-    hint(ui, match l.tint.mode {
-        TintMode::Scene => "Follows the scene tint (Picture section).",
-        TintMode::Art => "Takes the album art's dominant colour; the scene tint when there is no art.",
-        TintMode::Custom => "This layer's own base colour.",
-    });
     ui.add_space(8.0);
     small_caps(ui, "Palette");
     palette_section(ui, settings, editing);

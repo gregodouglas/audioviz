@@ -529,3 +529,101 @@ pub fn glyph(painter: &egui::Painter, c: Pos2, g: Glyph, color: Color32) {
     }
 }
 
+
+/// A row of icon toggles under a label, like `segmented` but drawn as icons:
+/// "Blend   [⊕][▣][◐][◑]". `draw(painter, centre, i, colour)` paints icon i;
+/// `tips[i]` is its tooltip. `mark` puts a small dot under one cell (Motion's
+/// "suits it"); `disabled` greys the row out and says why on hover. Returns
+/// the newly chosen index when it changes.
+pub fn icon_choice(ui: &mut Ui, label: &str, tips: &[&str], selected: usize, mark: Option<usize>, disabled: Option<&str>, draw: impl Fn(&egui::Painter, Pos2, usize, Color32)) -> Option<usize> {
+    let mut picked = None;
+    ui.horizontal(|ui| {
+        let (lr, lresp) = ui.allocate_exact_size(vec2(104.0, 26.0), Sense::hover());
+        let lc = if disabled.is_some() { TEXT_3 } else { TEXT_2 };
+        ui.painter().text(pos2(lr.min.x, lr.center().y), egui::Align2::LEFT_CENTER, label, theme::sans(13.0), lc);
+        if let Some(why) = disabled {
+            lresp.on_hover_text(why);
+        }
+        let n = tips.len().max(1);
+        let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::hover());
+        let p = ui.painter();
+        p.rect_filled(rect, 5.0, theme::RAISED);
+        p.rect_stroke(rect, 5.0, Stroke::new(1.0, HAIRLINE), egui::StrokeKind::Inside);
+        let cw = rect.width() / n as f32;
+        for (i, tip) in tips.iter().enumerate() {
+            let cell = Rect::from_min_size(pos2(rect.min.x + cw * i as f32, rect.min.y), vec2(cw, rect.height()));
+            let sense = if disabled.is_some() { Sense::hover() } else { Sense::click() };
+            let resp = ui.interact(cell, ui.scope_id().with(("icon choice", label, i)), sense);
+            let on = i == selected;
+            let t = ui.ctx().animate_bool_with_time(resp.id, on, theme::ANIM_S);
+            if t > 0.01 && disabled.is_none() {
+                ui.painter().rect_filled(cell.shrink(2.0), 4.0, theme::with_alpha(ACCENT, (40.0 * t) as u8));
+            }
+            let color = if disabled.is_some() { TEXT_3 } else if on { ACCENT } else if resp.hovered() { TEXT } else { TEXT_2 };
+            draw(ui.painter(), cell.center() - vec2(0.0, if mark.is_some() { 1.0 } else { 0.0 }), i, color);
+            if mark == Some(i) {
+                ui.painter().circle_filled(pos2(cell.center().x, cell.max.y - 3.5), 1.5, if on { ACCENT } else { TEXT_3 });
+            }
+            if i > 0 && !on && i != selected + 1 {
+                ui.painter().vline(cell.min.x, (cell.min.y + 6.0)..=(cell.max.y - 6.0), Stroke::new(1.0, HAIRLINE));
+            }
+            let resp = resp.on_hover_text(disabled.unwrap_or(tip));
+            if resp.clicked() && !on && disabled.is_none() {
+                picked = Some(i);
+            }
+        }
+    });
+    ui.add_space(2.0);
+    picked
+}
+
+/// Icons for the layer blends: add (two lights overlapping), over (one
+/// square in front of another), screen (a sun: lightens), multiply (two
+/// squares, only their overlap left: a mask).
+pub fn blend_icon(p: &egui::Painter, c: Pos2, i: usize, color: Color32) {
+    let st = Stroke::new(1.3, color);
+    match i {
+        0 => {
+            p.circle_stroke(c - vec2(3.0, 0.0), 5.0, st);
+            p.circle_stroke(c + vec2(3.0, 0.0), 5.0, st);
+        }
+        1 => {
+            p.rect_stroke(Rect::from_center_size(c - vec2(2.5, 2.5), Vec2::splat(8.0)), 1.0, st, egui::StrokeKind::Middle);
+            p.rect_filled(Rect::from_center_size(c + vec2(2.5, 2.5), Vec2::splat(8.0)), 1.0, color);
+        }
+        2 => {
+            p.circle_filled(c, 3.0, color);
+            for k in 0..8 {
+                let a = k as f32 * std::f32::consts::TAU / 8.0;
+                let d = vec2(a.cos(), a.sin());
+                p.line_segment([c + d * 5.0, c + d * 7.0], st);
+            }
+        }
+        _ => {
+            let a = Rect::from_center_size(c - vec2(2.5, 2.5), Vec2::splat(9.0));
+            let b = Rect::from_center_size(c + vec2(2.5, 2.5), Vec2::splat(9.0));
+            p.rect_stroke(a, 1.0, Stroke::new(1.0, theme::with_alpha(color, 120)), egui::StrokeKind::Middle);
+            p.rect_stroke(b, 1.0, Stroke::new(1.0, theme::with_alpha(color, 120)), egui::StrokeKind::Middle);
+            p.rect_filled(a.intersect(b), 0.0, color);
+        }
+    }
+}
+
+/// Icons for Motion: still (a level line), gentle (a low wave), groove (a
+/// wave), wild (a zigzag).
+pub fn motion_icon(p: &egui::Painter, c: Pos2, i: usize, color: Color32) {
+    let st = Stroke::new(1.4, color);
+    let w = 16.0;
+    let pts: Vec<Pos2> = match i {
+        0 => vec![c - vec2(w * 0.5, 0.0), c + vec2(w * 0.5, 0.0)],
+        3 => (0..=6).map(|k| pos2(c.x - w * 0.5 + w * k as f32 / 6.0, c.y + if k % 2 == 0 { 5.0 } else { -5.0 })).collect(),
+        _ => {
+            let amp = if i == 1 { 2.0 } else { 4.5 };
+            (0..=24).map(|k| {
+                let t = k as f32 / 24.0;
+                pos2(c.x - w * 0.5 + w * t, c.y - amp * (t * std::f32::consts::TAU * 1.5).sin())
+            }).collect()
+        }
+    };
+    p.add(egui::Shape::line(pts, st));
+}

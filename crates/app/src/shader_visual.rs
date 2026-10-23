@@ -2157,23 +2157,26 @@ impl Scene for ShaderVisual {
                 }
             });
         }
-        if !self.live.hint.is_empty() {
-            hint(ui, &self.live.hint);
-        }
-        if !self.live.credit.is_empty() {
-            hint(ui, &self.live.credit);
-        }
-        if let Some(d) = &self.def.dir {
-            hint(ui, &format!("Loaded from {}; save either file and it reloads.", d.display()));
-        }
-        ui.add_space(6.0);
+        // What it is and where it comes from, folded away.
+        ui.add_space(4.0);
+        group(ui, "visual.about", "About this visual", false, 0, |ui| {
+            if !self.live.hint.is_empty() {
+                hint(ui, &self.live.hint);
+            }
+            if !self.live.credit.is_empty() {
+                hint(ui, &self.live.credit);
+            }
+            if let Some(d) = &self.def.dir {
+                hint(ui, &format!("Loaded from {}; save either file and it reloads.", d.display()));
+            }
+        });
         ui.horizontal(|ui| {
-            if ghost_button(ui, &format!("Reset {}", self.live.short.to_lowercase()), false).clicked() {
+            if ghost_button(ui, "Reset controls", false).on_hover_text(format!("Every control of the {} back to its default", self.live.short.to_lowercase())).clicked() {
                 values = Map::new();
                 links.clear();
             }
             if let Some(d) = &self.def.dir {
-                if ghost_button(ui, "Open its folder", false).on_hover_text("visual.json and visual.wgsl: save either and it reloads").clicked() {
+                if ghost_button(ui, "Open folder", false).on_hover_text("visual.json and visual.wgsl: save either and it reloads").clicked() {
                     if let Err(e) = crate::platform::open_folder(d) {
                         tracing::warn!("{e}");
                     }

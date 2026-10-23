@@ -2,12 +2,18 @@ presets/crystal/Cut stone.json da62510cfc0352ce
 presets/ribbons/Deep field.json 570b08f105eb7b6a
 presets/ribbons/Deep field.json 9ffcd96c2887d75c
 presets/ribbons/Deep field.json b60d2f5bfb24f0b7
+presets/ribbons/Inside the fall.json 62f5f842eb589dd0
+presets/ribbons/Lava.json f93c5b9267543d9d
+presets/ribbons/Rainbow fall.json 4e52f9e508b6323b
+presets/ribbons/Side sweep.json d9a9f6037b8c7ada
 presets/ribbons/Sparks.json 0a4d77079df8628b
 presets/ribbons/Sparks.json 2116c67c5c5fdc38
 presets/ribbons/Sparks.json 770157e58ddc9bb5
 presets/ribbons/Starfield.json 166b1c5189d50ce2
 presets/ribbons/Starfield.json 330f6e0f5415b32b
 presets/ribbons/Starfield.json 462fb33b89201686
+presets/ribbons/Waterfall.json 1145b84770d49fb0
+presets/ribbons/Whirlpools.json bef48cc5ca26d4c4
 presets/scope/Fine beam.json ce71f3a303c1edfd
 presets/scope/Long phosphor.json cf0c1e76fb38a328
 presets/starfield/Quiet sky.json 9d839eb910ce8b65
@@ -33,6 +39,7 @@ scenes/Giants.json 7af8d9a15f4e77d1
 scenes/Giants.json dccbd49a91cec7a0
 scenes/Hallway.json 839b1695bfeec61b
 scenes/Harmonograph.json fefa1b43690af818
+scenes/Inside the fall.json 16e50890956c8a5e
 scenes/Jellyfish.json 2b12d0c4bed87def
 scenes/Jellyfish.json 699e2ac77c171828
 scenes/Jellyfish.json db3d0632fa91a0c5
@@ -41,6 +48,7 @@ scenes/Kaleidoscope.json 5d870f2232b99e9b
 scenes/Lantern.json 22eaca7d10529ade
 scenes/Lantern.json 27024442b45c9071
 scenes/Lantern.json f79e7f1d810fd98f
+scenes/Lava.json 37116e8224607b29
 scenes/Loop.json 454f15bf0f1c7f10
 scenes/Loop.json eb5a56734e91635f
 scenes/Mesh grid.json f0edc2ebbc3db446
@@ -50,12 +58,14 @@ scenes/Particle dance.json 1d9fccde43216bdc
 scenes/Party.json a6fb5b612a552bdd
 scenes/Party.json ca4369b52c4b2028
 scenes/Radial.json 1eee38afdb6c3840
+scenes/Rainbow fall.json ccd21abfc71caed2
 scenes/Ribbons.json 98f75dec815dae68
 scenes/Ribbons.json c86018b331dbb81f
 scenes/Ripples.json d12f0ded36354106
 scenes/Ripples.json fd9202341ae4f853
 scenes/Scope.json c7c18e592328e309
 scenes/Scope.json ce6b72bea48ae6a4
+scenes/Side sweep.json 97597208264c22ec
 scenes/Sigil.json d5d8279dc02b4d00
 scenes/Sigil.json ff696700d78c1356
 scenes/Spectrogram.json 3cbd764affad31f8
@@ -71,9 +81,11 @@ scenes/Studio.json 3266d1f806409187
 scenes/Studio.json 66e9b219a2785c68
 scenes/Textured sphere.json 1bc32239a6f1582b
 scenes/Tunnel.json 405dc4521ce5751b
+scenes/Waterfall.json 237c5eb2da61a3f3
 scenes/Waves.json 264a255fc93b1c61
 scenes/Waves.json f17cac56fb05722c
 scenes/Wavy form.json a736bc6b06c8e8d2
+scenes/Whirlpools.json e7145057277fbd8d
 visuals/bars/visual.json c8fcd1a7a7f9dbe1
 visuals/bars/visual.wgsl f4ebadd160333d63
 visuals/blackhole/visual.json c56fecbb8618b96a
@@ -258,10 +270,13 @@ visuals/pulse/visual.wgsl 945718839378ec48
 visuals/radial/visual.json ad43ba0d296d5aa9
 visuals/radial/visual.wgsl b9a86918f4b23203
 visuals/radial/visual.wgsl be1c30a0bcb3a5a4
+visuals/ribbons/fall/fall.wgsl 6470806ba683bc28
 visuals/ribbons/fall/fall.wgsl 659b41b37cbfbc3f
 visuals/ribbons/fall/variant.json 1bb23860b510baa4
+visuals/ribbons/fall/variant.json 5f161440f67c6eb4
 visuals/ribbons/free/flow.wgsl 8e2e34dac9f920ee
 visuals/ribbons/free/variant.json 76015197e542c28b
+visuals/ribbons/visual.json 155641868481499d
 visuals/ribbons/visual.json 349f019d37247e01
 visuals/ribbons/visual.json 69b7ba5ca5fdf1f4
 visuals/ribbons/visual.json a9b3beb464efbf2b

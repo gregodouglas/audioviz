@@ -1,5 +1,5 @@
 {
-  "when": ["fall"],
+  "when": ["fall", "whirl"],
   "parts": ["fall.wgsl"],
   "items": 2049,
   "triangles": 266240,

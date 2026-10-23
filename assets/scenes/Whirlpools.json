@@ -1,0 +1,248 @@
+{
+  "name": "Whirlpools",
+  "tint": [
+    0.4,
+    1.0,
+    0.55
+  ],
+  "tint_from_art": false,
+  "picture": {
+    "exposure": 1.0,
+    "auto_exposure": true,
+    "bloom": 0.4,
+    "grain": 0.08,
+    "look": "neon",
+    "saturation": 1.0
+  },
+  "layers": [
+    {
+      "visual": "ribbons",
+      "enabled": true,
+      "opacity": 1.0,
+      "blend": "add",
+      "band": {
+        "enabled": false,
+        "lo_hz": 20.0,
+        "hi_hz": 400.0
+      },
+      "tint": {
+        "mode": "scene",
+        "color": [
+          0.4,
+          1.0,
+          0.55
+        ]
+      },
+      "palette": {
+        "name": "galaxy",
+        "custom": [
+          {
+            "t": 0.0,
+            "rgb": [
+              0.101960786,
+              0.043137256,
+              0.23921569
+            ]
+          },
+          {
+            "t": 0.5,
+            "rgb": [
+              0.4,
+              1.0,
+              0.54901963
+            ]
+          },
+          {
+            "t": 1.0,
+            "rgb": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "amount": 1.0,
+        "cycle": 0.0,
+        "cyclic": true,
+        "react": 1.0
+      },
+      "modifiers": [],
+      "director": {
+        "mode": "manual",
+        "every": 4,
+        "live": 1,
+        "rest": 0.5,
+        "fade_s": 0.6
+      },
+      "ribbons": {
+        "path": "whirl",
+        "speed": 0.3,
+        "rush": 0.6,
+        "width": 0.6,
+        "intensity": 1.2,
+        "persistence": 0.0001,
+        "saturation": 0.9,
+        "spread": 1.0,
+        "sections": 0.5,
+        "strands": 450,
+        "reach": 0.5,
+        "column": 0.35,
+        "bend": 2.5,
+        "fan": 1.0,
+        "meander": 0.15,
+        "dust": 0.5,
+        "pulse": 0.8,
+        "shot": "front",
+        "drift": 0.3,
+        "focus": 0.25,
+        "along": 0.25,
+        "count": 12000,
+        "scale": 1.5,
+        "curl": 1.0,
+        "vortex": 1.0
+      }
+    },
+    {
+      "visual": "scope",
+      "enabled": false,
+      "opacity": 0.5,
+      "blend": "add",
+      "band": {
+        "enabled": false,
+        "lo_hz": 20.0,
+        "hi_hz": 400.0
+      },
+      "tint": {
+        "mode": "scene",
+        "color": [
+          0.4,
+          1.0,
+          0.55
+        ]
+      },
+      "palette": {
+        "name": "none",
+        "custom": [
+          {
+            "t": 0.0,
+            "rgb": [
+              0.101960786,
+              0.043137256,
+              0.23921569
+            ]
+          },
+          {
+            "t": 0.5,
+            "rgb": [
+              0.4,
+              1.0,
+              0.54901963
+            ]
+          },
+          {
+            "t": 1.0,
+            "rgb": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "amount": 1.0,
+        "cycle": 0.0,
+        "cyclic": true,
+        "react": 1.0
+      },
+      "modifiers": [],
+      "director": {
+        "mode": "manual",
+        "every": 4,
+        "live": 1,
+        "rest": 0.5,
+        "fade_s": 0.6
+      },
+      "scope": {
+        "colour": "key",
+        "gain": 0.85,
+        "auto_gain": true,
+        "rotation_deg": 45.0,
+        "beam_width": 1.2,
+        "beam_intensity": 1.0,
+        "persistence": 0.05,
+        "beat_pulse": 0.3
+      }
+    },
+    {
+      "visual": "starfield",
+      "enabled": false,
+      "opacity": 0.5,
+      "blend": "add",
+      "band": {
+        "enabled": false,
+        "lo_hz": 20.0,
+        "hi_hz": 400.0
+      },
+      "tint": {
+        "mode": "scene",
+        "color": [
+          0.4,
+          1.0,
+          0.55
+        ]
+      },
+      "palette": {
+        "name": "none",
+        "custom": [
+          {
+            "t": 0.0,
+            "rgb": [
+              0.101960786,
+              0.043137256,
+              0.23921569
+            ]
+          },
+          {
+            "t": 0.5,
+            "rgb": [
+              0.4,
+              1.0,
+              0.54901963
+            ]
+          },
+          {
+            "t": 1.0,
+            "rgb": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "amount": 1.0,
+        "cycle": 0.0,
+        "cyclic": true,
+        "react": 1.0
+      },
+      "modifiers": [],
+      "director": {
+        "mode": "manual",
+        "every": 4,
+        "live": 1,
+        "rest": 0.5,
+        "fade_s": 0.6
+      },
+      "starfield": {
+        "mass": 1.0,
+        "density": 1.0,
+        "twinkle": 0.6,
+        "drift": 1.0,
+        "disk": 1.0,
+        "doppler": 1.0,
+        "tilt": 5.0,
+        "breathe": 0.0,
+        "nebula": 1.0,
+        "streams": 1.0
+      }
+    }
+  ]
+}

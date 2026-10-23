@@ -132,6 +132,83 @@ fn pnoise(p: vec2<f32>, k: f32) -> f32 {
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
+// The nebula's noise works on the sky direction itself, in 3D: no map, so no
+// seams. (It was value noise on the stars' octahedral map, whose folds swept
+// across the picture as hard curves as the camera orbited, and whose cells,
+// cubed, read as blocks.)
+
+// A random unit-ish gradient per lattice point (an integer hash).
+fn grad3(c: vec3<i32>) -> vec3<f32> {
+    var n = u32(c.x) * 73856093u ^ u32(c.y) * 19349663u ^ u32(c.z) * 83492791u;
+    n = (n ^ (n >> 15u)) * 2246822519u;
+    n = (n ^ (n >> 13u)) * 3266489917u;
+    n = n ^ (n >> 16u);
+    let h = vec3<f32>(f32(n & 1023u), f32((n >> 10u) & 1023u), f32((n >> 20u) & 1023u)) / 511.5 - 1.0;
+    return h;
+}
+
+// Gradient noise, -1..1 roughly, smooth to the second derivative (quintic).
+fn gnoise(p: vec3<f32>) -> f32 {
+    let i = vec3<i32>(floor(p));
+    let f = fract(p);
+    let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    var acc = 0.0;
+    let x00 = mix(dot(grad3(i), f), dot(grad3(i + vec3<i32>(1, 0, 0)), f - vec3<f32>(1.0, 0.0, 0.0)), u.x);
+    let x10 = mix(dot(grad3(i + vec3<i32>(0, 1, 0)), f - vec3<f32>(0.0, 1.0, 0.0)), dot(grad3(i + vec3<i32>(1, 1, 0)), f - vec3<f32>(1.0, 1.0, 0.0)), u.x);
+    let x01 = mix(dot(grad3(i + vec3<i32>(0, 0, 1)), f - vec3<f32>(0.0, 0.0, 1.0)), dot(grad3(i + vec3<i32>(1, 0, 1)), f - vec3<f32>(1.0, 0.0, 1.0)), u.x);
+    let x11 = mix(dot(grad3(i + vec3<i32>(0, 1, 1)), f - vec3<f32>(0.0, 1.0, 1.0)), dot(grad3(i + vec3<i32>(1, 1, 1)), f - vec3<f32>(1.0, 1.0, 1.0)), u.x);
+    acc = mix(mix(x00, x10, u.y), mix(x01, x11, u.y), u.z);
+    return acc * 1.6;
+}
+
+// Octaves of gradient noise, each faded out as it gets finer than about two
+// pixels (`foot`: how much sky one pixel covers), so the lensed ring, where
+// the whole sky is squeezed into a few pixels, stays smooth instead of
+// shimmering.
+fn neb_fbm(p: vec3<f32>, octaves: i32, foot: f32) -> f32 {
+    var sum = 0.0;
+    var amp = 0.5;
+    var f = 1.0;
+    var q = p;
+    for (var k = 0; k < octaves; k++) {
+        let keep = 1.0 - smoothstep(0.2, 0.5, f * foot);
+        if (keep <= 0.0) {
+            break;
+        }
+        sum += amp * gnoise(q) * keep;
+        amp *= 0.5;
+        f *= 2.03;
+        q = q * 2.03 + vec3<f32>(1.7, -4.3, 2.9);
+    }
+    return sum;
+}
+
+// The nebula at sky direction d: gas folded by a domain warp, so it streams
+// and curls rather than sitting in blobs, with dark dust lanes through it and
+// more of it along the galaxy's band. Returns (density, warm share, 0).
+fn nebula_at(d: vec3<f32>, foot: f32, band_w: f32) -> vec2<f32> {
+    let f0 = foot * 2.2;
+    let q = d * 2.2 + vec3<f32>(3.1, 0.7, -1.9);
+    // Two warp fields of two octaves are plenty: the warp only bends.
+    let wa = neb_fbm(q, 2, f0);
+    let wb = neb_fbm(q + vec3<f32>(5.2, 1.3, 2.8), 2, f0);
+    let w = vec3<f32>(wa, wb, wa - wb);
+    let p = q * 1.7 + 1.8 * w;
+    let gas = neb_fbm(p, 5, foot * 3.7);
+    // Clouds where the field is high, soft at their edges.
+    var dens = smoothstep(-0.35, 0.5, gas);
+    dens = dens * dens * (0.45 + 0.55 * smoothstep(-0.4, 0.4, w.x));
+    if (dens < 0.002) {
+        return vec2<f32>(0.0, 0.0);
+    }
+    // Dust lanes: thin dark ridges cut through the gas.
+    let lane = 1.0 - abs(neb_fbm(p * 2.1 + vec3<f32>(9.0, 2.0, -5.0), 3, foot * 7.8));
+    dens *= 1.0 - 0.6 * smoothstep(0.7, 0.98, lane);
+    // The band: brighter, dustier gas along a great circle.
+    dens *= 0.55 + 1.3 * band_w;
+    return vec2<f32>(dens, smoothstep(-0.4, 0.5, w.y));
+}
+
 // ---------------------------------------------------------------- palettes
 
 // Blackbody-ish: 0 = deep red, 0.7 = amber, 1 = white, 1.5 = blue-white.
@@ -181,7 +258,13 @@ fn disk_sample(hit: vec3<f32>, dir: vec3<f32>) -> vec4<f32> {
         // Two or three thin log-spiral arms, broken into wisps, fading fast with radius.
         let arms = pow(0.5 + 0.5 * sin(3.0 * phi + 6.5 * lr - P.phase * 0.7), 10.0);
         let wisp = pow(pnoise(vec2<f32>((phi / (2.0 * PI) + 0.25 * lr) * 18.0, lr * 7.0 + P.phase * 0.35), 18.0), 2.5);
-        let streams = arms * wisp * pow(R_OUT / r, 3.0) * smoothstep(R_FAR, R_OUT * 1.25, r);
+        // They fade in from the disk's edge (they began there at full light,
+        // where the disk had already gone dark: a hard line), and fade out on
+        // the near side, where they pass a few units from the camera and
+        // smeared across the frame as bands.
+        let cam = CAM_DIST * vec3<f32>(sin(P.az) * cos(P.tilt), sin(P.tilt), cos(P.az) * cos(P.tilt));
+        let near_cam = smoothstep(7.0, 13.0, length(hit - cam));
+        let streams = arms * wisp * pow(R_OUT / r, 3.0) * smoothstep(R_FAR, R_OUT * 1.25, r) * smoothstep(R_OUT * 0.98, R_OUT * 1.2, r) * near_cam;
         let gain = P.streams * (0.5 + 0.5 * P.energy) * 0.4;
         let col = disk_palette(0.3) * streams * gain;
         return vec4<f32>(col, clamp(streams * 0.2, 0.0, 0.3));
@@ -234,8 +317,10 @@ fn disk_sample(hit: vec3<f32>, dir: vec3<f32>) -> vec4<f32> {
     let pulse = 1.0 + 0.5 * P.beat * (1.0 - smoothstep(R_IN, R_IN * 1.8, r));
     let bright = 1.6 * prof * tex * ring * beam * pulse * (0.55 + 0.45 * P.energy) * (1.0 + 0.6 * P.flare) * P.disk;
     let col = disk_palette(t) * bright;
-    // Opaque in the dense inner streaks, wispy outward and in the gaps.
-    let alpha = clamp(tex * 0.9 * edge_in * edge_out * (0.3 + 0.7 * pow(R_IN / r, 0.8)), 0.0, 0.92);
+    // Opaque in the dense inner streaks, thinning outward with the light (a
+    // dim outer rim that stayed opaque blotted out the sky and the streams
+    // behind it as a hard dark crescent), and as faint as the disk is.
+    let alpha = clamp(tex * 0.9 * edge_in * edge_out * pow(R_IN * 1.08 / r, 1.3), 0.0, 0.92) * min(P.disk, 1.0);
     return vec4<f32>(col, alpha);
 }
 
@@ -411,6 +496,8 @@ fn hole(uv: vec2<f32>) -> vec3<f32> {
     let jy = dpdy(sky);
     let det = jx.x * jy.y - jx.y * jy.x;
     let stretch = max(length(jx), length(jy));
+    // How much of the sky (as a direction) one pixel covers, for the nebula.
+    let foot = max(length(dpdx(ray.dir)), length(dpdy(ray.dir)));
     var col = vec3<f32>(0.0);
     if (ray.captured < 0.5 && abs(det) > 1e-14) {
         let inv = mat2x2<f32>(vec2<f32>(jy.y, -jx.y), vec2<f32>(-jy.x, jx.x)) * (1.0 / det);
@@ -427,11 +514,12 @@ fn hole(uv: vec2<f32>) -> vec3<f32> {
         col += stars(sky + vec2<f32>(P.az * 0.09, 0.0), inv, 26.0, 0.12 * dens, 1.8, 3.0, 1.0) * fade2;
         // Nebula haze and the band's dust, faint, in the disk's cool colour.
         if (P.nebula > 0.001) {
-            let neb = fbm(sky * 3.0 + vec2<f32>(7.0, 2.0) + P.az * 0.02);
-            let dust = fbm(sky * 9.0 - 3.0);
-            let fine = fbm(sky * 22.0 + 11.0);
-            let haze = (0.5 * neb * neb * neb * (0.5 + fine) + 0.7 * band_w * dust * dust * fine) * P.nebula;
-            col += mix(disk_palette(0.35), P.tint.rgb, 0.35) * haze * 0.07;
+            let n = nebula_at(ray.dir, foot, band_w);
+            // Two tones of the disk's colours, the cool one and a warmer one,
+            // mixed by a slow field of their own.
+            let cool = mix(disk_palette(0.3), P.tint.rgb, 0.35);
+            let warm = mix(disk_palette(0.75), P.tint.rgb, 0.2);
+            col += mix(cool, warm, n.y * 0.6) * n.x * P.nebula * 0.06;
         }
     }
 

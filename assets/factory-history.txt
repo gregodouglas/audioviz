@@ -75,6 +75,7 @@ visuals/bars/visual.json c8fcd1a7a7f9dbe1
 visuals/bars/visual.wgsl f4ebadd160333d63
 visuals/blackhole/visual.json c56fecbb8618b96a
 visuals/blackhole/visual.wgsl 8c2bda9bb021fa82
+visuals/blackhole/visual.wgsl d26a8d5fb65e7fd3
 visuals/comet/visual.json 2487034a9c887068
 visuals/comet/visual.json 3bb2fe1efb73be03
 visuals/comet/visual.json af4fe33e5adbc2de

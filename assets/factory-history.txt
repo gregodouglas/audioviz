@@ -1,8 +1,11 @@
 presets/crystal/Cut stone.json da62510cfc0352ce
+presets/ribbons/Deep field.json 570b08f105eb7b6a
 presets/ribbons/Deep field.json 9ffcd96c2887d75c
 presets/ribbons/Deep field.json b60d2f5bfb24f0b7
+presets/ribbons/Sparks.json 0a4d77079df8628b
 presets/ribbons/Sparks.json 2116c67c5c5fdc38
 presets/ribbons/Sparks.json 770157e58ddc9bb5
+presets/ribbons/Starfield.json 166b1c5189d50ce2
 presets/ribbons/Starfield.json 330f6e0f5415b32b
 presets/ribbons/Starfield.json 462fb33b89201686
 presets/scope/Fine beam.json ce71f3a303c1edfd
@@ -255,9 +258,15 @@ visuals/pulse/visual.wgsl 945718839378ec48
 visuals/radial/visual.json ad43ba0d296d5aa9
 visuals/radial/visual.wgsl b9a86918f4b23203
 visuals/radial/visual.wgsl be1c30a0bcb3a5a4
+visuals/ribbons/fall/fall.wgsl 659b41b37cbfbc3f
+visuals/ribbons/fall/variant.json 1bb23860b510baa4
+visuals/ribbons/free/flow.wgsl 8e2e34dac9f920ee
+visuals/ribbons/free/variant.json 76015197e542c28b
+visuals/ribbons/visual.json 349f019d37247e01
 visuals/ribbons/visual.json 69b7ba5ca5fdf1f4
 visuals/ribbons/visual.json a9b3beb464efbf2b
 visuals/ribbons/visual.wgsl a824b40dba050806
+visuals/ribbons/visual.wgsl c974774521e36ea0
 visuals/ribbons/visual.wgsl d81a0ad02d20c2b5
 visuals/ribbons/visual.wgsl fdf7b286dea86701
 visuals/ripples/visual.json 0e3915513da15719

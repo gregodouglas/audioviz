@@ -1,0 +1,20 @@
+{
+  "when": ["fall"],
+  "parts": ["fall.wgsl"],
+  "items": 2049,
+  "triangles": 266240,
+  "params": [
+    { "id": "strands", "label": "Strands", "type": "integer", "group": "Fall", "min": 16, "max": 2048, "default": 320, "log": true },
+    { "id": "reach", "label": "Strand length", "group": "Fall", "min": 0.05, "max": 1.0, "default": 0.6, "help": "How much of the path each strand covers." },
+    { "id": "column", "label": "Column width", "group": "Fall", "min": 0.05, "max": 1.5, "default": 0.5, "log": true },
+    { "id": "bend", "label": "Bend", "group": "Fall", "min": 0.2, "max": 4.0, "default": 2.5, "log": true, "help": "The radius of the curve from the fall onto the floor." },
+    { "id": "fan", "label": "Fan out", "group": "Fall", "min": 0.0, "max": 3.0, "default": 1.0, "help": "How wide the strands spread along the floor. The bass breathes it, as much as the layer's Motion says." },
+    { "id": "meander", "label": "Meander", "group": "Fall", "min": 0.0, "max": 2.0, "default": 0.3, "help": "How far the strands wander off the path, together, like water finding its way." },
+    { "id": "dust", "label": "Dust", "group": "Fall", "min": 0.0, "max": 1.0, "default": 0.4, "help": "Specks streaming along the path, quicker than the strands." },
+    { "id": "pulse", "label": "Beat wave", "group": "Fall", "min": 0.0, "max": 2.0, "default": 0.8, "help": "A wave of light running down the path on each beat." },
+    { "id": "shot", "label": "Camera", "type": "choice", "group": "Camera", "options": ["Front", "Side", "Inside"], "values": ["front", "side", "inside"], "default": "front", "help": "Front: low over the floor, facing the fall. Side: the bend seen from the side. Inside: close beside the strands as they come round." },
+    { "id": "drift", "label": "Camera drift", "group": "Camera", "min": 0.0, "max": 1.0, "default": 0.3 },
+    { "id": "focus", "label": "Depth of field", "group": "Camera", "min": 0.0, "max": 3.0, "default": 0.25, "help": "Strands nearer or further than the bend go soft and wide." },
+    { "id": "along", "label": "Colour along", "group": "Look", "min": 0.0, "max": 1.0, "default": 0.2, "help": "How far the colours move along the palette from the top of the fall to the floor." }
+  ]
+}

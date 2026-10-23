@@ -1,0 +1,10 @@
+{
+  "when": ["free"],
+  "parts": ["flow.wgsl"],
+  "params": [
+    { "id": "count", "label": "Particles", "type": "integer", "group": "Field", "min": 256, "max": 65536, "default": 12000, "log": true },
+    { "id": "scale", "label": "Field scale", "group": "Field", "min": 0.3, "max": 6.0, "default": 1.5, "log": true },
+    { "id": "curl", "label": "Curl", "group": "Field", "min": 0.0, "max": 3.0, "default": 1.0 },
+    { "id": "vortex", "label": "Chroma vortices", "group": "Field", "min": 0.0, "max": 3.0, "default": 1.0 }
+  ]
+}

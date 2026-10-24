@@ -1,5 +1,8 @@
 # Phase 8 — the audio engine
 
+> [!NOTE]
+> A working log, kept as history: statuses and plans below are as they were written. What is open now is in [`ROADMAP.md`](ROADMAP.md); what the project is, in the [README](../README.md).
+
 The plan and its reasons are ADR-0006 (`docs/decisions/ADR-0006-audio-engine.md`); this is the working log, newest last.
 
 ## Progress log

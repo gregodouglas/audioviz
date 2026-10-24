@@ -3,7 +3,7 @@
   "name": "Audio tunnel",
   "short": "Tunnel",
   "summary": "Rings of light rush toward you down a winding tunnel, each shaped by the spectrum at the moment it was born.",
-  "credit": "After vizz.fm's Audio Tunnel (https://vizz.fm). No code used; written fresh.",
+  "credit": "After vizz.fm's Audio Tunnel (https://vizz.fm). No code used; written new with Claude Code.",
   "hint": "A new ring is born every Spacing at the far end, shaped by the spectrum then (the lows at the top, mirrored down both sides), and travels toward you, faster with the energy and on each beat. The tunnel winds by Wind and turns by Twist.",
   "items": 578,
   "line": 8256,

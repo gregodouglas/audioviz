@@ -3,7 +3,7 @@
   "name": "Spectrogram",
   "short": "Spectrogram",
   "summary": "The spectrum over time, scrolling: every frequency's loudness as colour. Linear shows the highs in detail, where some tracks hide pictures.",
-  "credit": "The classic scrolling spectrogram and waterfall display. Written fresh.",
+  "credit": "The classic scrolling spectrogram and waterfall display. Written new with Claude Code.",
   "hint": "Time runs across (or up or down), frequency the other way; brightness is loudness. Linear gives every hertz the same room, so pictures drawn into a track's highs (DOOM's pentagrams) show; log gives every octave the same, as ears hear it. Floor hides the quiet, Gain brightens the rest.",
   "trail": true,
   "levelling": "bright",

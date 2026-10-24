@@ -3,7 +3,7 @@
   "name": "Harmonograph",
   "short": "Harmonograph",
   "summary": "One long damped figure, its two swings tuned to the interval between the two strongest notes.",
-  "credit": "After the Victorian harmonograph (two pendulums drawing one damped figure). Written fresh for audioviz.",
+  "credit": "After the Victorian harmonograph (two pendulums drawing one damped figure). Written new for audioviz with Claude Code.",
   "hint": "Across and up swing at the ratio of the music's two strongest pitch classes (a fifth draws 3:2), gliding when the chord changes; the figure precesses with the music and the waveform shakes the line.",
   "items": 2,
   "motion": "gentle",

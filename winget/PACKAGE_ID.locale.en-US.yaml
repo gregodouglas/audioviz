@@ -11,12 +11,14 @@ PackageUrl: {{REPO_URL}}
 License: MIT
 LicenseUrl: {{REPO_URL}}/blob/main/LICENSE
 Copyright: Copyright (c) 2026 {{PUBLISHER}}
-ShortDescription: A spacey, line-based music visualizer for whatever is playing (Spotify first)
+ShortDescription: A music visualizer for whatever Windows is playing (Spotify first)
 Description: |-
   audioviz listens to what Windows is playing (Spotify by default, per-process loopback)
-  and draws it: a phosphor XY oscilloscope, chroma-steered flow-field ribbons, and a
-  gravitationally lensed starfield with a now-playing title overlay. Native Rust + wgpu,
-  no telemetry, no network access. Settings live in %APPDATA%\audioviz.
+  and draws it: 30 visuals (phosphor scope, flow-field ribbons, a ray-traced black hole,
+  jellyfish, the Sigil and more) layered into scenes, with effects and palettes moved by
+  the music. Native Rust + wgpu, no telemetry; the only network request is an update
+  check you start yourself. Written by Claude Code under the author's direction.
+  Settings live in %APPDATA%\audioviz.
 Moniker: audioviz
 Tags:
 - audio

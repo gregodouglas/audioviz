@@ -3,7 +3,7 @@
   "name": "Particle dance",
   "short": "Particles",
   "summary": "Thousands of glowing particles in 3D swirling into shifting clouds, wheeling as a galaxy, or bursting out on the beat.",
-  "credit": "After vizz.fm's Particle Dance (https://vizz.fm). No code used; written fresh.",
+  "credit": "After vizz.fm's Particle Dance (https://vizz.fm). No code used; written new with Claude Code.",
   "hint": "Cloud: a swirling flow carries the particles, three drifting points gather them, and each beat blows the clouds apart. Galaxy: a spiral disc that turns with the energy, its stars twinkling with the highs. Burst: each beat throws out a shower of sparks. The view goes slowly round.",
   "items": 131074,
   "triangles": 131072,

@@ -3,7 +3,7 @@
   "name": "Flow-field ribbons",
   "short": "Ribbons",
   "summary": "Soft strokes of light riding a flow the music stirs: thousands of particles in a free field, or long strands bound to a falling path; slow persistence turns them into ribbons or a starfield.",
-  "credit": "The Fall path after vizz.fm's Light Fall (https://vizz.fm). No code used; written fresh.",
+  "credit": "The Fall path after vizz.fm's Light Fall (https://vizz.fm). No code used; written new with Claude Code.",
   "hint": "Path: Free lets particles ride a curl-noise field and twelve vortices, one per note. Fall binds long strands to one path in 3D: a column dropping from above, bending and fanning out along a floor toward you. Whirlpools spirals them out of two whirlpools in a wall first. Colours: without a palette, pitch class on a circle of fifths, pulled toward the key. With one, the chord sits around the palette's current position, spread this far; cycling moves it.",
   "feedback": true,
   "items": 131073,

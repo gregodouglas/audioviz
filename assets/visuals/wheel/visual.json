@@ -3,7 +3,7 @@
   "name": "Spectrum wheel",
   "short": "Wheel",
   "summary": "A disc of spectrum wedges with rays past the rim; jumps and walks on beats. A backdrop.",
-  "credit": "After the Wheel in Felix Turner's Uberviz (https://uberviz.io). No code used; written fresh.",
+  "credit": "After the Wheel in Felix Turner's Uberviz (https://uberviz.io). No code used; written new with Claude Code.",
   "hint": "Each wedge is a band of the spectrum; quiet bands go dark. A backdrop for other layers.",
   "items": 65,
   "params": [

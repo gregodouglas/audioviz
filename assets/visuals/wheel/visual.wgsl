@@ -3,7 +3,7 @@
 // the disc the wedges carry on as fading rays. It turns slowly, may jump on a
 // beat (a snap at Groove and Wild, a glide at Gentle and Still: the layer's
 // Motion), and its band mapping can walk one wedge per beat.
-// After the Wheel in Felix Turner's Uberviz (Lantern); written fresh.
+// After the Wheel in Felix Turner's Uberviz (Lantern); no code used, written new with Claude Code.
 //
 // prepare() keeps what the compiled-in Wheel kept on the CPU:
 //   item 0      (spin 0..1 it heads for, band step, last beat pulse, spin shown)

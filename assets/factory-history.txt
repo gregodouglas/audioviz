@@ -88,6 +88,7 @@ scenes/Waves.json 264a255fc93b1c61
 scenes/Waves.json f17cac56fb05722c
 scenes/Wavy form.json a736bc6b06c8e8d2
 scenes/Whirlpools.json e7145057277fbd8d
+visuals/bars/visual.json 44ff62c4c1dc17e4
 visuals/bars/visual.json c8fcd1a7a7f9dbe1
 visuals/bars/visual.wgsl f4ebadd160333d63
 visuals/blackhole/visual.json c56fecbb8618b96a
@@ -101,18 +102,23 @@ visuals/comet/visual.wgsl 9cece668ddfde632
 visuals/comet/visual.wgsl b3e1a02ab06ec4e0
 visuals/comet/visual.wgsl d94605cdbfdd7a55
 visuals/crystal/visual.json ce070f972a683422
+visuals/crystal/visual.json d2042872b985429f
 visuals/crystal/visual.wgsl 4625bf622c1c43a4
 visuals/crystal/visual.wgsl 9086feb3bd2de539
 visuals/crystal/visual.wgsl 95b0a0089734f49d
+visuals/crystal/visual.wgsl e272de3c89ca50a1
+visuals/dotgrid/visual.json 399d7504835da96e
 visuals/dotgrid/visual.json fb82139a54086f21
 visuals/dotgrid/visual.wgsl 5ad534bc924338b7
 visuals/eclipse/visual.json 3b64408c51cb4c85
 visuals/eclipse/visual.json 4e2625cb25368fc8
 visuals/eclipse/visual.json bd94daa2bfb77c12
+visuals/eclipse/visual.json d6f440c3584177df
 visuals/eclipse/visual.wgsl a32c859c68c065d3
 visuals/eclipse/visual.wgsl b063ce848062b898
 visuals/eclipse/visual.wgsl d19bd98f6a6ffb3d
 visuals/eqrings/visual.json 628c9fee49edbb41
+visuals/eqrings/visual.json 6900b4a7615c0f1c
 visuals/eqrings/visual.wgsl b89623259c6e1253
 visuals/eqrings/visual.wgsl ca28df29feea0854
 visuals/eyes/cartoon/cartoon.wgsl 8f81bebc7f2b7747
@@ -133,6 +139,7 @@ visuals/eyes/real/light.wgsl 9d020cf452dc1c6e
 visuals/eyes/real/light.wgsl d69d7eddf4d1f84d
 visuals/eyes/real/variant.json c38e873e766f6175
 visuals/eyes/real/variant.json e5007be8a6f173fb
+visuals/eyes/visual.json 42593c5d756a799e
 visuals/eyes/visual.json 7ecd0076d41d4366
 visuals/eyes/visual.json ce947b98befac6cb
 visuals/eyes/visual.json dad3fab1445d88e7
@@ -140,9 +147,11 @@ visuals/eyes/visual.wgsl 188e6546810cc572
 visuals/eyes/visual.wgsl a5fd8946cd7414aa
 visuals/hallway/visual.json 2d5a0b74aa84baa6
 visuals/hallway/visual.json 674e6d4e49b49041
+visuals/hallway/visual.json 9e80e1d61bf9efe1
 visuals/hallway/visual.wgsl 7999f9a09e1e0d17
 visuals/hallway/visual.wgsl b6d0b7ef75cdd0d7
 visuals/hallway/visual.wgsl de0d7369f429a040
+visuals/harmonograph/visual.json 1e4e0122901d2388
 visuals/harmonograph/visual.json 2f322e44901ae9a3
 visuals/harmonograph/visual.json 548d04f846e1fcb4
 visuals/harmonograph/visual.json 5bd9ce1822b44d0e
@@ -270,16 +279,21 @@ visuals/lines/visual.wgsl 07a4599efbb4cf83
 visuals/lines/visual.wgsl b204383dfc39eaea
 visuals/loop/visual.json 178bb266d3d88442
 visuals/loop/visual.json 5ba7be6418b67ffc
+visuals/loop/visual.json f48265f13b33f7c7
 visuals/loop/visual.wgsl 1d6ecd9538a28b0d
+visuals/loop/visual.wgsl 3a9990b5baa01a0a
 visuals/loop/visual.wgsl bb9af58dbfaceaa3
 visuals/loop/visual.wgsl d9cefb9662170a55
 visuals/meshgrid/visual.json a7a8ab73c3dd9100
+visuals/meshgrid/visual.json c67421584f9856ef
 visuals/meshgrid/visual.wgsl 49e01cc1ba4193b5
 visuals/meshgrid/visual.wgsl 748d37c8bb7a7ab3
 visuals/orb/visual.json 7b533ef486ad41b7
+visuals/orb/visual.json d72c3617b3003210
 visuals/orb/visual.wgsl ae4595f6f6811014
 visuals/orb/visual.wgsl e59399c292525c09
 visuals/particles/visual.json 3cf07f7cf3efb9d7
+visuals/particles/visual.json 66f52cdcff244b74
 visuals/particles/visual.wgsl 48fe9af60b274a73
 visuals/particles/visual.wgsl 9027cd9e6c45374e
 visuals/polygon/visual.json d64bb9c281a38d14
@@ -291,6 +305,7 @@ visuals/pulse/visual.wgsl 30e0fed6cae03d4c
 visuals/pulse/visual.wgsl 5f1664cdf9538840
 visuals/pulse/visual.wgsl 945718839378ec48
 visuals/radial/visual.json ad43ba0d296d5aa9
+visuals/radial/visual.json dded6a6ebba57958
 visuals/radial/visual.wgsl b9a86918f4b23203
 visuals/radial/visual.wgsl be1c30a0bcb3a5a4
 visuals/ribbons/fall/fall.wgsl 6470806ba683bc28
@@ -299,6 +314,7 @@ visuals/ribbons/fall/variant.json 1bb23860b510baa4
 visuals/ribbons/fall/variant.json 5f161440f67c6eb4
 visuals/ribbons/free/flow.wgsl 8e2e34dac9f920ee
 visuals/ribbons/free/variant.json 76015197e542c28b
+visuals/ribbons/visual.json 001927a7efe69e50
 visuals/ribbons/visual.json 155641868481499d
 visuals/ribbons/visual.json 349f019d37247e01
 visuals/ribbons/visual.json 69b7ba5ca5fdf1f4
@@ -310,7 +326,9 @@ visuals/ribbons/visual.wgsl fdf7b286dea86701
 visuals/ripples/visual.json 0e3915513da15719
 visuals/ripples/visual.json 3bf591ddb14b6864
 visuals/ripples/visual.json 7e834f20e37ba1f4
+visuals/ripples/visual.json d8296fa7063e6f67
 visuals/ripples/visual.wgsl 7f859c4c11a418e6
+visuals/ripples/visual.wgsl 93ec337141a2e797
 visuals/ripples/visual.wgsl c88b0fc2324e4eb2
 visuals/ripples/visual.wgsl e3d319b8183efad7
 visuals/scope/visual.json 0c4af80f6715b4b4
@@ -322,6 +340,7 @@ visuals/sigil/visual.wgsl 7fa7a0aac5b533cc
 visuals/sigil/visual.wgsl b4e67a313cf3de95
 visuals/sigil/visual.wgsl c623951ad1ae7b2b
 visuals/spectrogram/visual.json 49d7b8983773853a
+visuals/spectrogram/visual.json db3ea66c79df2991
 visuals/spectrogram/visual.wgsl f78508ab54d7a8ab
 visuals/spikes/visual.json 4eb26b93cf81d8e3
 visuals/spikes/visual.json a9389cfc4da0537b
@@ -336,6 +355,7 @@ visuals/spiral/visual.wgsl 0c63a49d860adfcd
 visuals/spiral/visual.wgsl 5356d77738139725
 visuals/spiral/visual.wgsl 891ffbabb283daba
 visuals/spiral/visual.wgsl a1f7f9f40d422e95
+visuals/tunnel/visual.json 1f0f92a6b02518ff
 visuals/tunnel/visual.json 41f0ad52b97683c0
 visuals/tunnel/visual.wgsl 73d7ea5669bd4587
 visuals/tunnel/visual.wgsl 744e250385a74b43
@@ -346,7 +366,9 @@ visuals/waves/visual.wgsl 665fd2e489ad8b96
 visuals/waves/visual.wgsl b489e62bc8465d04
 visuals/waves/visual.wgsl edd481dd870f2872
 visuals/wheel/visual.json 3e12321ce65881ba
+visuals/wheel/visual.json 5aeb36a75bf49067
 visuals/wheel/visual.json f92248a65301629c
 visuals/wheel/visual.wgsl 289126e24dcde051
 visuals/wheel/visual.wgsl 7eff940dd6d1d65e
 visuals/wheel/visual.wgsl 9953eb5d30239238
+visuals/wheel/visual.wgsl cb3466f918ed1105

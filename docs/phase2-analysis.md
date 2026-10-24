@@ -1,5 +1,8 @@
 # Phase 2 — analysis core
 
+> [!NOTE]
+> A working log, kept as history: statuses and plans below are as they were written. What is open now is in [`ROADMAP.md`](ROADMAP.md); what the project is, in the [README](../README.md).
+
 Status: **landed 2026-10-17.** The analyzer now produces the full v1 feature set from `docs/research/03-audio-analysis.md`, capture and analysis run on their own engine thread, and the panel shows every feature live. Validation so far is synthetic tests plus two 30 s Spotify recordings; the "20 varied tracks" bar is open and has a tool (below).
 
 ## What the `FeatureFrame` carries

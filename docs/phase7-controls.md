@@ -1,5 +1,8 @@
 # Phase 7 — Controls: information architecture for the panel
 
+> [!NOTE]
+> A working log, kept as history: statuses and plans below are as they were written. What is open now is in [`ROADMAP.md`](ROADMAP.md); what the project is, in the [README](../README.md).
+
 Status: **built 2026-10-17 (same day), all four steps, local only.** Greg chose tabs, modifiers opening in place, and the rename to Picture. What shipped differs from the plan in small ways, noted at the end.
 
 ## Why

@@ -5,7 +5,8 @@
 // the song has its own colours.
 //
 // After the Ripples in Felix Turner's Uberviz (https://uberviz.io). No code
-// used; written fresh from a description of the effect.
+// used; written new with Claude Code from a description
+// of the effect.
 //
 // The plane is a 160 x 160 grid of cells, two triangles each, drawn far row
 // first so near hills cover far ones (alpha 1). paint() prints each pixel

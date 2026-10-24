@@ -1,5 +1,8 @@
 # Phase 1 spike — loopback → features → phosphor XY scope
 
+> [!NOTE]
+> A working log, kept as history: statuses and plans below are as they were written. What is open now is in [`ROADMAP.md`](ROADMAP.md); what the project is, in the [README](../README.md).
+
 Status: **running 2026-10-16.** Per-process loopback attaches to Spotify, the analyzer meters are live, the phosphor scope renders at the monitor's 240 Hz, shader hot reload works. Latency not yet measured (see protocol below).
 
 Backend: DX12 by default on Windows (the HDR path we want later); `WGPU_BACKEND=vulkan` also works. Debug builds open a console window beside the app for logs; release builds don't.

@@ -1,5 +1,8 @@
 # Phase 5 — ship-ability
 
+> [!NOTE]
+> A working log, kept as history: statuses and plans below are as they were written. What is open now is in [`ROADMAP.md`](ROADMAP.md); what the project is, in the [README](../README.md).
+
 Status: **landed. v0.1.0 published 2026-10-17** (https://github.com/gregodouglas/audioviz/releases/tag/v0.1.0). Not done from the exit criteria: the clean-machine install check (Greg skipped it) and winget (deliberately deferred, issue #7). Brief written 2026-10-17 at the end of the Phase 4 session. Goal from `docs/research/00-synthesis.md`: installable by someone who isn't Greg; trustworthy by construction (open source, signed, no telemetry).
 
 ## Progress log

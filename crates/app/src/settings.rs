@@ -961,7 +961,7 @@ impl Default for Warp {
 }
 
 /// Scanlines modifier: fine stripes over the picture, the broadcast / print
-/// texture of Uberviz's "Lines" pass (written fresh).
+/// texture of Uberviz's "Lines" pass (no code taken).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Lines {

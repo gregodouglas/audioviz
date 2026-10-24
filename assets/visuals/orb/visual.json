@@ -3,7 +3,7 @@
   "name": "Textured sphere",
   "short": "Sphere",
   "summary": "A marbled sphere that swells and distorts with the bass, its surface boiling slowly, spikes rising with the highs, over its own reflection if you like.",
-  "credit": "After vizz.fm's Textured Sphere (https://vizz.fm). No code used; written fresh.",
+  "credit": "After vizz.fm's Textured Sphere (https://vizz.fm). No code used; written new with Claude Code.",
   "hint": "The bass swells the sphere and stirs its surface; each beat gives it a kick; the highs raise spikes. The texture turns with the sphere and flows with the music: marble, bands like a gas giant's, or contour lines. Colours come from the palette.",
   "items": 3,
   "triangles": 221184,

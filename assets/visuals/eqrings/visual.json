@@ -3,7 +3,7 @@
   "name": "Equalizer rings",
   "short": "EQ rings",
   "summary": "Concentric rings of equalizer dashes turning round a glowing core, each ring its own slice of the spectrum.",
-  "credit": "After vizz.fm's Equalizer Rings (https://vizz.fm). No code used; written fresh.",
+  "credit": "After vizz.fm's Equalizer Rings (https://vizz.fm). No code used; written new with Claude Code.",
   "hint": "The innermost ring is the lows, the outermost the highs; round each ring its dashes thicken with their part of that slice (mirrored about the top). Neighbouring rings turn opposite ways; the core swirls and swells with the bass.",
   "items": 1,
   "params": [

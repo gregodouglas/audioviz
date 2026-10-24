@@ -5,7 +5,8 @@
 // dark gaps in the ripple. The palette runs by age or by level.
 //
 // After the Loop in Felix Turner's Uberviz (https://uberviz.io). No code
-// used; written fresh from a description of the effect.
+// used; written new with Claude Code from a description
+// of the effect.
 //
 // The prepare step keeps the ring history (up to 120 rings of 256 points):
 //   item 0                  (clock seconds owed, newest ring's slot, turn, beat kick)

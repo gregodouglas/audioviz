@@ -3,7 +3,7 @@
   "name": "Dot grid",
   "short": "Dots",
   "summary": "A grid of dots that swell in waves spreading out from the middle: each kick a ring travelling outward.",
-  "credit": "After vizz.fm's Dot Grid (https://vizz.fm). No code used; written fresh.",
+  "credit": "After vizz.fm's Dot Grid (https://vizz.fm). No code used; written new with Claude Code.",
   "hint": "Waves: each dot shows the sound as it was a moment ago, the farther from the middle the longer ago, so every kick spreads out as a ring (the bass sets the size, the highs the colour). Spectrum: distance from the middle is frequency, the lows in the middle.",
   "items": 241,
   "params": [

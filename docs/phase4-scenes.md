@@ -1,5 +1,8 @@
 # Phase 4 — scene system, scenes 2 and 3, metadata, auto director
 
+> [!NOTE]
+> A working log, kept as history: statuses and plans below are as they were written. What is open now is in [`ROADMAP.md`](ROADMAP.md); what the project is, in the [README](../README.md).
+
 Status: **landed 2026-10-17.** Three scenes, cross-fades, Windows now-playing metadata, a Swiss-grid type overlay, and an auto director with musical cues.
 
 ## Scene system

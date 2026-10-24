@@ -3,7 +3,7 @@
   "name": "Mesh grid",
   "short": "Mesh",
   "summary": "A 3D wireframe of the spectrum's history: each row the spectrum of a moment, rolling away as a terrain of peaks and valleys, flat, round or in a spiral; beats send ripples through it.",
-  "credit": "After vizz.fm's Mesh Grid (https://vizz.fm). No code used; written fresh.",
+  "credit": "After vizz.fm's Mesh Grid (https://vizz.fm). No code used; written new with Claude Code.",
   "hint": "The nearest row (the middle of a Ring or Spiral) is the spectrum now, the lows on the left or, mirrored, in the middle; older rows roll away, so the music leaves a landscape behind it. Each beat sends a ripple out across it. Plane hides the lines behind its ridges when Solid is on.",
   "items": 2071,
   "triangles": 64512,

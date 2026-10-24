@@ -3,7 +3,7 @@
   "name": "Frequency hallway",
   "short": "Hallway",
   "summary": "A corridor of glowing frequency bars on the floor, ceiling and walls, rushing past as you travel down it.",
-  "credit": "After vizz.fm's Frequency Hallway (https://vizz.fm). No code used; written fresh.",
+  "credit": "After vizz.fm's Frequency Hallway (https://vizz.fm). No code used; written new with Claude Code.",
   "hint": "Every Spacing a new row of bars is born at the far end from the spectrum then: on each surface the lows in the middle, the highs toward the corners. Rows ride toward you, faster with the energy and on each beat. The view sways a little with the bar.",
   "items": 434,
   "triangles": 30720,

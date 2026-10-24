@@ -5,7 +5,7 @@
 // near. Edges glow in the palette.
 //
 // After the Crystal in Felix Turner's Uberviz (https://uberviz.io). No code
-// used; written fresh.
+// used; written new with Claude Code.
 //
 // Prepare items (state the compiled-in Crystal kept on the CPU):
 //   0            (smoothed energy, last beat pulse, beats counted, 1 once started)

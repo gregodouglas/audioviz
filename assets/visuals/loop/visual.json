@@ -3,7 +3,7 @@
   "name": "Loop",
   "short": "Loop",
   "summary": "Waveform rings born at the centre and pushed outward, each lagging the last; quiet slices leave dark rings.",
-  "credit": "After the Loop in Felix Turner's Uberviz (https://uberviz.io). No code used; written fresh.",
+  "credit": "After the Loop in Felix Turner's Uberviz (https://uberviz.io). No code used; written new with Claude Code.",
   "hint": "Each ring is one slice of the waveform, born at the centre and pushed outward by the next, so a sound ripples out ring by ring; quiet slices leave dark rings. Twist turns each ring against the last for a spiral.",
   "items": 7802,
   "line": 30960,

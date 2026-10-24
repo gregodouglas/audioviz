@@ -3,7 +3,7 @@
   "name": "Eclipse",
   "short": "Eclipse",
   "summary": "A black disc ringed by one glowing dot per band, with a corona that flares on the bass.",
-  "credit": "After the Eclipse in Felix Turner's Uberviz (https://uberviz.io). No code used; written fresh.",
+  "credit": "After the Eclipse in Felix Turner's Uberviz (https://uberviz.io). No code used; written new with Claude Code.",
   "hint": "One dot per band round a black disc: lows at the bottom, highs at the top when mirrored. Loud dots swell and push out; the corona flares on the bass.",
   "items": 128,
   "params": [

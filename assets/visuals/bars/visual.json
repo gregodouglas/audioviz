@@ -3,7 +3,7 @@
   "name": "Spectrum bars",
   "short": "Bars",
   "summary": "The classic analyser: a row of spectrum bars with falling peak caps, solid, LED segments or outlines, mirrored or not.",
-  "credit": "The classic graphic equaliser and LED spectrum analyser. Written fresh.",
+  "credit": "The classic graphic equaliser and LED spectrum analyser. Written new with Claude Code.",
   "hint": "One bar per slice of the spectrum, lows on the left (or in the middle, mirrored). Bars rise with their slice and fall at Fall; the caps hold the last peak for Hold, then drop. Tilt lifts the highs, which are quieter in most music.",
   "items": 257,
   "params": [

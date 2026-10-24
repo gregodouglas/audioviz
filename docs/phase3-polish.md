@@ -1,5 +1,8 @@
 # Phase 3 — scene 1 polish and ambient behavior
 
+> [!NOTE]
+> A working log, kept as history: statuses and plans below are as they were written. What is open now is in [`ROADMAP.md`](ROADMAP.md); what the project is, in the [README](../README.md).
+
 Status: **landed 2026-10-17.** Goal: a build Greg would leave running on a second monitor for an hour.
 
 ## Rendering
